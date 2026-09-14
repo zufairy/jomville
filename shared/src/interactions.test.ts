@@ -22,7 +22,19 @@ describe('chance furni catalog', () => {
     expect(isInstanceDef(furnitureDef('dicemaster')!)).toBe(true);
     expect(isInstanceDef(furnitureDef('dragon_egg')!)).toBe(true);
     expect(isInstanceDef(furnitureDef('chair')!)).toBe(false);
-    expect(FURNITURE.filter(isInstanceDef).map((d) => d.id).sort()).toEqual(['dicemaster', 'dragon_egg', 'holodice', 'throne_gold', 'wheel_fortune']);
+    expect(FURNITURE.filter(isInstanceDef).map((d) => d.id).sort()).toEqual(['dicemaster', 'dragon_egg', 'egg_stack_2', 'egg_stack_3', 'holodice', 'throne_gold', 'wheel_fortune']);
+  });
+  it('trading room set matches the spec', () => {
+    expect(furnitureDef('egg_stack_2')).toMatchObject({ price: 150000, ltd: 30, cat: 'casino', w: 1, h: 1 });
+    expect(furnitureDef('egg_stack_3')).toMatchObject({ price: 250000, ltd: 15, cat: 'casino', w: 1, h: 1 });
+    expect(furnitureDef('egg_wall')).toMatchObject({ price: 40000, w: 2, h: 1, walkable: false });
+    expect(furnitureDef('egg_wall')!.ltd).toBeUndefined();
+    expect(furnitureDef('gold_patch')).toMatchObject({ price: 500, walkable: true, tall: 0 });
+    expect(furnitureDef('leaf_hedge')).toMatchObject({ price: 900, walkable: false });
+    expect(furnitureDef('palm_planter')).toMatchObject({ price: 1200, walkable: false });
+    expect(furnitureDef('gold_rail')).toMatchObject({ price: 400, walkable: false });
+    expect(furnitureDef('trade_sofa')).toMatchObject({ price: 2000, w: 2, h: 1, sit: true });
+    expect(furnitureDef('trading_banner')).toMatchObject({ price: 2500, w: 2, h: 1, walkable: true });
   });
 });
 
