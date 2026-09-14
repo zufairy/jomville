@@ -78,8 +78,8 @@ describe('CrewBook', () => {
     const { b } = book();
     b.sync([['a', 'b'], [], [], []]);
     expect(b.start('zzz')).toEqual([{ type: 'error', to: 'zzz', code: 'not_in_crew' }]);
-    expect(b.start('a')).toEqual({ pad: 0, members: ['a', 'b'] });
-    expect(b.start('b')).toEqual([{ type: 'error', to: 'b', code: 'already_cooking' }]);
+    expect(b.start('a')).toEqual({ pad: 0, members: ['a', 'b'], eligible: ['a', 'b'] });
+    expect(b.start('b')).toEqual([]); // already going in: no error, no second round
     const go = b.began(0, 'room1');
     expect(go.filter((e) => e.type === 'go').map((e) => e.to)).toEqual(['a', 'b']);
     expect(b.padForRoom('room1')).toBe(0);

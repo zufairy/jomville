@@ -1113,6 +1113,9 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage('k_start', (client) => {
       if (limit.allow(client.sessionId)) void this.kitchen?.start(client.sessionId);
     });
+    this.onMessage('k_again', (client) => {
+      if (limit.allow(client.sessionId)) void this.kitchen?.again(client.sessionId);
+    });
     this.onMessage('k_code', (client, msg: { code?: unknown }) => {
       if (limit.allow(client.sessionId)) this.kitchen?.join(client.sessionId, msg?.code);
     });

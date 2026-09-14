@@ -58,3 +58,70 @@ describe('KitchenLobby', () => {
     lobby.dispose();
   });
 });
+
+describe('KitchenLobby play again', () => {
+  const goes = (sent: Array<{ to: string; type: string; data: any }>) => sent.filter((m) => m.type === 'k_go').map((m) => [m.to, m.data.roomId]);
+  const errors = (sent: Array<{ to: string; type: string; data: any }>) => sent.filter((m) => m.type === 'sys').map((m) => [m.to, m.data.code]);
+
+  async function afterRound() {
+    let n = 0;
+    const s = setup(async () => `room-${++n}`);
+    s.lobby.tick();
+    await s.lobby.start('s1');
+    rounds.emit('ended', 'room-1'); // time's up: results on screen, the old room lingers
+    s.sent.length = 0;
+    return s;
+  }
+
+  it('starts a new round right away for whoever chose play again, without the crewmate who pressed back', async () => {
+    const { lobby, sent, calls } = await afterRound();
+    rounds.emit('left', 'room-1', 'u2'); // bo pressed "back to the kitchen" (still standing on the rug)
+    await lobby.again('s1');
+    expect(calls).toHaveLength(2); // no waiting for room-1 to dispose
+    expect(goes(sent)).toEqual([['s1', 'room-2']]);
+    expect(errors(sent)).toEqual([]);
+    lobby.dispose();
+  });
+
+  it('does not pull a crewmate who is still on the results screen', async () => {
+    const { lobby, sent } = await afterRound();
+    await lobby.again('s2');
+    expect(goes(sent)).toEqual([['s2', 'room-2']]);
+    lobby.dispose();
+  });
+
+  it('two crewmates pressing play again at once share one round and see no error', async () => {
+    const { lobby, sent, calls } = await afterRound();
+    await Promise.all([lobby.again('s1'), lobby.again('s2')]);
+    expect(calls).toHaveLength(2);
+    expect(goes(sent).sort()).toEqual([
+      ['s1', 'room-2'],
+      ['s2', 'room-2'],
+    ]);
+    expect(errors(sent)).toEqual([]);
+    // allowed in: everyone from the last round, so a later "play again" can still join
+    expect((calls[1] as { userIds: string[] }).userIds.sort()).toEqual(['u1', 'u2']);
+    lobby.dispose();
+  });
+
+  it('a later play again joins the rematch already cooking', async () => {
+    const { lobby, sent, calls } = await afterRound();
+    await lobby.again('s1');
+    await lobby.again('s2');
+    expect(calls).toHaveLength(2);
+    expect(goes(sent)).toEqual([
+      ['s1', 'room-2'],
+      ['s2', 'room-2'],
+    ]);
+    expect(errors(sent)).toEqual([]);
+    lobby.dispose();
+  });
+
+  it('start cooking from the lobby skips crewmates still reading their results', async () => {
+    const { lobby, sent } = await afterRound();
+    rounds.emit('left', 'room-1', 'u2');
+    await lobby.start('s2');
+    expect(goes(sent)).toEqual([['s2', 'room-2']]);
+    lobby.dispose();
+  });
+});

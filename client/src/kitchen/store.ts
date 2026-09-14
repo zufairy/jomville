@@ -53,7 +53,7 @@ interface KitchenStore {
   onEvent: (e: kitchen.KitchenEvent, me: string) => void;
   lost: () => void;
   exit: () => void;
-  /** leave the results and start the same crew again once its kitchen closes */
+  /** leave the results and start again (only you, plus crewmates who also chose play again) */
   again: boolean;
   playAgain: () => void;
   clearAgain: () => void;

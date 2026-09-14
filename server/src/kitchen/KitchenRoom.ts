@@ -102,6 +102,7 @@ export class KitchenRoom extends Room {
       }
     }
     if (this.clients.some((c) => (c.auth as User | undefined)?.id === u.id)) return; // another tab still in
+    rounds.emit('left', this.roomId, u.id);
     kitchen.removeChef(this.sim, u.id);
     this.queues.delete(u.id);
     this.broadcast('k_away', { id: u.id, away: false });
@@ -153,6 +154,8 @@ export class KitchenRoom extends Room {
 
   private async finish(e: Extract<kitchen.KitchenEvent, { type: 'end' }>) {
     this.ended = true;
+    // the crew can start a new round now; this room only lingers for the results screens
+    rounds.emit('ended', this.roomId);
     this.sendSnap(true);
     const userIds = [...new Set(this.clients.map((c) => (c.auth as User | undefined)?.id).filter((id): id is string => !!id))];
     const earnedByUser = grantPerUser(KitchenRoom.rewards, userIds, e.stars);
