@@ -55,6 +55,8 @@ export interface RoomRow {
   style: RoomStyle;
   layout: Placement[];
   is_public: boolean;
+  /** owner may turn trading off; GameRoom caches it on create */
+  trade_enabled: boolean;
   created_at: string;
 }
 
@@ -571,6 +573,19 @@ export class Repo {
 
   async pruneRolls(days = 7) {
     await this.db.query('delete from rolls where at < now() - make_interval(days => $1::int)', [days]);
+  }
+
+  // ---- trading
+
+  /** Account age and play time, for the production trade gate. */
+  async tradeStanding(userId: string): Promise<{ createdAt: Date; playMinutes: number } | null> {
+    const r = await this.db.query<{ created_at: Date | string; play_minutes: number }>('select created_at, play_minutes from users where id = $1', [userId]);
+    return r[0] ? { createdAt: new Date(r[0].created_at), playMinutes: r[0].play_minutes } : null;
+  }
+
+  /** Called once a minute per connected user by the coin trickle. */
+  async addPlayMinute(userId: string) {
+    await this.db.query('update users set play_minutes = play_minutes + 1 where id = $1', [userId]);
   }
 
   async room(slug: string): Promise<RoomRow | null> {

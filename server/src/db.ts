@@ -122,6 +122,17 @@ create table if not exists friendships (
   check (user_a < user_b)
 );
 create index if not exists friendships_b on friendships(user_b);
+create table if not exists trades (
+  id serial primary key,
+  a_id text not null,
+  b_id text not null,
+  a_offer jsonb not null,
+  b_offer jsonb not null,
+  room_id text,
+  at timestamptz not null default now()
+);
+create index if not exists trades_a on trades(a_id, at);
+create index if not exists trades_b on trades(b_id, at);
 `;
 
 /** Additive column migrations, applied one by one (PGlite chokes on batched ADD COLUMN IF NOT EXISTS). */
@@ -134,6 +145,8 @@ const COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: 'users', column: 'coins', ddl: 'alter table users add column coins int not null default 1500' },
   { table: 'rooms', column: 'mask', ddl: 'alter table rooms add column mask jsonb' },
   { table: 'rooms', column: 'style', ddl: 'alter table rooms add column style jsonb' },
+  { table: 'users', column: 'play_minutes', ddl: 'alter table users add column play_minutes int not null default 0' },
+  { table: 'rooms', column: 'trade_enabled', ddl: 'alter table rooms add column trade_enabled boolean not null default true' },
 ];
 
 async function migrate(pg: PGlite) {
