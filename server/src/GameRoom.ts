@@ -57,7 +57,7 @@ import { KitchenLobby } from './kitchen/lobby';
 import { ROUND_KEY } from './kitchen/rounds';
 import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
-import { registry } from './registry';
+import { humanCount, registry } from './registry';
 
 export interface JoinOptions {
   slug?: string;
@@ -628,7 +628,7 @@ export class GameRoom extends Room<WorldState> {
     this.blocks.join(client.sessionId, user.id);
     void this.reloadBlocks(client.sessionId, user.id);
     if (this.love) client.send('love', this.loveSnapshot());
-    registry.set(this.state.slug, this.state.players.size);
+    this.publishLive();
     void GameRoom.repo.coins(user.id).then((coins) => client.send('coins', { coins, earned: 0 }));
     this.bots?.onHumanJoin({ id: client.sessionId, handle: p.handle, x: p.x, y: p.y });
     if (process.env.DOVEY_DEBUG) console.log('[join]', this.state.slug, user.handle, 'now', this.state.players.size);
@@ -716,6 +716,11 @@ export class GameRoom extends Room<WorldState> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     await this.flush();
     registry.set(this.state.slug, 0);
+  }
+
+  /** public live count: real people only, the park's AI locals are not visitors */
+  private publishLive() {
+    registry.set(this.state.slug, humanCount(this.state.players.keys(), (id) => !!this.bots?.has(id)));
   }
 
   /** Nearest unoccupied tile to the room centre (Manhattan order, so neighbours before diagonals). */
@@ -932,7 +937,7 @@ export class GameRoom extends Room<WorldState> {
   }
 
   private sendTableState(m: Match) {
-    const names = m.players.map((id) => (isBot(id) ? 'Dovey Bot' : this.handleOf(id)));
+    const names = m.players.map((id) => (isBot(id) ? 'Leypark Bot' : this.handleOf(id)));
     const seats = m.players.map((id) => (isBot(id) ? '' : id));
     const now = Date.now();
     m.players.forEach((id, seat) => {
@@ -1054,7 +1059,7 @@ export class GameRoom extends Room<WorldState> {
     this.useLimit.forget(client.sessionId);
     this.chanceLimit.forget(client.sessionId);
     this.state.players.delete(client.sessionId);
-    registry.set(this.state.slug, this.state.players.size);
+    this.publishLive();
     if (process.env.DOVEY_DEBUG) console.log('[leave]', this.state.slug, 'now', this.state.players.size);
   }
 }
