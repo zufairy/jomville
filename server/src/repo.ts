@@ -90,6 +90,25 @@ export interface RoomSummary {
   createdAt: string;
 }
 
+export interface DuelSettleInput {
+  aId: string;
+  bId: string;
+  stake: number;
+  credits: Array<{ userId: string; amount: number }>;
+  winnerId: string | null;
+  outcome: 'win' | 'draw' | 'forfeit' | 'left';
+  roomId: string;
+  /** write a duels log row */
+  log: boolean;
+}
+
+/** Thrown inside the escrow transaction to roll it back when a side is short. */
+class ShortStake extends Error {
+  constructor(readonly side: 'a' | 'b') {
+    super('short_stake');
+  }
+}
+
 export interface TradeLogRow {
   id: number;
   a_id: string;
@@ -607,6 +626,52 @@ export class Repo {
 
   async pruneRolls(days = 7) {
     await this.db.query('delete from rolls where at < now() - make_interval(days => $1::int)', [days]);
+  }
+
+  // ---- duels
+
+  /**
+   * Take both duel stakes into escrow in one transaction. When either side
+   * cannot cover the stake nothing is debited and `short` names who came up short.
+   */
+  async escrowDuel(aId: string, bId: string, stake: number): Promise<{ ok: true; coins: [number, number] } | { ok: false; short: 'a' | 'b' }> {
+    if (!Number.isInteger(stake) || stake <= 0) throw new Error('escrowDuel needs a positive integer stake');
+    try {
+      return await this.db.transaction(async (tx) => {
+        const r = new Repo(tx);
+        const ca = await r.spendCoins(aId, stake);
+        if (ca === null) throw new ShortStake('a');
+        const cb = await r.spendCoins(bId, stake);
+        if (cb === null) throw new ShortStake('b');
+        return { ok: true as const, coins: [ca, cb] as [number, number] };
+      });
+    } catch (e) {
+      if (e instanceof ShortStake) return { ok: false, short: e.side };
+      throw e;
+    }
+  }
+
+  /**
+   * Pay out a finished duel in one transaction: every credit plus, for a staked
+   * duel, its log row. Returns each credited user's new balance.
+   */
+  async settleDuel(s: DuelSettleInput): Promise<Record<string, number>> {
+    return this.db.transaction(async (tx) => {
+      const r = new Repo(tx);
+      const coins: Record<string, number> = {};
+      for (const c of s.credits) coins[c.userId] = await r.creditCoins(c.userId, c.amount);
+      if (s.log) {
+        await tx.query('insert into duels (a_id, b_id, stake, winner_id, outcome, room_id) values ($1, $2, $3, $4, $5, $6)', [
+          s.aId,
+          s.bId,
+          s.stake,
+          s.winnerId,
+          s.outcome,
+          s.roomId,
+        ]);
+      }
+      return coins;
+    });
   }
 
   // ---- trading

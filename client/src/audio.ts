@@ -3,6 +3,28 @@
  * unlocked on first user gesture (browsers require it).
  */
 let ctx: AudioContext | null = null;
+const MUTE_KEY = 'dovey.sfxMuted';
+let muted = (() => {
+  try {
+    return localStorage.getItem(MUTE_KEY) === '1';
+  } catch {
+    return false;
+  }
+})();
+
+/** true while UI sound effects are switched off (persisted per device) */
+export function sfxMuted(): boolean {
+  return muted;
+}
+
+export function setSfxMuted(v: boolean) {
+  muted = v;
+  try {
+    localStorage.setItem(MUTE_KEY, v ? '1' : '0');
+  } catch {
+    /* storage unavailable: the choice lasts this session */
+  }
+}
 
 function ac(): AudioContext | null {
   try {
@@ -15,6 +37,7 @@ function ac(): AudioContext | null {
 }
 
 function tone(freq: number, dur: number, type: OscillatorType, gain = 0.08, at = 0, slideTo?: number) {
+  if (muted) return;
   const a = ac();
   if (!a) return;
   const t0 = a.currentTime + at;
@@ -32,6 +55,7 @@ function tone(freq: number, dur: number, type: OscillatorType, gain = 0.08, at =
 }
 
 function noise(dur: number, gain = 0.05, at = 0, hp = 800) {
+  if (muted) return;
   const a = ac();
   if (!a) return;
   const t0 = a.currentTime + at;
@@ -86,5 +110,54 @@ export const sfx = {
   /** sad honk for not enough credits */
   nope() {
     tone(220, 0.18, 'square', 0.05, 0, 170);
+  },
+  /** "rock… paper… scissors…" beat; climbs with i */
+  duelTick(i: 0 | 1 | 2) {
+    tone(520 + i * 140, 0.09, 'square', 0.05);
+    noise(0.03, 0.03, 0, 3000);
+  },
+  /** both hands fly to the centre */
+  whoosh() {
+    noise(0.28, 0.06, 0, 500);
+    tone(180, 0.25, 'sine', 0.03, 0, 620);
+  },
+  /** hands collide */
+  clash() {
+    noise(0.18, 0.12, 0, 200);
+    tone(110, 0.22, 'square', 0.09, 0, 55);
+    tone(1400, 0.08, 'triangle', 0.04, 0.01, 700);
+  },
+  /** you took the round */
+  roundWin() {
+    tone(660, 0.1, 'triangle', 0.07);
+    tone(880, 0.1, 'triangle', 0.07, 0.09);
+    tone(1320, 0.22, 'triangle', 0.06, 0.18);
+  },
+  /** they took the round */
+  roundLose() {
+    tone(392, 0.16, 'sawtooth', 0.045, 0, 330);
+    tone(294, 0.3, 'sawtooth', 0.045, 0.15, 220);
+  },
+  /** nobody took the round */
+  roundDraw() {
+    tone(440, 0.12, 'sine', 0.05);
+    tone(440, 0.12, 'sine', 0.05, 0.14);
+  },
+  /** duel won */
+  fanfare() {
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 'square', 0.045, i * 0.11));
+    tone(1047, 0.7, 'triangle', 0.06, 0.44);
+    tone(1319, 0.7, 'triangle', 0.04, 0.44);
+    noise(0.5, 0.02, 0.44, 4000);
+  },
+  /** duel lost */
+  defeat() {
+    tone(330, 0.25, 'triangle', 0.05, 0, 300);
+    tone(262, 0.25, 'triangle', 0.05, 0.22, 240);
+    tone(196, 0.5, 'triangle', 0.05, 0.44, 150);
+  },
+  /** one tick of the result coin counter */
+  coinCount() {
+    tone(2200 + Math.random() * 400, 0.04, 'square', 0.025);
   },
 };
