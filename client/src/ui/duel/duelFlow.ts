@@ -37,10 +37,12 @@ export function applyEnd(d: DuelInfo, reason: string, pot: number): { duel: Duel
       ? 'they passed on the duel'
       : reason === 'insufficient'
         ? 'duel cancelled: not enough coins'
-        : reason === 'failed'
-          ? 'duel could not start, try again'
-          : walkout
-            ? 'they left the duel'
-            : 'duel ended';
+        : reason === 'cancelled'
+          ? 'they cancelled the duel'
+          : reason === 'failed'
+            ? 'duel could not start, try again'
+            : walkout
+              ? 'they left the duel'
+              : 'duel ended';
   return { duel: IDLE_DUEL, toast };
 }

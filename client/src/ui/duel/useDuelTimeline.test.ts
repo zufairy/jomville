@@ -1,5 +1,57 @@
-import { describe, expect, it } from 'vitest';
-import { COUNT_UP_MS, REVEAL_MS, RevealCue, RevealRunner, countUp, cuesBetween, pickRingMs, revealFrame } from './useDuelTimeline';
+import { describe, expect, it, vi } from 'vitest';
+import { COUNT_UP_MS, REVEAL_MS, RevealCue, RevealRunner, countUp, cuesBetween, driveReveal, pickRingMs, revealFrame } from './useDuelTimeline';
+
+describe('reveal driver', () => {
+  it('finishes on the timer fallback when animation frames never run (background tab)', () => {
+    vi.useFakeTimers();
+    try {
+      const cues: RevealCue[] = [];
+      const phases: string[] = [];
+      let done = 0;
+      const stop = driveReveal({ onCue: (c) => cues.push(c), onDone: () => done++ }, (f) => phases.push(f.phase), { now: () => Date.now(), raf: () => 1, caf: () => {} });
+      expect(cues).toEqual(['tick0']);
+      vi.advanceTimersByTime(REVEAL_MS + 99);
+      expect(done).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(done).toBe(1);
+      expect(cues).toEqual(['tick0', 'tick1', 'tick2', 'shoot', 'clash', 'result']);
+      expect(phases.at(-1)).toBe('done');
+      vi.advanceTimersByTime(5000);
+      expect(done).toBe(1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a normal frame loop finishes once and the fallback stays quiet', () => {
+    vi.useFakeTimers();
+    try {
+      let done = 0;
+      const clock = { now: () => Date.now(), raf: (cb: () => void) => setTimeout(cb, 16) as unknown as number, caf: (id: number) => clearTimeout(id) };
+      driveReveal({ onDone: () => done++ }, () => {}, clock);
+      vi.advanceTimersByTime(REVEAL_MS + 20);
+      expect(done).toBe(1);
+      vi.advanceTimersByTime(1000);
+      expect(done).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stopping cancels both the frame loop and the fallback', () => {
+    vi.useFakeTimers();
+    try {
+      let done = 0;
+      const stop = driveReveal({ onDone: () => done++ }, () => {}, { now: () => Date.now(), raf: () => 1, caf: () => {} });
+      stop();
+      vi.advanceTimersByTime(5000);
+      expect(done).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('reveal timeline', () => {
   it('lasts 1.8 s', () => {

@@ -86,6 +86,41 @@ export class RevealRunner {
   }
 }
 
+export interface RevealClock {
+  now: () => number;
+  raf: (cb: () => void) => number;
+  caf: (id: number) => void;
+}
+
+/**
+ * Runs a reveal on animation frames, with a timer fallback: a background tab gets
+ * no frames, and without the fallback duelRevealDone would never fire and the
+ * server's pick sweep would eat the next round. Returns a stop function.
+ */
+export function driveReveal(on: RevealHandlers, onFrame: (f: RevealFrame) => void, clock: RevealClock): () => void {
+  const runner = new RevealRunner(on);
+  const start = clock.now();
+  let id = 0;
+  let stopped = false;
+  const fallback = setTimeout(() => {
+    if (stopped || runner.done) return;
+    clock.caf(id);
+    onFrame(runner.advance(Math.max(REVEAL_MS, clock.now() - start)));
+  }, REVEAL_MS + 100);
+  const tick = () => {
+    if (stopped) return;
+    onFrame(runner.advance(clock.now() - start));
+    if (!runner.done) id = clock.raf(tick);
+    else clearTimeout(fallback);
+  };
+  tick();
+  return () => {
+    stopped = true;
+    clock.caf(id);
+    clearTimeout(fallback);
+  };
+}
+
 export const COUNT_UP_MS = 1200;
 
 /** Result-screen coin counter: ease-out cubic from 0 to total over `ms`. */
@@ -113,17 +148,11 @@ export function useDuelTimeline(runKey: string | null, on: RevealHandlers & { no
       setFrame(IDLE_FRAME);
       return;
     }
-    const now = latest.current.now ?? (() => performance.now());
-    const runner = new RevealRunner({ onCue: (c) => latest.current.onCue?.(c), onDone: () => latest.current.onDone?.() });
-    const start = now();
-    let id = 0;
-    const tick = () => {
-      const f = runner.advance(now() - start);
-      setFrame((prev) => (prev.phase === f.phase && prev.beat === f.beat ? prev : f));
-      if (!runner.done) id = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(id);
+    return driveReveal(
+      { onCue: (c) => latest.current.onCue?.(c), onDone: () => latest.current.onDone?.() },
+      (f) => setFrame((prev) => (prev.phase === f.phase && prev.beat === f.beat ? prev : f)),
+      { now: latest.current.now ?? (() => performance.now()), raf: (cb) => requestAnimationFrame(cb), caf: (id) => cancelAnimationFrame(id) },
+    );
   }, [runKey]);
   return frame;
 }

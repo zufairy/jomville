@@ -51,4 +51,8 @@ describe('duel flow', () => {
     expect(applyEnd(playing({ phase: 'ringing' }), 'failed', 0).toast).toBe('duel could not start, try again');
     expect(applyEnd(playing(), 'whatever', 0).toast).toBe('duel ended');
   });
+
+  it('a withdrawn challenge closes the invitee popup', () => {
+    expect(applyEnd(playing({ phase: 'incoming', stake: 100 }), 'cancelled', 0)).toEqual({ duel: IDLE_DUEL, toast: 'they cancelled the duel' });
+  });
 });
