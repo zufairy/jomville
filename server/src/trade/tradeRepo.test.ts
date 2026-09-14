@@ -164,3 +164,26 @@ describe('tradesFor', () => {
     expect(await repo.tradesFor(a, 3)).toHaveLength(3);
   });
 });
+
+describe('executeTrade ordering and duplicates', () => {
+  it('nobody pays with stacks they are about to receive', async () => {
+    const a = await rich('tradeRecvA', 0);
+    const b = await rich('tradeRecvB', 0);
+    await repo.addItem(a, 'chair', 2);
+    await repo.addItem(b, 'chair', 1);
+    const before = [await snapshot(a), await snapshot(b)];
+    const r = await repo.executeTrade(a, b, { slots: [{ def: 'chair', qty: 2 }], coins: 0 }, { slots: [{ def: 'chair', qty: 3 }], coins: 0 }, null);
+    expect(r).toEqual({ ok: false, code: 'insufficient_items' });
+    expect([await snapshot(a), await snapshot(b)]).toEqual(before);
+  });
+
+  it('refuses the same item id in both offers', async () => {
+    const a = await rich('tradeDupA', 200_000);
+    const b = await rich('tradeDupB', 0);
+    const throne = await instance(a, 'throne_gold');
+    const r = await repo.executeTrade(a, b, { slots: [{ itemId: throne.id }], coins: 0 }, { slots: [{ itemId: throne.id }], coins: 0 }, null);
+    expect(r).toEqual({ ok: false, code: 'bad_offer' });
+    expect((await repo.instances(a)).map((i) => i.id)).toContain(throne.id);
+    expect(await repo.tradesFor(a)).toEqual([]);
+  });
+});
