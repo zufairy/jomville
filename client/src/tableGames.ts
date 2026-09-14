@@ -13,8 +13,8 @@ export interface TableMatchView {
   kind: TableGameKind;
   you: Seat;
   names: [string, string];
-  /** sessionId per seat ('' for the bot), for portraits */
-  seats: [string, string];
+  /** sessionId per seat ('' for the bot), for portraits; absent against an older server */
+  seats?: [string, string];
   state: TableState;
   /** performance.now() deadline for the player to move */
   turnEndsAt: number;

@@ -15,6 +15,9 @@ describe('exitIntent', () => {
   it('leave button inside the confirm closes', () => {
     expect(exitIntent({ live: true, confirming: true, source: 'exit' })).toBe('close');
   });
+  it('the ✕ inside the confirm also closes', () => {
+    expect(exitIntent({ live: true, confirming: true, source: 'x' })).toBe('close');
+  });
   it('Escape or backdrop backs out of the confirm', () => {
     expect(exitIntent({ live: true, confirming: true, source: 'key', key: 'Escape' })).toBe('cancel-confirm');
     expect(exitIntent({ live: true, confirming: true, source: 'backdrop' })).toBe('cancel-confirm');

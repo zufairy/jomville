@@ -58,7 +58,14 @@ export function TableGameUI() {
     );
 
   return (
-    <VipModal title={title} label="board game" live={live} onExit={leaveNow} exitLabel={live ? 'forfeit & exit' : 'exit game'} wide={phase === 'playing'}>
+    <VipModal
+      title={title}
+      label="board game"
+      live={live}
+      onExit={leaveNow}
+      exitLabel={live ? 'forfeit & exit' : phase === 'waiting' ? 'hide' : 'exit game'}
+      wide={phase === 'playing'}
+    >
       {phase === 'menu' && <GameMenu />}
       {(phase === 'queue' || phase === 'waiting') && kind && <Matchmaking kind={kind} waiting={phase === 'waiting'} />}
       {phase === 'playing' && match && <MatchView match={match} />}
@@ -173,14 +180,14 @@ function MatchView({ match }: { match: TableMatchView }) {
     <>
       <PlayersVs
         left={{
-          sessionId: match.seats[me],
+          sessionId: match.seats?.[me] ?? '',
           name: 'you',
           active: !match.over && s.turn === me,
           score: scored ? s.score[me] : null,
           badge: <span className={`tg-token tg-token--${match.kind} p${me}`}>{match.kind === 'ttt' ? (me === 0 ? '✕' : '○') : ''}</span>,
         }}
         right={{
-          sessionId: match.seats[them],
+          sessionId: match.seats?.[them] ?? '',
           name: match.names[them],
           bot: match.bot,
           active: !match.over && s.turn === them,
@@ -211,9 +218,6 @@ function MatchView({ match }: { match: TableMatchView }) {
           <div className="tg__btns">
             <button className="vip__btn" disabled={match.rematch[me] || status !== 'connected'} onClick={() => tables.rematch()}>
               {match.rematch[me] ? (match.rematch[them] ? 'starting…' : 'waiting for them…') : match.rematch[them] ? 'accept rematch' : 'rematch'}
-            </button>
-            <button className="vip__btn vip__btn--ghost" onClick={() => tables.leave()}>
-              exit game
             </button>
           </div>
         </div>

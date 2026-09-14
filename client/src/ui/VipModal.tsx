@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { exitIntent } from './vipModalIntent';
+import { isTopModal, modalDepth, popModal, pushModal } from './modalStack';
 
 interface VipModalProps {
   title: ReactNode;
@@ -17,6 +18,8 @@ interface VipModalProps {
 /** Premium neon-arcade shell shared by every game popup: ✕ in the header, Exit Game in the footer. */
 export function VipModal({ title, label, live = false, onExit, exitLabel = 'exit game', headerExtra, wide, children }: VipModalProps) {
   const [confirming, setConfirming] = useState(false);
+  const [depth, setDepth] = useState(0);
+  const id = useRef<symbol>(Symbol('vip'));
   const card = useRef<HTMLDivElement>(null);
 
   const act = (source: 'x' | 'exit' | 'key' | 'backdrop', key?: string) => {
@@ -28,11 +31,20 @@ export function VipModal({ title, label, live = false, onExit, exitLabel = 'exit
     else if (i === 'cancel-confirm') setConfirming(false);
   };
 
+  // only the top-most open VIP popup reacts to Esc, so a hidden popup
+  // underneath another one doesn't silently act on the key too.
+  useEffect(() => {
+    const modalId = id.current;
+    pushModal(modalId);
+    setDepth(modalDepth(modalId));
+    return () => popModal(modalId);
+  }, []);
+
   // re-bound every render so the handler sees current live/confirming
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      e.stopPropagation();
+      if (!isTopModal(id.current)) return;
       act('key', e.key);
     };
     window.addEventListener('keydown', onKey);
@@ -48,7 +60,7 @@ export function VipModal({ title, label, live = false, onExit, exitLabel = 'exit
   }, [live]);
 
   return (
-    <div className="vip" onPointerDown={(e) => e.target === e.currentTarget && act('backdrop')}>
+    <div className="vip" style={{ zIndex: 30 + depth }} onPointerDown={(e) => e.target === e.currentTarget && act('backdrop')}>
       <div ref={card} tabIndex={-1} className={`vip__card ${wide ? 'vip__card--wide' : ''}`} role="dialog" aria-modal="true" aria-label={label}>
         <div className="vip__trim" aria-hidden />
         <header className="vip__head">
