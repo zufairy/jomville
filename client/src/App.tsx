@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { attachGame, detachGame } from './game/instance';
 import { useAppStore } from './store';
 import { ChatBar } from './ui/ChatBar';
+import { ChatFeed } from './ui/ChatFeed';
 import { EmoteWheel } from './ui/EmoteWheel';
 import { Customizer } from './ui/Customizer';
 import { BuildBar } from './ui/BuildBar';
@@ -47,6 +48,7 @@ function Play() {
   const coins = useAppStore((s) => s.coins);
   const voiceMic = useAppStore((s) => s.voiceMic);
   const actions = useAppStore((s) => s.actions);
+  const cameraFree = useAppStore((s) => s.cameraFree);
   const needsOnboarding = !!me && !me.onboarded;
 
   useEffect(() => {
@@ -111,6 +113,16 @@ function Play() {
         </div>
       </div>
       {toast && <div className="toast">{toast}</div>}
+      {cameraFree && (
+        <button
+          className="recenter-btn"
+          onClick={() => actions?.recenter()}
+          aria-label="recenter camera"
+          title="recenter"
+        >
+          🎯
+        </button>
+      )}
       <LoveMeterUI />
       <CallUI />
       <DuelUI />
@@ -131,7 +143,10 @@ function Play() {
         <BuildBar />
       ) : (
         <div className="bottom">
-          <ChatBar />
+          <div className="bottom__stack">
+            <ChatFeed />
+            <ChatBar />
+          </div>
           <EmoteWheel />
         </div>
       )}
