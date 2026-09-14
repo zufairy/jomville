@@ -18,7 +18,9 @@ export const MAIN_LOBBY = {
   size: 40,
 } as const;
 
-export const SYSTEM_HANDLE = 'dovey';
+export const SYSTEM_HANDLE = 'leypark';
+/** handles the system user carried before a rebrand; an existing database is renamed in place at boot */
+export const LEGACY_SYSTEM_HANDLES: readonly string[] = ['dovey'];
 
 /** the maze prize pad: standing here pays coins (server-verified, cooldown per user) */
 export const LOBBY_MAZE_PRIZE = { x: 8, y: 8 };

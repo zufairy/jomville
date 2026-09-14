@@ -7,6 +7,7 @@ import {
   RoomMask,
   RoomStyle,
   normalizeStyle,
+  LEGACY_SYSTEM_HANDLES,
   SYSTEM_HANDLE,
   SYSTEM_ROOMS,
   furnitureDef,
@@ -20,6 +21,9 @@ import {
   randomSlug,
   FURNITURE,
   isInstanceDef,
+  FRIEND_LIMIT,
+  FRIEND_PENDING_LIMIT,
+  serializeAvatar,
 } from '@dovey/shared';
 import { Db } from './db';
 
@@ -78,6 +82,22 @@ export interface RoomSummary {
   visitors24h: number;
   createdAt: string;
 }
+
+export type FriendRequestResult = 'sent' | 'accepted' | 'already' | 'pending' | 'blocked' | 'self' | 'limit' | 'no_user';
+export type FriendRespondResult = 'accepted' | 'declined' | 'no_request' | 'limit';
+export interface FriendRow {
+  id: string;
+  handle: string;
+  avatar: string;
+  since: string;
+}
+export interface PendingRow {
+  id: string;
+  handle: string;
+  avatar: string;
+  at: string;
+}
+const pair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
 
 const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
 const newId = () => randomBytes(12).toString('hex');
@@ -161,6 +181,8 @@ export class Repo {
 
   async setHandle(userId: string, handle: string): Promise<boolean> {
     if (!HANDLE.test(handle)) return false;
+    // the app's own account names are not up for grabs
+    if (handle === SYSTEM_HANDLE || LEGACY_SYSTEM_HANDLES.includes(handle)) return false;
     const prev = await this.userById(userId);
     if (!prev) return false;
     try {
@@ -190,7 +212,17 @@ export class Repo {
    * design changes ship without a migration.
    */
   async ensureSystemRooms(): Promise<void> {
-    let sys = await this.db.query<{ id: string }>('select id from users where handle = $1', [SYSTEM_HANDLE]);
+    // a database seeded before the rebrand: the system user is the lobby's owner under an old handle.
+    // Rename that same row (same id, rooms keep their owner) instead of creating a second system user.
+    const legacy = await this.db.query<{ id: string }>(
+      'select u.id from rooms r join users u on u.id = r.owner_id where r.id = $1 and u.handle = any($2::text[])',
+      [SYSTEM_ROOMS[0].slug, [...LEGACY_SYSTEM_HANDLES]],
+    );
+    if (legacy.length) {
+      const taken = await this.db.query('select 1 from users where handle = $1 and id <> $2', [SYSTEM_HANDLE, legacy[0].id]);
+      if (!taken.length) await this.db.query('update users set handle = $2 where id = $1', [legacy[0].id, SYSTEM_HANDLE]);
+    }
+    let sys = legacy.length ? legacy : await this.db.query<{ id: string }>('select id from users where handle = $1', [SYSTEM_HANDLE]);
     if (!sys.length) {
       const id = newId();
       // nobody holds this token; the hash is of random bytes so it can never be presented
@@ -241,11 +273,111 @@ export class Repo {
   async block(blockerId: string, blockedId: string): Promise<boolean> {
     if (blockerId === blockedId) return false;
     await this.db.query('insert into blocks (blocker_id, blocked_id) values ($1, $2) on conflict do nothing', [blockerId, blockedId]);
+    // blocking ends any friendship and pending requests between the two
+    const [a, b] = pair(blockerId, blockedId);
+    await this.db.query('delete from friendships where user_a = $1 and user_b = $2', [a, b]);
+    await this.db.query('delete from friend_requests where (from_id = $1 and to_id = $2) or (from_id = $2 and to_id = $1)', [blockerId, blockedId]);
     return true;
   }
 
   async unblock(blockerId: string, blockedId: string) {
     await this.db.query('delete from blocks where blocker_id = $1 and blocked_id = $2', [blockerId, blockedId]);
+  }
+
+  // ---- friends
+
+  async areFriends(x: string, y: string): Promise<boolean> {
+    const [a, b] = pair(x, y);
+    return (await this.db.query('select 1 from friendships where user_a = $1 and user_b = $2', [a, b])).length > 0;
+  }
+
+  private async friendCount(userId: string): Promise<number> {
+    const r = await this.db.query<{ n: number }>('select count(*)::int as n from friendships where user_a = $1 or user_b = $1', [userId]);
+    return r[0]?.n ?? 0;
+  }
+
+  private async makeFriends(x: string, y: string) {
+    const [a, b] = pair(x, y);
+    await this.db.query('insert into friendships (user_a, user_b) values ($1, $2) on conflict do nothing', [a, b]);
+    await this.db.query('delete from friend_requests where (from_id = $1 and to_id = $2) or (from_id = $2 and to_id = $1)', [x, y]);
+  }
+
+  async requestFriend(from: string, to: string): Promise<FriendRequestResult> {
+    if (from === to) return 'self';
+    if (!(await this.userById(to))) return 'no_user';
+    const blocked = await this.db.query('select 1 from blocks where (blocker_id = $1 and blocked_id = $2) or (blocker_id = $2 and blocked_id = $1)', [from, to]);
+    if (blocked.length) return 'blocked';
+    if (await this.areFriends(from, to)) return 'already';
+    const reverse = await this.db.query('select 1 from friend_requests where from_id = $1 and to_id = $2', [to, from]);
+    if (reverse.length) {
+      if ((await this.friendCount(from)) >= FRIEND_LIMIT || (await this.friendCount(to)) >= FRIEND_LIMIT) return 'limit';
+      await this.makeFriends(from, to);
+      return 'accepted';
+    }
+    const same = await this.db.query('select 1 from friend_requests where from_id = $1 and to_id = $2', [from, to]);
+    if (same.length) return 'pending';
+    const out = await this.db.query<{ n: number }>('select count(*)::int as n from friend_requests where from_id = $1', [from]);
+    if ((out[0]?.n ?? 0) >= FRIEND_PENDING_LIMIT || (await this.friendCount(from)) >= FRIEND_LIMIT) return 'limit';
+    await this.db.query('insert into friend_requests (from_id, to_id) values ($1, $2) on conflict do nothing', [from, to]);
+    return 'sent';
+  }
+
+  async respondFriend(me: string, from: string, accept: boolean): Promise<FriendRespondResult> {
+    const req = await this.db.query('select 1 from friend_requests where from_id = $1 and to_id = $2', [from, me]);
+    if (!req.length) return 'no_request';
+    if (!accept) {
+      await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2', [from, me]);
+      return 'declined';
+    }
+    if ((await this.friendCount(me)) >= FRIEND_LIMIT || (await this.friendCount(from)) >= FRIEND_LIMIT) return 'limit';
+    await this.makeFriends(me, from);
+    return 'accepted';
+  }
+
+  /** True only when a pending request actually existed and was deleted. */
+  async cancelFriendRequest(me: string, to: string): Promise<boolean> {
+    const r = await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2 returning 1', [me, to]);
+    return r.length > 0;
+  }
+
+  /** True only when a friendship actually existed and was deleted. */
+  async removeFriend(me: string, other: string): Promise<boolean> {
+    const [a, b] = pair(me, other);
+    const r = await this.db.query('delete from friendships where user_a = $1 and user_b = $2 returning 1', [a, b]);
+    return r.length > 0;
+  }
+
+  async friendIdsOf(userId: string): Promise<string[]> {
+    const rows = await this.db.query<{ id: string }>(
+      'select case when user_a = $1 then user_b else user_a end as id from friendships where user_a = $1 or user_b = $1',
+      [userId],
+    );
+    return rows.map((r) => r.id);
+  }
+
+  async friendsOf(userId: string): Promise<FriendRow[]> {
+    const rows = await this.db.query<{ id: string; handle: string; avatar: unknown; since: Date | string }>(
+      `select u.id, u.handle, u.avatar, f.since from friendships f
+       join users u on u.id = case when f.user_a = $1 then f.user_b else f.user_a end
+       where f.user_a = $1 or f.user_b = $1
+       order by u.handle`,
+      [userId],
+    );
+    return rows.map((r) => ({ id: r.id, handle: r.handle, avatar: serializeAvatar(normalizeAvatar(r.avatar)), since: new Date(r.since).toISOString() }));
+  }
+
+  async pendingOf(userId: string): Promise<{ incoming: PendingRow[]; outgoing: PendingRow[] }> {
+    type Row = { id: string; handle: string; avatar: unknown; at: Date | string };
+    const map = (r: Row): PendingRow => ({ id: r.id, handle: r.handle, avatar: serializeAvatar(normalizeAvatar(r.avatar)), at: new Date(r.at).toISOString() });
+    const incoming = await this.db.query<Row>(
+      'select u.id, u.handle, u.avatar, r.created_at as at from friend_requests r join users u on u.id = r.from_id where r.to_id = $1 order by r.created_at desc',
+      [userId],
+    );
+    const outgoing = await this.db.query<Row>(
+      'select u.id, u.handle, u.avatar, r.created_at as at from friend_requests r join users u on u.id = r.to_id where r.from_id = $1 order by r.created_at desc',
+      [userId],
+    );
+    return { incoming: incoming.map(map), outgoing: outgoing.map(map) };
   }
 
   /** File a report for the moderation queue. Returns false only for self-reports. */

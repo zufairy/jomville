@@ -1,7 +1,7 @@
-import { AnimatedSprite, Container, Text, TextStyle, Texture } from 'pixi.js';
+import { AnimatedSprite, Container, Texture } from 'pixi.js';
 import { Placement, RIDE_PLATFORMS, footprint, furnitureDef, tileToScreen } from '@dovey/shared';
 import { atlas } from './atlas';
-import { lidSequence } from './casinoPixels';
+import { holoLockSequence, lidSequence } from './casinoPixels';
 
 /** each lid-swing frame shows this long (3 frames ~ 200 ms) */
 const LID_STEP_MS = 70;
@@ -9,24 +9,13 @@ const LID_STEP_MS = 70;
 /** Animation speed: frames per second for looping items. */
 const FPS: Record<number, number> = { 4: 3, 6: 6, 8: 8, 12: 8 };
 
-/** The holodice's exact result, floated above the die (the art only shows a colour band). */
-const NUMBER_STYLE = new TextStyle({
-  fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-  fontSize: 13,
-  fontWeight: '800',
-  fill: 0xfff4c2,
-  stroke: { color: 0x2a1a3a, width: 3 },
-});
-
 /**
  * One placed furniture item, drawn from the baked atlas. Animated items play
  * their frame strip; on/off swaps to the other strip.
  */
 export class FurnitureSprite extends Container {
   private sprite = new AnimatedSprite([Texture.EMPTY]);
-  private number: Text | null = null;
-  private topY = -40;
-  /** state key shown instead of placement.state while the lid swings */
+  /** state key shown instead of placement.state while the lid swings or the hologram locks in */
   private lidKey: string | null = null;
   private lidTimer: ReturnType<typeof setTimeout> | null = null;
   placement: Placement;
@@ -47,7 +36,8 @@ export class FurnitureSprite extends Container {
     const from = this.placement.state ?? '';
     this.placement = p;
     this.lit = p.on ?? true;
-    const seq = changed && furnitureDef(p.def)?.kind === 'dicemaster' ? lidSequence(from, p.state ?? '') : null;
+    const kind = changed ? furnitureDef(p.def)?.kind : undefined;
+    const seq = kind === 'dicemaster' ? lidSequence(from, p.state ?? '') : kind === 'holodice' ? holoLockSequence(from, p.state ?? '') : null;
     if (seq) this.playLid(seq);
     else if (changed) {
       this.stopLid();
@@ -56,7 +46,7 @@ export class FurnitureSprite extends Container {
     else this.place();
   }
 
-  /** swings the dicemaster lid through `keys`, then settles on the real state */
+  /** plays client-only state keys (dicemaster lid swing, holodice lock-in), then settles on the real state */
   private playLid(keys: readonly string[]) {
     this.stopLid();
     let i = 0;
@@ -105,45 +95,20 @@ export class FurnitureSprite extends Container {
     this.zIndex = d.walkable || RIDE_PLATFORMS.has(d.id) ?-1000 + this.placement.x + this.placement.y : this.placement.x + w + this.placement.y + h - 1.5;
   }
 
-  /** Exact number for dice100 defs; hidden while closed ('0') or rolling ('-1'). */
-  private updateNumber() {
-    const d = furnitureDef(this.placement.def);
-    const n = Number(this.placement.state ?? '');
-    const show = d?.interaction === 'dice100' && Number.isInteger(n) && n >= 1 && n <= 100;
-    if (!show) {
-      if (this.number) this.number.visible = false;
-      return;
-    }
-    if (!this.number) {
-      this.number = new Text({ text: '', style: NUMBER_STYLE });
-      this.number.anchor.set(0.5, 1);
-      this.number.resolution = 2;
-      this.addChild(this.number);
-    }
-    this.number.text = String(n);
-    this.number.position.set(0, this.topY - 2);
-    this.number.visible = true;
-  }
-
   redraw() {
     const d = furnitureDef(this.placement.def);
-    if (!d || !atlas.ready) {
-      this.updateNumber();
-      return;
-    }
+    if (!d || !atlas.ready) return;
     const set = atlas.frames(d, this.placement.rot, this.lit, this.lidKey ?? this.placement.state ?? '');
     this.sprite.textures = set.textures;
     this.sprite.position.set(set.offsetX, set.offsetY);
-    this.topY = set.offsetY;
     if (set.textures.length > 1) {
-      this.sprite.animationSpeed = (FPS[d.anim] ?? 6) / 60;
+      this.sprite.animationSpeed = (set.fps ?? FPS[d.anim] ?? 6) / 60;
       // desync loops so a row of lamps doesn't flicker in lockstep
       this.sprite.gotoAndPlay(Math.floor(Math.random() * set.textures.length));
     } else {
       this.sprite.stop();
       this.sprite.gotoAndStop(0);
     }
-    this.updateNumber();
     this.place();
   }
 }

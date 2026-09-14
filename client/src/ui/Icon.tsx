@@ -13,6 +13,7 @@ export type IconName =
   | 'dice'
   | 'tree'
   | 'home'
+  | 'friends'
   | 'pencil';
 
 const PATHS: Record<IconName, JSX.Element> = {
@@ -73,6 +74,14 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M3.5 11 12 3.5l8.5 7.5" />
       <path d="M5.5 9.5v11h13v-11M10 20.5V15h4v5.5" />
+    </>
+  ),
+  friends: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 19.5c.6-3.3 3-5 6-5s5.4 1.7 6 5" />
+      <circle cx="17" cy="9" r="2.6" />
+      <path d="M15.5 14.6c2.6.1 4.6 1.6 5.2 4.4" />
     </>
   ),
   pencil: <path d="M15.5 4.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />,

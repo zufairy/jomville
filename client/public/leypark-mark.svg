@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Leypark">
+  <title>Leypark</title>
+  <defs>
+    <linearGradient id="lk-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a" />
+      <stop offset="0.55" stop-color="#f4b73c" />
+      <stop offset="1" stop-color="#d98a1c" />
+    </linearGradient>
+  </defs>
+  <!-- wau bulan: pointed head, swept wings, crescent-moon tail -->
+  <g fill="url(#lk-gold)" stroke="#4a1631" stroke-width="1.6" stroke-linejoin="round">
+    <path d="M32 3C36.5 8 38.5 13.5 36 19.5L32 22.5L28 19.5C25.5 13.5 27.5 8 32 3Z" />
+    <path d="M32 19.5C24 17 13.5 17.5 4.5 24C11 25 17.5 28 21.5 32.5C25.5 33.5 29 35.5 32 38C35 35.5 38.5 33.5 42.5 32.5C46.5 28 53 25 59.5 24C50.5 17.5 40 17 32 19.5Z" />
+    <path d="M29.6 36.5C30.6 40.5 30.6 44.5 29.8 48.5L34.2 48.5C33.4 44.5 33.4 40.5 34.4 36.5Z" />
+    <path d="M7 43.5C12.5 52.5 21 57 32 57C43 57 51.5 52.5 57 43.5C58.5 54 47.5 61.5 32 61.5C16.5 61.5 5.5 54 7 43.5Z" />
+  </g>
+  <!-- bunga raya at the heart of the kite -->
+  <g transform="translate(32 28.5)">
+    <g fill="#e8384f" stroke="#4a1631" stroke-width="0.8">
+      <circle cx="0" cy="-3.6" r="3.1" />
+      <circle cx="3.4" cy="-1.1" r="3.1" />
+      <circle cx="2.1" cy="2.9" r="3.1" />
+      <circle cx="-2.1" cy="2.9" r="3.1" />
+      <circle cx="-3.4" cy="-1.1" r="3.1" />
+    </g>
+    <circle r="1.6" fill="#ffe08a" />
+  </g>
+</svg>

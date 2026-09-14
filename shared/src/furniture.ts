@@ -145,7 +145,17 @@ export type FurnitureKind =
   | 'casino_carpet'
   | 'neon_casino'
   | 'slot_prop'
-  | 'velvet_rope_gold';
+  | 'velvet_rope_gold'
+  // trading room
+  | 'egg_stack_2'
+  | 'egg_stack_3'
+  | 'egg_wall'
+  | 'gold_patch'
+  | 'leaf_hedge'
+  | 'palm_planter'
+  | 'gold_rail'
+  | 'trade_sofa'
+  | 'trading_banner';
 
 export const FURNITURE_CATS = ['seating', 'tables', 'lights', 'fun', 'outdoor', 'decor', 'floor', 'casino'] as const;
 export type FurnitureCat = (typeof FURNITURE_CATS)[number];
@@ -404,7 +414,7 @@ export const FURNITURE: FurnitureDef[] = [
   def('dicemaster', 'Dicemaster', 'dicemaster', 'casino', 1, 1, 26, [1, 0], 8000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice6', blurb: 'A honey-gold dice chest on a carved stand. Crack the lid and let fate pick a face.' }),
   def('holodice', 'Holodice', 'holodice', 'casino', 1, 1, 34, [9, 13], 15000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice100', blurb: 'A glass cube that hums on a gold pedestal and glows as it rolls anywhere from 1 to 100.' }),
   def('wheel_fortune', 'Wheel of Fortune', 'wheel_fortune', 'casino', 2, 1, 96, [5, 24], 25000, { use: true, anim: 12, rarity: 'epic', interaction: 'wheel', ltd: 100, blurb: 'Eight lacquered segments, a ring of bulbs and one very dramatic spin.' }),
-  def('dragon_egg', 'Dragon Egg', 'dragon_egg', 'casino', 1, 1, 30, [14, 24], 75000, { anim: 8, rarity: 'epic', ltd: 50, blurb: 'Warm to the touch and softly glowing. Nobody knows when it will hatch.' }),
+  def('dragon_egg', 'Dragon Egg', 'dragon_egg', 'casino', 1, 1, 60, [14, 24], 75000, { anim: 12, rarity: 'epic', ltd: 50, blurb: 'Green scales, gold speckles, a slow warm glow. Nobody knows when it will hatch.' }),
   def('throne_gold', 'Golden Throne', 'throne', 'casino', 1, 1, 58, [24, 5], 50000, { sit: true, anim: 8, rarity: 'epic', ltd: 100, blurb: 'Gilded, velvet-lined and entirely unnecessary. Sit like you own the casino.' }),
   def('felt_table', 'casino felt table', 'felt_table', 'casino', 2, 1, 20, [15, 19], 900, { blurb: 'Green felt, gold rail, a couple of chips left behind. The house always sets the table.' }),
   def('chip_stack', 'chip stack', 'chip_stack', 'casino', 1, 1, 18, [5, 24], 300, { blurb: 'A tidy tower of chips. Purely decorative, sadly.' }),
@@ -412,6 +422,16 @@ export const FURNITURE: FurnitureDef[] = [
   def('neon_casino', 'CASINO neon', 'neon_casino', 'casino', 3, 1, 96, [5, 24], 2000, { walkable: true, anim: 8, rarity: 'rare', blurb: 'Six glowing letters and a rail of chasing bulbs. The party starts here.' }),
   def('slot_prop', 'slot machine prop', 'slot_prop', 'casino', 1, 1, 64, [5, 24], 1500, { use: true, anim: 8, rarity: 'rare', blurb: 'A cherry-red one-armed bandit with spinning reels. Pull the lever, keep your coins.' }),
   def('velvet_rope_gold', 'gold velvet rope', 'velvet_rope_gold', 'casino', 1, 1, 34, [24, 5], 400, { blurb: 'Brass post, red rope. VIPs only, obviously.' }),
+  // ---- trading room set (spec 2026-09-14)
+  def('egg_stack_2', 'Egg Stack ×2', 'egg_stack_2', 'casino', 1, 1, 60, [14, 5], 150000, { anim: 12, rarity: 'epic', ltd: 30, blurb: 'A dragon egg with a ruby egg balanced on top, nested in a gold cradle. Twice the hatching, twice the bragging.' }),
+  def('egg_stack_3', 'Egg Stack ×3', 'egg_stack_3', 'casino', 1, 1, 96, [14, 24], 250000, { anim: 12, rarity: 'epic', ltd: 15, blurb: 'Emerald, ruby and sapphire eggs in a gold tower, crowned. Only fifteen were ever laid.' }),
+  def('egg_wall', 'Egg Wall', 'egg_wall', 'casino', 2, 1, 48, [14, 5], 40000, { rarity: 'rare', blurb: 'Rows of speckled eggs on a gold-trimmed marble base. Line them up edge to edge for a wall that never ends.' }),
+  def('gold_patch', 'Gold Patch', 'gold_patch', 'casino', 1, 1, 0, [5, 24], 500, { walkable: true, blurb: 'Engraved gold floor plate. Lay a few and the whole room feels richer.' }),
+  def('leaf_hedge', 'Leaf Hedge', 'leaf_hedge', 'casino', 1, 1, 40, [15, 5], 900, { blurb: 'A crisply trimmed hedge in a gold planter. Keeps the riff-raff on the carpet.' }),
+  def('palm_planter', 'Palm Planter', 'palm_planter', 'casino', 1, 1, 90, [15, 24], 1200, { blurb: 'A tall palm in a polished brass pot. Instant high-roller holiday.' }),
+  def('gold_rail', 'Gold Rail', 'gold_rail', 'casino', 1, 1, 36, [24, 5], 400, { blurb: 'A short gold post with a velvet top. Line them up to fence off the good stuff.' }),
+  def('trade_sofa', 'Trade Sofa', 'trade_sofa', 'casino', 2, 1, 44, [5, 24], 2000, { sit: true, blurb: 'Red velvet on little gold feet. The comfiest place to haggle.' }),
+  def('trading_banner', 'Trading Room Banner', 'trading_banner', 'casino', 2, 1, 96, [5, 24], 2500, { walkable: true, anim: 8, rarity: 'rare', blurb: 'A gold TRADING ROOM banner with an egg crest. Hang it on the back wall and open for business.' }),
 ];
 
 /** Rides whose platform lies flat under the vehicles drawn on top of it. */
