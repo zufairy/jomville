@@ -60,6 +60,7 @@ import { bindLoveSender, love } from '../love';
 import { bindTableSender, useTables } from '../tableGames';
 import { bindTradeSender, useTrade } from '../trade';
 import { bindFriendSender, useFriends } from '../friends';
+import { bindFriendCallSender, friendCall } from '../friendCall';
 import { useAppStore } from '../store';
 
 function waitForActivation(): Promise<void> {
@@ -208,6 +209,8 @@ export class Game {
     bindTradeSender((type, data) => this.net.send(type, data));
     bindFriendSender((type, data) => this.net.send(type, data));
     void loadIce();
+    bindFriendCallSender((type, data) => this.net.send(type, data));
+    friendCall.install();
     this.calls.onVibe = (v) => {
       if (this.theme === 'love') love.vibe(v);
     };
@@ -349,6 +352,7 @@ export class Game {
           this.ensureSelf();
           this.voice.rejoin();
           void useFriends.getState().load();
+          friendCall.resume();
         },
         onVoiceSignal: (from, data) => void this.voice.onSignal(from, data as VoiceSignal),
         onVoiceDrop: (id) => this.voice.drop(id),
