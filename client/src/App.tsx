@@ -14,6 +14,8 @@ import { ShopSheet } from './ui/ShopSheet';
 import { StyleSheet } from './ui/StyleSheet';
 import { DuelUI } from './ui/DuelUI';
 import { TableGameUI } from './ui/TableGameUI';
+import { KitchenLobby } from './ui/KitchenLobby';
+import { KitchenRoundUI } from './ui/KitchenRound';
 import { Landing } from './ui/Landing';
 import { Onboarding } from './ui/Onboarding';
 import { VendingSheet } from './ui/VendingSheet';
@@ -115,6 +117,8 @@ function Play() {
       <CallUI />
       <DuelUI />
       <TableGameUI />
+      <KitchenLobby />
+      <KitchenRoundUI />
       <VendingSheet />
       {needsOnboarding && <Onboarding />}
       {profile ? (

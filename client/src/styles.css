@@ -2022,3 +2022,36 @@ html, body, #root {
   outline: none;
   margin-bottom: 10px;
 }
+
+/* ---- co-op kitchen: world lobby card */
+.kl { position: absolute; top: 72px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 16px; background: #fff8ec; border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 3px 0 var(--ink); font-weight: 700; font-size: 13px; max-width: calc(100vw - 32px); text-align: center; }
+.kl small { opacity: 0.6; font-size: 11px; }
+.kl__code { font-family: ui-monospace, monospace; letter-spacing: 2px; background: var(--accent); color: #fff; padding: 1px 6px; border-radius: 6px; }
+.kl__join { display: flex; gap: 6px; }
+.kl__join input { width: 72px; font: inherit; font-family: ui-monospace, monospace; letter-spacing: 2px; text-align: center; border: 2px solid var(--ink); border-radius: 8px; padding: 4px; }
+
+/* ---- co-op kitchen: round */
+.kr { position: fixed; inset: 0; z-index: 200; background: #2b2233; touch-action: none; user-select: none; -webkit-user-select: none; }
+.kr__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.kr-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 10px 16px; pointer-events: none; }
+.kr-orders { display: flex; gap: 6px; flex-wrap: wrap; }
+.kr-order { position: relative; min-width: 92px; padding: 6px 8px 10px; background: #fff; border: 3px solid var(--ink); border-radius: 10px; font-weight: 800; font-size: 12px; overflow: hidden; }
+.kr-order i { position: absolute; left: 0; bottom: 0; height: 5px; background: #58c98b; transition: width 0.25s linear; }
+.kr-order--late i { background: #ff3b30; }
+.kr-order--late { animation: kr-shake 0.5s infinite; }
+@keyframes kr-shake { 50% { transform: translateX(2px); } }
+.kr-stats { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 900; font-size: 20px; pointer-events: auto; }
+.kr-stats em { font-style: normal; color: #f5c542; }
+.kr-leave { background: #fff; border: 2px solid var(--ink); border-radius: 8px; font-weight: 900; cursor: pointer; }
+.kr-note { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 6px 14px; border-radius: 999px; font-weight: 800; pointer-events: none; }
+.kr-note--pop { animation: kr-pop 0.25s ease-out; }
+@keyframes kr-pop { from { transform: translate(-50%, 8px) scale(0.9); opacity: 0; } }
+.kr-touch { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; }
+.kr-stick { width: 120px; height: 120px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 3px solid rgba(255, 255, 255, 0.5); display: grid; place-items: center; pointer-events: auto; touch-action: none; }
+.kr-stick i { width: 52px; height: 52px; border-radius: 50%; background: #fff; }
+.kr-btns { display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
+.kr-btn { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--ink); background: #fff; font-weight: 900; touch-action: none; }
+.kr-btn--big { width: 84px; height: 84px; background: var(--accent); color: #fff; }
+.kr-result { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); padding: 0 16px; }
+.kr-result__card { background: #fff8ec; border: 3px solid var(--ink); border-radius: 18px; padding: 18px 22px; text-align: center; font-weight: 700; max-width: 100%; }
+.kr-stars { font-size: 40px; color: #f5c542; margin: 4px 0; }

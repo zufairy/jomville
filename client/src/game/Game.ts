@@ -1236,6 +1236,12 @@ export class Game {
     return out;
   }
 
+  /** stop rendering the world while a full-screen minigame covers it */
+  setPaused(paused: boolean) {
+    if (paused) this.app.ticker?.stop();
+    else this.app.ticker?.start();
+  }
+
   destroy() {
     if (this.disposed) return;
     this.disposed = true;
