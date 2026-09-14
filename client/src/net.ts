@@ -7,6 +7,7 @@ import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, onFriendUpdate } from './friends';
 import { fetchInventory } from './api';
+import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
 
 export interface RemotePlayer {
@@ -251,6 +252,10 @@ export class Net {
     room.onMessage('friend_invite_sent', onFriendInviteSent);
     room.onMessage('k_crew', (m: { crew: CrewInfo | null }) => useKitchen.getState().setCrew(m.crew));
     room.onMessage('k_go', (m: { roomId: string }) => useKitchen.getState().go(m.roomId));
+    room.onMessage('t_incoming', onTradeIncoming);
+    room.onMessage('t_waiting', onTradeWaiting);
+    room.onMessage('t_state', onTradeState);
+    room.onMessage('t_done', onTradeDone);
 
     room.onMessage('coins', (m: { coins: number; earned: number }) => events.onCoins(m.coins, m.earned));
     room.onMessage('inventory_delta', (m: { def: string; delta: number }) => store.addInventory(m.def, m.delta));
@@ -294,10 +299,21 @@ export class Net {
         love_full: 'that line is full, try again soon',
         love_busy: 'you are already on the loveseat',
         sold_out: 'sold out. only trades now',
+        trade_busy: 'they are already trading',
+        too_new: 'trading unlocks after 24 hours and 30 minutes of play',
+        trade_off: 'trading is turned off in this room',
+        no_trade: 'no trade going on',
+        bad_offer: 'that offer is not allowed',
+        insufficient_coins: 'you do not have that many coins',
+        insufficient_items: 'you do not have that many',
+        too_early: 'wait for the countdown',
+        not_accepted: 'both of you need to accept first',
+        trade_locked: 'the trade is already going through',
         not_friends: 'you can only invite friends',
         friend_offline: 'they went offline',
       };
       store.flash(msgs[m.code] ?? 'nope');
+      onTradeSys(m.code);
       // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray
       const rollback = new Set(['not_owned', 'bad_request', 'overlap', 'out_of_bounds', 'room_full', 'bad_rot', 'bad_coords', 'unknown_def', 'rate_limited', 'not_owner']);
       if (rollback.has(m.code)) refreshInventory();
