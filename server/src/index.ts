@@ -10,6 +10,8 @@ import { KitchenRoom } from './kitchen/KitchenRoom';
 import { openDb } from './db';
 import { Repo } from './repo';
 import { buildApi } from './api';
+import { presence } from './social';
+import { friendCalls, startFriendCallSweep } from './social-calls';
 
 // system rooms carry ~700 furniture entries; the 8KB default truncates the encoded state
 Encoder.BUFFER_SIZE = 512 * 1024;
@@ -64,6 +66,17 @@ async function main() {
   if (orphans > 0) console.log(`[casino] released ${orphans} placed item(s) missing from their room layout`);
   await repo.pruneRolls();
   setInterval(() => void repo.pruneRolls(), 24 * 60 * 60 * 1000).unref();
+
+  friendCalls.bind({
+    areFriends: (a, b) => repo.areFriends(a, b),
+    blockPairs: (id) => repo.blockPairs(id),
+    isOnline: (id) => presence.isOnline(id),
+    notify: (id, type, payload) => presence.notify(id, type, payload),
+    notifySession: (id, sid, type, payload) => presence.notifySession(id, sid, type, payload),
+    sessions: (id) => presence.sessions(id),
+    report: (reporter, target, room, reason, context) => repo.report(reporter, target, room, reason, context),
+  });
+  startFriendCallSweep(friendCalls);
 
   const app = buildApi(repo);
   app.disable('x-powered-by');
