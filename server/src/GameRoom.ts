@@ -899,6 +899,7 @@ export class GameRoom extends Room<WorldState> {
 
   private sendTableState(m: Match) {
     const names = m.players.map((id) => (isBot(id) ? 'Dovey Bot' : this.handleOf(id)));
+    const seats = m.players.map((id) => (isBot(id) ? '' : id));
     const now = Date.now();
     m.players.forEach((id, seat) => {
       if (isBot(id)) return;
@@ -909,6 +910,7 @@ export class GameRoom extends Room<WorldState> {
           kind: m.kind,
           you: seat,
           names,
+          seats,
           state: m.state,
           turnLeft: Math.max(0, m.deadline - now),
           rematch: m.rematch,
