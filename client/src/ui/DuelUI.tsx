@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useAppStore } from '../store';
 import { VipModal } from './VipModal';
 import { PlayersVs } from './PlayerVsCard';
@@ -10,6 +11,12 @@ export function DuelUI() {
   const duel = useAppStore((s) => s.duel);
   const actions = useAppStore((s) => s.actions);
   const sessionId = useAppStore((s) => s.sessionId);
+  // temporary until the arena lands (Task 14): advance after a fixed pause
+  useEffect(() => {
+    if (duel.phase !== 'reveal') return;
+    const t = setTimeout(() => actions?.duelRevealDone(), 1600);
+    return () => clearTimeout(t);
+  }, [duel.phase, duel.round, actions]);
   if (duel.phase === 'idle') return null;
   const me = duel.you === 'a' ? 0 : 1;
   const them = 1 - me;

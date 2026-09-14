@@ -20,6 +20,17 @@ export interface RemotePlayer {
   voice: boolean;
 }
 
+export interface DuelRoundMsg {
+  winner: 'a' | 'b' | 'draw';
+  picks: [number, number];
+  score: [number, number];
+  done: boolean;
+  /** coins each side put in */
+  stake: number;
+  /** what the winner takes: 2 × stake */
+  pot: number;
+}
+
 export interface NetEvents {
   /** the connection dropped; forget everything from the old session before rejoining */
   onReset: () => void;
@@ -48,10 +59,11 @@ export interface NetEvents {
   onCoins: (coins: number, earned: number) => void;
   onRoomStyle: (style: RoomStyle) => void;
   onVendResult: (r: unknown) => void;
-  onDuelIncoming: (from: string, handle: string) => void;
-  onDuelStart: (peer: string, handle: string, you: 'a' | 'b') => void;
-  onDuelRound: (r: { winner: 'a' | 'b' | 'draw'; picks: [number, number]; score: [number, number]; done: boolean }) => void;
-  onDuelEnd: (reason: string) => void;
+  onDuelIncoming: (from: string, handle: string, stake: number) => void;
+  onDuelStart: (peer: string, handle: string, you: 'a' | 'b', stake: number) => void;
+  onDuelRound: (r: DuelRoundMsg) => void;
+  /** `pot` = coins credited to you because of this ending (0 when none) */
+  onDuelEnd: (reason: string, pot: number) => void;
   onMazeWin: (id: string, handle: string, reward: number) => void;
 }
 
@@ -224,12 +236,12 @@ export class Net {
     $(room.state).furniture.onRemove((_f: FurnitureState, id: string) => events.onFurnitureRemove(id));
 
     room.onMessage('vend_result', (r: unknown) => events.onVendResult(r));
-    room.onMessage('duel_incoming', (m: { from: string; handle: string }) => events.onDuelIncoming(m.from, m.handle));
+    room.onMessage('duel_incoming', (m: { from: string; handle: string; stake?: number }) => events.onDuelIncoming(m.from, m.handle, m.stake ?? 0));
     room.onMessage('duel_ringing', () => {});
     room.onMessage('duel_wait', () => {});
-    room.onMessage('duel_start', (m: { peer: string; handle: string; you: 'a' | 'b' }) => events.onDuelStart(m.peer, m.handle, m.you));
-    room.onMessage('duel_round', (m: { winner: 'a' | 'b' | 'draw'; picks: [number, number]; score: [number, number]; done: boolean }) => events.onDuelRound(m));
-    room.onMessage('duel_end', (m: { reason: string }) => events.onDuelEnd(m.reason));
+    room.onMessage('duel_start', (m: { peer: string; handle: string; you: 'a' | 'b'; stake?: number }) => events.onDuelStart(m.peer, m.handle, m.you, m.stake ?? 0));
+    room.onMessage('duel_round', (m: DuelRoundMsg) => events.onDuelRound({ ...m, stake: m.stake ?? 0, pot: m.pot ?? 0 }));
+    room.onMessage('duel_end', (m: { reason: string; pot?: number }) => events.onDuelEnd(m.reason, m.pot ?? 0));
     room.onMessage('duel_over', () => {});
     room.onMessage('maze_win', (m: { id: string; handle: string; reward: number }) => events.onMazeWin(m.id, m.handle, m.reward));
     room.onMessage('love', (m: import('@dovey/shared').LoveSnapshot) => useLove.getState().set(m));
@@ -294,6 +306,8 @@ export class Net {
         love_full: 'that line is full, try again soon',
         love_busy: 'you are already on the loveseat',
         sold_out: 'sold out. only trades now',
+        bot_no_stake: 'locals only duel for fun, no stakes',
+        not_enough_coins: 'not enough coins',
         not_friends: 'you can only invite friends',
         friend_offline: 'they went offline',
       };

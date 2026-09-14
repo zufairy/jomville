@@ -13,9 +13,29 @@ export interface DuelInfo {
   round: number;
   myPick: 0 | 1 | 2 | null;
   last: { picks: [number, number]; winner: 'a' | 'b' | 'draw' } | null;
+  /** at the end: true won, false lost, null draw */
   won: boolean | null;
+  /** coins each side put in; 0 = free duel */
+  stake: number;
+  /** the round on show ended the duel: the result screen follows its reveal */
+  done: boolean;
+  /** how it ended: by score, or the other side walked out */
+  endedBy: 'score' | 'forfeit' | null;
 }
-export const IDLE_DUEL: DuelInfo = { phase: 'idle', peer: '', handle: '', you: 'a', score: [0, 0], round: 1, myPick: null, last: null, won: null };
+export const IDLE_DUEL: DuelInfo = {
+  phase: 'idle',
+  peer: '',
+  handle: '',
+  you: 'a',
+  score: [0, 0],
+  round: 1,
+  myPick: null,
+  last: null,
+  won: null,
+  stake: 0,
+  done: false,
+  endedBy: null,
+};
 import type { Me } from './api';
 
 const AVATAR_KEY = 'dovey.avatar';
@@ -56,7 +76,9 @@ export interface GameActions {
   /** proximity voice: open or close my mic for people nearby */
   toggleVoice: () => void;
   /** duels */
-  duelInvite: (peer: string, handle: string) => void;
+  duelInvite: (peer: string, handle: string, stake: number) => void;
+  /** the reveal animation finished: next pick, or the result screen */
+  duelRevealDone: () => void;
   duelAccept: () => void;
   duelDecline: () => void;
   duelPick: (pick: 0 | 1 | 2) => void;

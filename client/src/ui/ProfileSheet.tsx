@@ -136,7 +136,7 @@ export function ProfileSheet() {
               className="btn btn--duel"
               disabled={duel.phase !== 'idle'}
               onClick={() => {
-                actions?.duelInvite(sessionId, handle);
+                actions?.duelInvite(sessionId, handle, 0);
                 close();
               }}
             >
