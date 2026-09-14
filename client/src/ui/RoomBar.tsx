@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ROOM_CATEGORIES, ROOM_NAME_MAX } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { fetchRandomRoom } from '../api';
-import { goToRoom } from '../router';
+import { LEADERBOARDS_URL, goToRoom } from '../router';
 import { Icon } from './Icon';
 
 export function RoomBar() {
@@ -120,6 +120,9 @@ export function RoomBar() {
         </button>
         <button className="hud__btn" onClick={share} aria-label="share room link" title="share room link">
           <Icon name="share" />
+        </button>
+        <button className="hud__btn" onClick={() => location.assign(LEADERBOARDS_URL)} aria-label="leaderboards" title="Ranking">
+          <Icon name="trophy" />
         </button>
         <i className="tray__sep" />
         <button
