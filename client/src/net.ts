@@ -5,6 +5,7 @@ import { deviceToken } from './identity';
 import { useLove } from './love';
 import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
+import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, onFriendUpdate } from './friends';
 import { fetchInventory } from './api';
 import { CrewInfo, useKitchen } from './kitchen/store';
 
@@ -243,6 +244,11 @@ export class Net {
     room.onMessage('tg_state', onTableState);
     room.onMessage('tg_status', onTableStatus);
     room.onMessage('tg_end', onTableEnd);
+    room.onMessage('friend_request', onFriendRequest);
+    room.onMessage('friend_update', onFriendUpdate);
+    room.onMessage('friend_presence', onFriendPresence);
+    room.onMessage('friend_invite', onFriendInvite);
+    room.onMessage('friend_invite_sent', onFriendInviteSent);
     room.onMessage('k_crew', (m: { crew: CrewInfo | null }) => useKitchen.getState().setCrew(m.crew));
     room.onMessage('k_go', (m: { roomId: string }) => useKitchen.getState().go(m.roomId));
 
@@ -288,6 +294,8 @@ export class Net {
         love_full: 'that line is full, try again soon',
         love_busy: 'you are already on the loveseat',
         sold_out: 'sold out. only trades now',
+        not_friends: 'you can only invite friends',
+        friend_offline: 'they went offline',
       };
       store.flash(msgs[m.code] ?? 'nope');
       // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray

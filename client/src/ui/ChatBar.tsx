@@ -16,7 +16,9 @@ export function ChatBar() {
     actions.say(t);
     setText('');
     setChatHistoryOpen(false);
-    inputRef.current?.focus();
+    // on touch devices drop focus so the keyboard closes; on desktop keep typing
+    if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) inputRef.current?.blur();
+    else inputRef.current?.focus();
   };
 
   return (

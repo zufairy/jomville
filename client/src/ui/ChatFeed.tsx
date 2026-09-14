@@ -30,11 +30,19 @@ export function ChatFeed() {
 
   const visible = historyOpen ? chatLog.slice(-HISTORY_COUNT) : chatLog.slice(-COMPACT_COUNT).filter((l) => now - l.at < LINE_TTL_MS);
 
-  if (visible.length === 0) return null;
+  return (
+    <>
+      {/* full-width black fade behind the feed; stays mounted so it can fade out */}
+      <div className={`chatfeed-shade ${visible.length > 0 ? 'chatfeed-shade--on' : ''}`} aria-hidden />
+      {visible.length > 0 && <Lines lines={visible} now={now} historyOpen={historyOpen} />}
+    </>
+  );
+}
 
+function Lines({ lines, now, historyOpen }: { lines: ReturnType<typeof useAppStore.getState>['chatLog']; now: number; historyOpen: boolean }) {
   return (
     <div className={`chatfeed ${historyOpen ? 'chatfeed--history' : ''}`}>
-      {visible.map((line) => {
+      {lines.map((line) => {
         const age = now - line.at;
         const fadeStart = LINE_TTL_MS - FADE_MS;
         const opacity = historyOpen || age < fadeStart ? 1 : Math.max(0, 1 - (age - fadeStart) / FADE_MS);

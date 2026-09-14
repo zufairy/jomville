@@ -3,6 +3,7 @@ import { attachGame, detachGame } from './game/instance';
 import { useAppStore } from './store';
 import { ChatBar } from './ui/ChatBar';
 import { ChatFeed } from './ui/ChatFeed';
+import { ItemInfo } from './ui/ItemInfo';
 import { EmoteWheel } from './ui/EmoteWheel';
 import { Customizer } from './ui/Customizer';
 import { BuildBar } from './ui/BuildBar';
@@ -22,6 +23,9 @@ import { Onboarding } from './ui/Onboarding';
 import { VendingSheet } from './ui/VendingSheet';
 import { CoinIcon, Icon } from './ui/Icon';
 import { routeFromPath } from './router';
+import { useFriends } from './friends';
+import { FriendsSheet } from './ui/FriendsSheet';
+import { FriendInvitePopup } from './ui/FriendInvitePopup';
 
 const ROUTE = routeFromPath();
 /** credits pill is hidden until the economy is ready to show */
@@ -52,6 +56,8 @@ function Play() {
   const actions = useAppStore((s) => s.actions);
   const cameraFree = useAppStore((s) => s.cameraFree);
   const needsOnboarding = !!me && !me.onboarded;
+  const friendsOpen = useFriends((s) => s.open);
+  const incomingFriends = useFriends((s) => s.incoming.length);
 
   useEffect(() => {
     const el = ref.current;
@@ -99,6 +105,15 @@ function Play() {
           >
             <Icon name="bag" />
           </button>
+          <button
+            className={`hud__btn ${friendsOpen ? 'hud__btn--on' : ''}`}
+            onClick={() => useFriends.getState().setOpen(!friendsOpen)}
+            aria-label={incomingFriends ? `friends, ${incomingFriends} requests` : 'friends'}
+            title="friends"
+          >
+            <Icon name="friends" />
+            {incomingFriends > 0 && <span className="hud__badge">{incomingFriends}</span>}
+          </button>
           {room?.isOwner && (
             <button
               className={`hud__btn ${edit.on ? 'hud__btn--on' : ''}`}
@@ -132,9 +147,12 @@ function Play() {
       <KitchenLobby />
       <KitchenRoundUI />
       <VendingSheet />
+      <FriendInvitePopup />
       {needsOnboarding && <Onboarding />}
       {profile ? (
         <ProfileSheet />
+      ) : friendsOpen ? (
+        <FriendsSheet />
       ) : shopping ? (
         <ShopSheet />
       ) : styling ? (
@@ -149,6 +167,7 @@ function Play() {
         <div className="bottom">
           <div className="bottom__stack">
             <ChatFeed />
+            <ItemInfo />
             <ChatBar />
           </div>
           <EmoteWheel />

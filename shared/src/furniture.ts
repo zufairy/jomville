@@ -179,6 +179,8 @@ export interface FurnitureDef {
   ltd?: number;
   /** chance furni behaviour on use (dice, wheel) */
   interaction?: InteractionKind;
+  /** short flavour text for the item info window */
+  blurb?: string;
 }
 
 interface Opts {
@@ -189,6 +191,7 @@ interface Opts {
   rarity?: Rarity;
   ltd?: number;
   interaction?: InteractionKind;
+  blurb?: string;
 }
 
 const def = (
@@ -219,6 +222,7 @@ const def = (
   rarity: o.rarity ?? 'common',
   ...(o.ltd ? { ltd: o.ltd } : {}),
   ...(o.interaction ? { interaction: o.interaction } : {}),
+  ...(o.blurb ? { blurb: o.blurb } : {}),
 });
 
 /**
@@ -397,17 +401,17 @@ export const FURNITURE: FurnitureDef[] = [
   def('scoreboard', 'scoreboard', 'wall_den', 'decor', 3, 1, 96, [28, 16], 0, { walkable: true, anim: 12, rarity: 'rare' }),
   def('dartboard', 'dartboard', 'wall_den', 'decor', 1, 1, 90, [5, 1], 120, { walkable: true, anim: 8 }),
   // ---- casino (spec 2026-09-14): expensive rares, chance furni tracked per item
-  def('dicemaster', 'Dicemaster', 'dicemaster', 'casino', 1, 1, 26, [1, 0], 8000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice6' }),
-  def('holodice', 'Holodice', 'holodice', 'casino', 1, 1, 34, [9, 13], 15000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice100' }),
-  def('wheel_fortune', 'Wheel of Fortune', 'wheel_fortune', 'casino', 2, 1, 96, [5, 24], 25000, { use: true, anim: 12, rarity: 'epic', interaction: 'wheel', ltd: 100 }),
-  def('dragon_egg', 'Dragon Egg', 'dragon_egg', 'casino', 1, 1, 30, [14, 24], 75000, { anim: 8, rarity: 'epic', ltd: 50 }),
-  def('throne_gold', 'Golden Throne', 'throne', 'casino', 1, 1, 58, [24, 5], 50000, { sit: true, anim: 8, rarity: 'epic', ltd: 100 }),
-  def('felt_table', 'casino felt table', 'felt_table', 'casino', 2, 1, 20, [15, 19], 900),
-  def('chip_stack', 'chip stack', 'chip_stack', 'casino', 1, 1, 18, [5, 24], 300),
-  def('casino_carpet', 'casino carpet', 'casino_carpet', 'casino', 1, 1, 0, [5, 24], 300, { walkable: true }),
-  def('neon_casino', 'CASINO neon', 'neon_casino', 'casino', 3, 1, 96, [5, 24], 2000, { walkable: true, anim: 8, rarity: 'rare' }),
-  def('slot_prop', 'slot machine prop', 'slot_prop', 'casino', 1, 1, 64, [5, 24], 1500, { use: true, anim: 8, rarity: 'rare' }),
-  def('velvet_rope_gold', 'gold velvet rope', 'velvet_rope_gold', 'casino', 1, 1, 34, [24, 5], 400),
+  def('dicemaster', 'Dicemaster', 'dicemaster', 'casino', 1, 1, 26, [1, 0], 8000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice6', blurb: 'A honey-gold dice chest on a carved stand. Crack the lid and let fate pick a face.' }),
+  def('holodice', 'Holodice', 'holodice', 'casino', 1, 1, 34, [9, 13], 15000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice100', blurb: 'A glass cube that hums on a gold pedestal and glows as it rolls anywhere from 1 to 100.' }),
+  def('wheel_fortune', 'Wheel of Fortune', 'wheel_fortune', 'casino', 2, 1, 96, [5, 24], 25000, { use: true, anim: 12, rarity: 'epic', interaction: 'wheel', ltd: 100, blurb: 'Eight lacquered segments, a ring of bulbs and one very dramatic spin.' }),
+  def('dragon_egg', 'Dragon Egg', 'dragon_egg', 'casino', 1, 1, 30, [14, 24], 75000, { anim: 8, rarity: 'epic', ltd: 50, blurb: 'Warm to the touch and softly glowing. Nobody knows when it will hatch.' }),
+  def('throne_gold', 'Golden Throne', 'throne', 'casino', 1, 1, 58, [24, 5], 50000, { sit: true, anim: 8, rarity: 'epic', ltd: 100, blurb: 'Gilded, velvet-lined and entirely unnecessary. Sit like you own the casino.' }),
+  def('felt_table', 'casino felt table', 'felt_table', 'casino', 2, 1, 20, [15, 19], 900, { blurb: 'Green felt, gold rail, a couple of chips left behind. The house always sets the table.' }),
+  def('chip_stack', 'chip stack', 'chip_stack', 'casino', 1, 1, 18, [5, 24], 300, { blurb: 'A tidy tower of chips. Purely decorative, sadly.' }),
+  def('casino_carpet', 'casino carpet', 'casino_carpet', 'casino', 1, 1, 0, [5, 24], 300, { walkable: true, blurb: 'Deep red carpet with gold diamonds, loud in the best way.' }),
+  def('neon_casino', 'CASINO neon', 'neon_casino', 'casino', 3, 1, 96, [5, 24], 2000, { walkable: true, anim: 8, rarity: 'rare', blurb: 'Six glowing letters and a rail of chasing bulbs. The party starts here.' }),
+  def('slot_prop', 'slot machine prop', 'slot_prop', 'casino', 1, 1, 64, [5, 24], 1500, { use: true, anim: 8, rarity: 'rare', blurb: 'A cherry-red one-armed bandit with spinning reels. Pull the lever, keep your coins.' }),
+  def('velvet_rope_gold', 'gold velvet rope', 'velvet_rope_gold', 'casino', 1, 1, 34, [24, 5], 400, { blurb: 'Brass post, red rope. VIPs only, obviously.' }),
 ];
 
 /** Rides whose platform lies flat under the vehicles drawn on top of it. */
@@ -421,6 +425,22 @@ export const STARTING_COINS = 1500;
 export const COINS_PER_MINUTE = 5;
 
 const BY_ID = new Map(FURNITURE.map((f) => [f.id, f]));
+
+const CAT_BLURB: Record<FurnitureCat, string> = {
+  seating: 'A cozy piece of seating.',
+  tables: 'A sturdy table to gather around.',
+  lights: 'A light to set the mood.',
+  fun: 'Something fun to play with.',
+  outdoor: 'A breath of fresh air for any room.',
+  decor: 'A decorative touch for your room.',
+  floor: 'Flooring to tie the room together.',
+  casino: 'A touch of casino glamour.',
+};
+
+/** the item's flavour text, or a simple line for its category */
+export function blurbFor(d: FurnitureDef): string {
+  return d.blurb ?? CAT_BLURB[d.cat];
+}
 
 export function furnitureDef(id: string): FurnitureDef | undefined {
   return BY_ID.get(id);

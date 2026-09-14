@@ -43,6 +43,7 @@ import type { Me } from '../api';
 import { CallManager, unlockAudio } from '../call';
 import { ProximityVoice, VoiceSignal } from '../voice';
 import { resolveTap } from './tapTarget';
+import { arrivalReady } from './useArrival';
 import { Fixtures } from './fixtures';
 import { WALL_HEIGHT } from './walls';
 import { claimDaily, fetchWardrobe } from '../api';
@@ -56,6 +57,7 @@ import { RIDE_SEAT_Z, seatPose } from './seats';
 import { BEACH_CRITTERS, DREAM_CRITTERS, WONDER_CRITTERS } from '@dovey/shared';
 import { bindLoveSender, love } from '../love';
 import { bindTableSender, useTables } from '../tableGames';
+import { bindFriendSender, useFriends } from '../friends';
 import { useAppStore } from '../store';
 
 function waitForActivation(): Promise<void> {
@@ -119,6 +121,8 @@ export class Game {
   /** walk to this item, then switch it */
   private pendingUse: string | null = null;
   private pendingClose = false;
+  /** when the local mover reached a pending use's tile (0 = still walking) */
+  private arrivedAt = 0;
   private downAt = 0;
   private rightDown = false;
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
@@ -199,6 +203,7 @@ export class Game {
     this.emotes = new EmotePool(this.fxLayer);
     bindLoveSender((type, data) => this.net.send(type, data));
     bindTableSender((type, data) => this.net.send(type, data));
+    bindFriendSender((type, data) => this.net.send(type, data));
     this.calls.onVibe = (v) => {
       if (this.theme === 'love') love.vibe(v);
     };
@@ -212,6 +217,10 @@ export class Game {
       undo: () => this.undoLast(),
       previewOf: (def) => atlas.preview(def),
       recenter: () => this.camera.follow(),
+      useFurniture: (id, close = false) => {
+        const f = this.furniture.get(id);
+        if (f) this.useItem(f.placement, close);
+      },
       callInvite: (peer, handle, video) => this.calls.invite(peer, handle, video),
       callAccept: () => this.calls.accept(),
       callDecline: () => this.calls.decline(),
@@ -334,6 +343,7 @@ export class Game {
         onJoined: () => {
           this.ensureSelf();
           this.voice.rejoin();
+          void useFriends.getState().load();
         },
         onVoiceSignal: (from, data) => void this.voice.onSignal(from, data as VoiceSignal),
         onVoiceDrop: (id) => this.voice.drop(id),
@@ -869,6 +879,9 @@ export class Game {
     if (action.kind === 'walk') this.walkTo(action.x, action.y);
     else if (action.kind === 'use') this.useItem(action.item, e.button === 2 || this.rightDown || performance.now() - this.downAt > 500);
     else if (action.kind === 'seat') this.walkOntoSeat(action.item);
+    // item info window: furniture taps select it, floor taps clear it
+    const picked = action.kind === 'use' || action.kind === 'seat' ? action.item : action.kind === 'none' ? placementAt(t.x, t.y, placements) : null;
+    useAppStore.getState().setSelectedItem(picked);
   }
 
   private walkTo(x: number, y: number) {
@@ -955,6 +968,7 @@ export class Game {
 
   private onFurnitureChange(p: Placement) {
     this.furniture.get(p.id)?.setPlacement(p);
+    if (useAppStore.getState().selectedItem === p.id) useAppStore.getState().setSelectedItem(p);
     this.rebuildGrid();
   }
 
@@ -964,6 +978,7 @@ export class Game {
     f.destroy({ children: true });
     this.furniture.delete(id);
     this.rebuildGrid();
+    if (useAppStore.getState().selectedItem === id) useAppStore.getState().setSelectedItem(null);
     const edit = useAppStore.getState().edit;
     if (edit.on && edit.selected === id) useAppStore.getState().setEdit({ ...edit, selected: null, moving: false });
   }
@@ -971,6 +986,7 @@ export class Game {
   // ---- editor
   private onEditModeChange() {
     const edit = useAppStore.getState().edit;
+    if (edit.on && useAppStore.getState().selectedItem) useAppStore.getState().setSelectedItem(null);
     for (const [id, f] of this.furniture) f.setSelected(edit.on && edit.selected === id);
     if (!edit.on || !edit.placing) this.hideGhost();
     if (!edit.on) this.undo.clear();
@@ -1169,7 +1185,11 @@ export class Game {
       this.me.ty = this.mover.y;
       this.me.setDir(this.mover.dir);
       this.me.moving = this.mover.moving;
-      if (this.pendingUse && !this.mover.moving) {
+      if (!this.pendingUse || this.mover.moving) this.arrivedAt = 0;
+      else if (!this.arrivedAt) this.arrivedAt = performance.now();
+      const server = this.net.sessionId ? this.actors.get(this.net.sessionId)?.target : null;
+      if (this.pendingUse && this.arrivedAt && arrivalReady(this.mover, server, performance.now() - this.arrivedAt)) {
+        this.arrivedAt = 0;
         const id = this.pendingUse;
         this.pendingUse = null;
         if (this.pendingClose) this.net.sendClose(id);

@@ -100,6 +100,21 @@ create table if not exists rolls (
   at timestamptz not null default now()
 );
 create index if not exists rolls_room_at on rolls(room_id, at);
+create table if not exists friend_requests (
+  from_id text not null references users(id),
+  to_id text not null references users(id),
+  created_at timestamptz not null default now(),
+  primary key (from_id, to_id)
+);
+create index if not exists friend_requests_to on friend_requests(to_id);
+create table if not exists friendships (
+  user_a text not null references users(id),
+  user_b text not null references users(id),
+  since timestamptz not null default now(),
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+create index if not exists friendships_b on friendships(user_b);
 `;
 
 /** Additive column migrations, applied one by one (PGlite chokes on batched ADD COLUMN IF NOT EXISTS). */
