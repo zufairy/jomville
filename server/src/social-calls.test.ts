@@ -51,6 +51,38 @@ describe('FriendCallBook', () => {
     expect(b.invite('a', 'e', false)).toBeNull();
   });
 
+  it('a pair-cooldown rejection does not consume a caller rate-limit token', () => {
+    const c = clock();
+    const b = new FriendCallBook(c.now);
+    expect(b.invite('a', 'b', false)).toBeNull();
+    b.end('a');
+    expect(b.invite('a', 'b', false)).toBe('rate_limited'); // pair cooldown, not counted against caller
+    expect(b.invite('a', 'c', false)).toBeNull();
+    b.end('a');
+    expect(b.invite('a', 'd', false)).toBeNull(); // only 2 real invites so far (b, c) plus this one is the 3rd
+  });
+
+  it('a caller-limit rejection does not consume the pair token, so the pair invite works once the caller window frees up', () => {
+    const c = clock();
+    const b = new FriendCallBook(c.now);
+    expect(b.invite('a', 'b', false)).toBeNull();
+    b.end('a');
+    expect(b.invite('a', 'c', false)).toBeNull();
+    b.end('a');
+    expect(b.invite('a', 'd', false)).toBeNull();
+    b.end('a');
+    c.t += 25_000;
+    expect(b.invite('a', 'f', false)).toBe('rate_limited'); // 4th caller invite within 30 s
+    c.t += 6_000; // t = start + 31_000: caller window (30 s) has freed up
+    expect(b.invite('a', 'f', false)).toBeNull(); // must not be blocked by a phantom pair-cooldown hit
+  });
+
+  it('mutual simultaneous invites: the second side is already busy calling', () => {
+    const b = new FriendCallBook(clock().now);
+    expect(b.invite('a', 'b', false)).toBeNull();
+    expect(b.invite('b', 'a', false)).toBe('busy_self');
+  });
+
   it('expires rings after 30 s', () => {
     const c = clock();
     const b = new FriendCallBook(c.now);

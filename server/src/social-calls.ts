@@ -1,5 +1,3 @@
-import { RateLimiter } from '@dovey/shared';
-
 /**
  * Friend calls: consent-gated 1-to-1 voice/video between friends in any room.
  * Keyed by userId (sessions change when someone changes rooms). In-process,
@@ -20,10 +18,35 @@ export type BookInviteError = 'self' | 'busy_self' | 'busy_peer' | 'rate_limited
 
 const IDLE: FriendCallState = { kind: 'idle' };
 
+/**
+ * Rolling-window hit counter, same count/windowMs semantics as
+ * `@dovey/shared`'s RateLimiter, but split into a non-recording peek and an
+ * explicit record so a caller can check several limits and only commit hits
+ * once every one of them has passed (see FriendCallBook#invite).
+ */
+class Window {
+  private hits = new Map<string, number[]>();
+
+  constructor(private count: number, private windowMs: number) {}
+
+  /** Prunes stale hits for `key` and reports whether one more would fit, without recording it. */
+  wouldAllow(key: string, now: number): boolean {
+    const arr = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
+    this.hits.set(key, arr);
+    return arr.length < this.count;
+  }
+
+  record(key: string, now: number) {
+    const arr = this.hits.get(key) ?? [];
+    arr.push(now);
+    this.hits.set(key, arr);
+  }
+}
+
 export class FriendCallBook {
   private state = new Map<string, FriendCallState>();
-  private callerLimit = new RateLimiter(FRIEND_CALL_RATE.count, FRIEND_CALL_RATE.windowMs);
-  private pairLimit = new RateLimiter(1, FRIEND_CALL_PAIR_MS);
+  private callerLimit = new Window(FRIEND_CALL_RATE.count, FRIEND_CALL_RATE.windowMs);
+  private pairLimit = new Window(1, FRIEND_CALL_PAIR_MS);
 
   constructor(private now: () => number = Date.now) {}
 
@@ -40,11 +63,15 @@ export class FriendCallBook {
     if (this.isBusy(from)) return 'busy_self';
     if (this.isBusy(to)) return 'busy_peer';
     const t = this.now();
-    // Check the pair limit first: a repeat invite to the same peer that is only
-    // blocked by the 10s per-pair cooldown must not also consume a per-caller
-    // rate-limit token, or it silently eats into the 3-per-30s budget.
-    if (!this.pairLimit.allow(`${from}>${to}`, t)) return 'rate_limited';
-    if (!this.callerLimit.allow(from, t)) return 'rate_limited';
+    const pairKey = `${from}>${to}`;
+    // Only an invite that actually rings should count against either limit: peek at
+    // both without recording, and record both only once both have passed. Otherwise
+    // an invite rejected by one limit still consumes a token on the other, wrongly
+    // blocking a later, legitimate invite once that limit's window frees up.
+    if (!this.pairLimit.wouldAllow(pairKey, t)) return 'rate_limited';
+    if (!this.callerLimit.wouldAllow(from, t)) return 'rate_limited';
+    this.pairLimit.record(pairKey, t);
+    this.callerLimit.record(from, t);
     this.state.set(from, { kind: 'ringing', peer: to, video, since: t, initiator: true });
     this.state.set(to, { kind: 'ringing', peer: from, video, since: t, initiator: false });
     return null;
