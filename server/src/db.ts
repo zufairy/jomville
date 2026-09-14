@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
+import { PGlite, type Transaction } from '@electric-sql/pglite';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 
@@ -8,6 +8,13 @@ import { mkdirSync } from 'node:fs';
  */
 export interface Db {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /**
+   * Run `fn` in one real transaction. PGlite has a single connection, so
+   * `pg.transaction()` holds it for the whole callback; a BEGIN/COMMIT through
+   * query() would let other rooms' statements run inside. Inside `fn` use only
+   * `tx`; any throw rolls everything back and is rethrown unchanged.
+   */
+  transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -137,6 +144,30 @@ async function migrate(pg: PGlite) {
   }
 }
 
+/** A Db view of an open transaction; nested transaction() joins it. */
+function txDb(tx: Transaction): Db {
+  const db: Db = {
+    async query<T>(sql: string, params: unknown[] = []) {
+      const r = await tx.query<T>(sql, params);
+      return r.rows;
+    },
+    transaction: (fn) => fn(db),
+    close: () => Promise.reject(new Error('cannot close the database inside a transaction')),
+  };
+  return db;
+}
+
+function dbOf(pg: PGlite): Db {
+  return {
+    async query<T>(sql: string, params: unknown[] = []) {
+      const r = await pg.query<T>(sql, params);
+      return r.rows;
+    },
+    transaction: (fn) => pg.transaction((tx) => fn(txDb(tx))),
+    close: () => pg.close(),
+  };
+}
+
 export async function openDb(): Promise<Db> {
   if (process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL set but the pg driver is not wired yet; use PGlite for now');
@@ -146,13 +177,7 @@ export async function openDb(): Promise<Db> {
   const pg = new PGlite(dir);
   await pg.waitReady;
   await migrate(pg);
-  return {
-    async query<T>(sql: string, params: unknown[] = []) {
-      const r = await pg.query<T>(sql, params);
-      return r.rows;
-    },
-    close: () => pg.close(),
-  };
+  return dbOf(pg);
 }
 
 /** In-memory PGlite for tests. */
@@ -160,11 +185,5 @@ export async function openTestDb(): Promise<Db> {
   const pg = new PGlite();
   await pg.waitReady;
   await migrate(pg);
-  return {
-    async query<T>(sql: string, params: unknown[] = []) {
-      const r = await pg.query<T>(sql, params);
-      return r.rows;
-    },
-    close: () => pg.close(),
-  };
+  return dbOf(pg);
 }
