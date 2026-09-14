@@ -180,7 +180,16 @@ function TouchPad({ round }: { round: KitchenRound }) {
         <button className="kr-btn" onPointerDown={() => round.controls.pressDash()}>
           dash
         </button>
-        <button className="kr-btn" onPointerDown={() => round.controls.setUse(true)} onPointerUp={() => round.controls.setUse(false)} onPointerCancel={() => round.controls.setUse(false)}>
+        <button
+          className="kr-btn"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            round.controls.setUse(true);
+          }}
+          onPointerUp={() => round.controls.setUse(false)}
+          onPointerCancel={() => round.controls.setUse(false)}
+          onLostPointerCapture={() => round.controls.setUse(false)}
+        >
           chop
         </button>
         <button className="kr-btn kr-btn--big" onPointerDown={() => round.controls.pressGrab()}>

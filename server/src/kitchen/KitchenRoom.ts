@@ -2,14 +2,15 @@ import { Client, Room, ServerError } from 'colyseus';
 import { RateLimiter, kitchen } from '@dovey/shared';
 import type { Repo, User } from '../repo';
 import { sanitizeInput } from './input';
-import { KitchenRewards } from './rewards';
-import { rounds } from './rounds';
+import { KitchenRewards, grantPerUser } from './rewards';
+import { rounds, isRoundKey } from './rounds';
 
 export interface KitchenCreate {
   level: string;
   seed: number;
   userIds: string[];
   roundTime?: number;
+  key: string;
 }
 
 const INPUT_BUFFER = 4;
@@ -32,8 +33,10 @@ export class KitchenRoom extends Room {
   private limit = new RateLimiter(40, 1000);
   private sentRev = 0;
   private ended = false;
+  private results = new Map<string, { score: number; stars: number; served: number; failed: number; earned: number }>();
 
   async onCreate(o: KitchenCreate) {
+    if (!isRoundKey(o?.key)) throw new ServerError(403, 'kitchen rooms are created by the lobby');
     if (!kitchen.levelDef(String(o?.level))) throw new ServerError(400, 'bad level');
     this.allowed = new Set(Array.isArray(o.userIds) ? o.userIds.map(String) : []);
     const roundTime = typeof o.roundTime === 'number' && o.roundTime >= 10 && o.roundTime <= 600 ? o.roundTime : kitchen.ROUND_TIME;
@@ -77,6 +80,16 @@ export class KitchenRoom extends Room {
         const back = await this.allowReconnection(client, kitchen.RECONNECT_SECONDS);
         this.broadcast('k_away', { id: u.id, away: false });
         back.send('k_snap', kitchen.makeSnap(this.sim, 0, true));
+        return;
+      } catch {
+        /* window expired */
+      }
+    } else if (!consented && this.ended) {
+      try {
+        const back = await this.allowReconnection(client, kitchen.RECONNECT_SECONDS);
+        back.send('k_snap', kitchen.makeSnap(this.sim, 0, true));
+        const result = this.results.get(u.id);
+        if (result) back.send('k_result', result);
         return;
       } catch {
         /* window expired */
@@ -135,12 +148,17 @@ export class KitchenRoom extends Room {
   private finish(e: Extract<kitchen.KitchenEvent, { type: 'end' }>) {
     this.ended = true;
     this.sendSnap(true);
+    const userIds = [...new Set(this.clients.map((c) => (c.auth as User | undefined)?.id).filter((id): id is string => !!id))];
+    const earnedByUser = grantPerUser(KitchenRoom.rewards, userIds, e.stars);
+    for (const [userId, earned] of earnedByUser) {
+      this.results.set(userId, { score: e.score, stars: e.stars, served: e.served, failed: e.failed, earned });
+      if (earned) void KitchenRoom.repo.creditCoins(userId, earned);
+    }
     for (const c of this.clients) {
       const u = c.auth as User | undefined;
       if (!u) continue;
-      const earned = KitchenRoom.rewards.grant(u.id, e.stars);
-      c.send('k_result', { score: e.score, stars: e.stars, served: e.served, failed: e.failed, earned });
-      if (earned) void KitchenRoom.repo.creditCoins(u.id, earned);
+      const result = this.results.get(u.id);
+      if (result) c.send('k_result', result);
     }
     this.clock.setTimeout(() => void this.disconnect(), RESULTS_LINGER_MS);
   }
