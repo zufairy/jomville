@@ -24,3 +24,4 @@ export * from './wonderDome';
 export * from './rides';
 export * from './tableGames';
 export * from './gameDen';
+export * as kitchen from './kitchen';
