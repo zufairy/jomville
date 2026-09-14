@@ -149,6 +149,17 @@ create table if not exists friendships (
   check (user_a < user_b)
 );
 create index if not exists friendships_b on friendships(user_b);
+create table if not exists duels (
+  id serial primary key,
+  a_id text not null references users(id),
+  b_id text not null references users(id),
+  stake int not null,
+  winner_id text references users(id),
+  outcome text not null,
+  room_id text,
+  at timestamptz not null default now()
+);
+create index if not exists duels_at on duels(at);
 `;
 
 /** Additive column migrations, applied one by one (PGlite chokes on batched ADD COLUMN IF NOT EXISTS). */
