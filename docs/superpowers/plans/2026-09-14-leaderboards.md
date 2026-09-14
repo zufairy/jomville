@@ -583,7 +583,7 @@ MSG
 ### Task 3: Record online minutes in the coin trickle
 
 **Files:**
-- Modify: `server/src/GameRoom.ts` — import block (after `import { presence } from './social';`, without editing that line) and the `// ---- coins: everyone online earns a trickle` `this.clock.setInterval(..., 60_000)` callback only
+- Modify: `server/src/GameRoom.ts` — import block (after `import { inviteLimit, presence } from './social';`, without editing that line) and the `// ---- coins: everyone online earns a trickle` `this.clock.setInterval(..., 60_000)` callback only
 
 **Interfaces:**
 - Consumes: `playMinutes.take(userIds, now): string[]`, `klMonday(now): string` (Task 1), `Repo.addPlayMinutes(userIds, monday)` (Task 2)
@@ -596,7 +596,7 @@ Expected: only the Task 2 lines in `repo.ts`. If `GameRoom.ts` already increment
 
 - [ ] **Step 2: Add the import**
 
-After the line `import { presence } from './social';` add a new line:
+After the line `import { inviteLimit, presence } from './social';` add a new line (do not edit that line):
 
 ```ts
 import { klMonday, playMinutes } from './leaderboards';
@@ -1397,28 +1397,27 @@ export function Leaderboards() {
 Create `client/src/ui/leaderboards.css`:
 
 ```css
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap');
-
-/* Leaderboards: pasar malam at night. One committed look, colours painted explicitly. */
+/* Leaderboards: pasar malam at night, Leypark landing palette (landing.css --lk-* values, re-declared
+   here so landing.css is never imported). Baloo 2 is loaded by client/index.html. */
 .lb {
-  --lb-night: #1a0f2e;
-  --lb-night-2: #2a1440;
+  --lb-night: #0b2528;
+  --lb-night-2: #0f3d42;
   --lb-plum: #4a1631;
   --lb-gold-1: #ffe08a;
   --lb-gold-2: #f4b73c;
-  --lb-gold-3: #d98a1c;
+  --lb-gold-3: #ff8a3d;
   --lb-silver: #d9dde8;
   --lb-bronze: #d08a5a;
-  --lb-ink: #fff6e6;
-  --lb-muted: #c9b8dc;
-  --lb-card: rgba(255, 246, 230, 0.07);
-  --lb-line: rgba(255, 224, 138, 0.22);
+  --lb-ink: #f8ecd4;
+  --lb-muted: #d6c7aa;
+  --lb-card: rgba(20, 44, 47, 0.78);
+  --lb-line: rgba(244, 183, 60, 0.22);
   min-height: 100vh;
   background:
     radial-gradient(1200px 500px at 50% -120px, rgba(244, 183, 60, 0.28), transparent 70%),
     linear-gradient(180deg, var(--lb-night-2), var(--lb-night) 60%);
   color: var(--lb-ink);
-  font-family: 'Baloo 2', ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Baloo 2', ui-rounded, 'Arial Rounded MT Bold', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   padding-inline: 16px;
   padding-block: 0 48px;
   overflow-x: hidden;
@@ -1647,9 +1646,9 @@ with
 - [ ] **Step 3: Landing nav (either Landing.tsx version)**
 
 Run: `grep -n "<nav\|</nav>" client/src/ui/Landing.tsx`
-Expected: two `<nav` lines — the header nav (dovey: `<nav className="lp-nav__links" aria-label="sections">`; Leypark may use different copy/classes) and the footer nav (dovey: `<nav aria-label="footer">`).
+Expected: two `<nav` lines — the header nav and the footer nav. On the Leypark landing (merged into `main` at the time of writing) they are `<nav className="lk-nav__links" aria-label="Bahagian">` (links Dunia · Main · Kawan · Selamat) and `<nav aria-label="Pautan bawah">`; on the old dovey landing `<nav className="lp-nav__links" aria-label="sections">` and `<nav aria-label="footer">`.
 
-Edit by element, not by surrounding copy:
+Edit by element, not by surrounding copy (on Leypark the header links are plain `<a href="#...">` without a className, so the new link is plain too; `.lk-nav__links a` styles it):
 - In the **first** `<nav ...>` (inside `<header`), insert as the last child, directly before its `</nav>`:
 
 ```tsx

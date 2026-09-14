@@ -49,8 +49,8 @@ Pure `FriendCallBook`, keyed by **userId** (sessions change when a user changes 
 export type FriendCallState =
   | { kind: 'idle' }
   | { kind: 'ringing'; peer: string; video: boolean; since: number; initiator: boolean }
-  | { kind: 'active'; peer: string; video: boolean; since: number }
-  | { kind: 'rejoining'; peer: string; video: boolean; since: number; lostAt: number };
+  | { kind: 'active'; peer: string; video: boolean; since: number; initiator: boolean }
+  | { kind: 'rejoining'; peer: string; video: boolean; since: number; initiator: boolean; lostAt: number };
 
 export const FRIEND_RING_TTL_MS = 30_000;
 export const FRIEND_REJOIN_GRACE_MS = 10_000;
@@ -91,10 +91,19 @@ export class FriendCallBook {
 | `fsig {toUserId, data}` | book `canRelay(me, to)`; `VOICE_RTC_RATE`-style limiter; payload size cap (64 KB transport already) | peer: `fsig {from:userId, data}` |
 | `fcall_report {reason, note?}` | `isReportReason`; `REPORT_RATE` limiter; must be in / just ended a call with that peer | reporter: `sys {code:'reported'}`; call ended for both (`reason:'ended'`) |
 
-- `presence.notify` delivers to every session of the user, so a user with two tabs rings in both; the
-  first `fcall_accept` wins and the other tabs receive `fcall_start` for another session — the client
-  ignores `fcall_start` unless it is the tab that accepted (client-side `acceptedHere` flag); the
-  caller side has only the tab that invited.
+- `fcall_incoming` uses `presence.notify`, so a user with two tabs rings in both. Once a call has a
+  tab on each side, the server targets those tabs with `presence.notifySession(userId, sessionId, ...)`
+  (d7's fix pass `63a940a`): the service remembers the inviting session and the accepting session,
+  sends `fcall_start` and `fsig` only to them, and sends every other session of the callee
+  (`presence.sessions(userId)`) a silent `fcall_end {reason:'elsewhere'}` so they stop ringing.
+  `fcall_resume` updates the remembered session after a room change. The client still keeps an
+  `acceptedHere` guard as a second line of defence.
+- `fcall_invite` is rejected with `busy_self` when the caller's session is in a same-room call; a
+  callee busy in a same-room call auto-declines `fcall_incoming` with `busy` (client), because
+  same-room call state lives per room instance. `call_invite` rejects when either user is busy in the
+  `FriendCallBook`. (Replaces the stricter server-only exclusion sketched above.)
+- Resume: `fcall_resume` (sent by the client after a room join when it has a live or parked call)
+  replaces the `onJoin` `sessionBack` hook, so a user with another tab still open also renegotiates.
 - Blocking during a call (`block` handler) ends the friend call for both.
 - Removing the friend ends the call (`/api/friends/remove` calls `friendCalls.end`).
 

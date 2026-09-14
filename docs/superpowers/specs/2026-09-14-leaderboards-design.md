@@ -138,10 +138,12 @@ type Boards = { generatedAt: string; coins: Row[]; assets: Row[]; timeWeek: Row[
     selected board ("Kedudukan kau: –" when rank is null); hidden players see "Kedudukan kau:
     Tersembunyi". The "Sembunyi dari leaderboard" toggle sits in this card.
   - "Dikemas kini HH:MM" from `generatedAt`.
-- Visual style: pasar-malam night — deep plum/indigo ground, warm string-light glow, gold
-  `#ffe08a → #f4b73c → #d98a1c` accents with plum `#4a1631` ink (from `client/public/leypark-mark.svg`
-  on `feat/leypark`), Baloo 2 headings with a system-font fallback, Manglish copy. Single committed
-  look (explicit colours, no theme switching). Works at 400 px (cards stack, list stays one column).
+- Visual style: pasar-malam night, matching the merged Leypark landing (`client/src/ui/landing.css`
+  tokens): night teal `#0b2528`/`#0f3d42` ground, maroon `#4a1631`, gold `#f4b73c`/`#ffe08a`,
+  lantern `#ff8a3d`, cream `#f8ecd4` text, Baloo 2 display font (already loaded by `client/index.html`)
+  with the same fallback stack, Manglish copy. Tokens are re-declared locally in `leaderboards.css`
+  (landing.css is not imported, so its page-level rules never leak). Single committed look. Works at
+  400 px (cards stack, list stays one column).
 
 ## Links
 
