@@ -20,7 +20,21 @@ export class KitchenRound {
   readonly controls = new Controls();
   readonly interp = new Interp();
   predictor: Predictor | null = null;
+  /** sounds and shakes for round events (the store gets them too) */
+  onEvent: ((e: kitchen.KitchenEvent) => void) | null = null;
   private client = new Client(endpoint());
+
+  constructor() {
+    this.controls.context = {
+      pose: () => this.predictor?.pose() ?? null,
+      stations: () => this.view?.stations ?? [],
+    };
+  }
+
+  /** chef ids in join order; entries are never dropped, so per-chef colours stay put */
+  roster(): string[] {
+    return Object.keys(this.names);
+  }
   private room: Room | null = null;
   private timers: Array<ReturnType<typeof setInterval>> = [];
   private closed = false;
@@ -51,7 +65,10 @@ export class KitchenRound {
     });
     room.onMessage('k_roster', (m: { names: Record<string, string> }) => (this.names = m.names));
     room.onMessage('k_snap', (snap: kitchen.KitchenSnap) => this.onSnap(snap));
-    room.onMessage('k_event', (e: kitchen.KitchenEvent) => useKitchen.getState().onEvent(e, this.me));
+    room.onMessage('k_event', (e: kitchen.KitchenEvent) => {
+      useKitchen.getState().onEvent(e, this.me);
+      this.onEvent?.(e);
+    });
     room.onMessage('k_result', (r: { score: number; stars: number; served: number; failed: number; earned: number }) => useKitchen.getState().setResult(r));
     room.onMessage('k_away', (m: { id: string; away: boolean }) => (m.away ? this.away.add(m.id) : this.away.delete(m.id)));
     room.onMessage('k_pong', (m: { t: number }) => useKitchen.getState().setLag(performance.now() - m.t > LAG_MS));

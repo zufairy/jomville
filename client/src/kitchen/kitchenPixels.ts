@@ -340,6 +340,22 @@ export function allItems(): kitchen.Item[] {
   return out;
 }
 
+/** the plated item an order asks for (ticket icons) */
+export function dishItem(d: kitchen.Dish): kitchen.PlateItem {
+  switch (d) {
+    case 'soup_tomato':
+      return { kind: 'plate', soup: 'tomato', parts: [] };
+    case 'soup_onion':
+      return { kind: 'plate', soup: 'onion', parts: [] };
+    case 'soup_mushroom':
+      return { kind: 'plate', soup: 'mushroom', parts: [] };
+    case 'salad':
+      return { kind: 'plate', soup: null, parts: ['lettuce'] };
+    case 'salad_tomato':
+      return { kind: 'plate', soup: null, parts: ['lettuce', 'tomato'] };
+  }
+}
+
 // ---------------------------------------------------------------- overlays
 
 /** knife on a board: frame 0 lies idle, 1-3 is a chop swing */
