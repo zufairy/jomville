@@ -9,6 +9,7 @@ import { SUNSET_COVE, sunsetCoveLayout, sunsetCoveMask } from './sunsetCove';
 import { DREAM_SUITE, dreamSuiteLayout } from './dreamSuite';
 import { WONDER_DOME, wonderDomeLayout } from './wonderDome';
 import { GAME_DEN, gameDenLayout } from './gameDen';
+import { CASINO, casinoLayout } from './casino';
 
 export interface SystemRoom {
   slug: string;
@@ -32,6 +33,7 @@ export const SYSTEM_ROOMS: SystemRoom[] = [
   { ...DREAM_SUITE, mask: () => null, layout: dreamSuiteLayout },
   { ...WONDER_DOME, mask: () => null, layout: wonderDomeLayout },
   { ...GAME_DEN, mask: () => null, layout: gameDenLayout },
+  { ...CASINO, mask: () => null, layout: casinoLayout },
 ];
 
 export function isSystemRoom(slug: string): boolean {
