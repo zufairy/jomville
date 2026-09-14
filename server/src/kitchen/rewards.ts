@@ -18,3 +18,13 @@ export class KitchenRewards {
     return coins;
   }
 }
+
+/**
+ * Grants stars exactly once per distinct user id (players can hold multiple connections/tabs
+ * to the same kitchen round, but must only be paid once for it).
+ */
+export function grantPerUser(rewards: KitchenRewards, userIds: string[], stars: number): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const id of new Set(userIds)) out.set(id, rewards.grant(id, stars));
+  return out;
+}

@@ -54,6 +54,7 @@ import { LOVE_ROOM, LOVE_SEATS, LoveSide, LoveSnapshot, laneSpot, normalizeVibe 
 import { LoveEvent, LoveMeter } from './loveMeter';
 import { KITCHEN_WORLD } from '@dovey/shared';
 import { KitchenLobby } from './kitchen/lobby';
+import { ROUND_KEY } from './kitchen/rounds';
 import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
 import { registry } from './registry';
@@ -884,7 +885,7 @@ export class GameRoom extends Room<WorldState> {
           if (p) this.sim.requestMove(id, p, { x, y });
         },
       },
-      async (o) => (await matchMaker.createRoom('kitchen', o)).roomId,
+      async (o) => (await matchMaker.createRoom('kitchen', { ...o, key: ROUND_KEY })).roomId,
     );
     this.onMessage('k_start', (client) => {
       if (limit.allow(client.sessionId)) void this.kitchen?.start(client.sessionId);

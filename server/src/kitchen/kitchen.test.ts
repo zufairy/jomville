@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { kitchen } from '@dovey/shared';
 import { sanitizeInput } from './input';
-import { KitchenRewards } from './rewards';
+import { KitchenRewards, grantPerUser } from './rewards';
+import { ROUND_KEY, isRoundKey } from './rounds';
 import { COOKING_TIMEOUT_MS, CrewBook, CrewEvent } from './crews';
 
 describe('sanitizeInput', () => {
@@ -22,6 +23,26 @@ describe('KitchenRewards', () => {
     expect(r.grant('other', 1)).toBe(kitchen.KITCHEN_COINS_PER_STAR);
     t += 3_600_001;
     expect(r.grant('u', 2)).toBe(20);
+  });
+
+  it('grantPerUser dedupes ids so multi-tab players are only paid once', () => {
+    const r = new KitchenRewards(() => 0);
+    const out = grantPerUser(r, ['a', 'a', 'a', 'b'], 3);
+    expect(out.get('a')).toBe(3 * kitchen.KITCHEN_COINS_PER_STAR);
+    expect(out.get('b')).toBe(3 * kitchen.KITCHEN_COINS_PER_STAR);
+    expect(out.size).toBe(2);
+    // a granted once, not three times: a second grant for 'a' should still be within the cap
+    expect(r.grant('a', 3)).toBeGreaterThan(0);
+  });
+});
+
+describe('isRoundKey', () => {
+  it('accepts only the process round key', () => {
+    expect(isRoundKey(ROUND_KEY)).toBe(true);
+    expect(isRoundKey(undefined)).toBe(false);
+    expect(isRoundKey('')).toBe(false);
+    expect(isRoundKey('not-the-key')).toBe(false);
+    expect(isRoundKey(123)).toBe(false);
   });
 });
 
