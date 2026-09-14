@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KITCHEN_WORLD } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { useKitchen } from '../kitchen/store';
@@ -9,7 +9,28 @@ export function KitchenLobby() {
   const slug = useAppStore((s) => s.room?.slug);
   const crew = useKitchen((s) => s.crew);
   const phase = useKitchen((s) => s.phase);
+  const again = useKitchen((s) => s.again);
   const [code, setCode] = useState('');
+  const [coarse] = useState(() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+
+  // "Play again": rounds are only created by the lobby, so start again once the old kitchen has closed.
+  // `again` stays set until k_go lands (go() clears it) so a crewmate winning the race isn't an error.
+  const sentAgain = useRef(false);
+  useEffect(() => {
+    if (!again || phase !== 'off') {
+      sentAgain.current = false;
+      return;
+    }
+    if (!crew || slug !== KITCHEN_WORLD.slug) return void useKitchen.getState().clearAgain();
+    if (crew.phase !== 'open') {
+      sentAgain.current = false;
+      return;
+    }
+    if (sentAgain.current) return;
+    sentAgain.current = true;
+    sendToWorld('k_start');
+  }, [again, crew, phase, slug]);
+
   if (slug !== KITCHEN_WORLD.slug || phase !== 'off') return null;
 
   if (!crew)
@@ -41,13 +62,13 @@ export function KitchenLobby() {
         {crew.names.join(', ')} · {crew.members.length}/4
       </span>
       {crew.phase === 'cooking' ? (
-        <span>cooking…</span>
+        <span>{again ? 'waiting for the kitchen to close, then going again…' : 'cooking…'}</span>
       ) : (
         <button className="btn kl__start" onClick={() => sendToWorld('k_start')}>
           start cooking
         </button>
       )}
-      <small>WASD move · Space grab · E chop · Shift dash</small>
+      <small>{coarse ? 'tap to walk · tap a station to use it · hold the board to chop · double-tap to dash' : 'WASD move · Space grab · E chop · Shift dash · or click to walk, hold the board to chop'}</small>
     </div>
   );
 }

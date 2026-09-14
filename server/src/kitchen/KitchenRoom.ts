@@ -133,7 +133,7 @@ export class KitchenRoom extends Room {
       }
     }
     for (const e of kitchen.step(this.sim, inputs)) {
-      if (e.type === 'end') this.finish(e);
+      if (e.type === 'end') void this.finish(e);
       else this.broadcast('k_event', e);
     }
   }
@@ -145,15 +145,18 @@ export class KitchenRoom extends Room {
     this.broadcast('k_snap', snap);
   }
 
-  private finish(e: Extract<kitchen.KitchenEvent, { type: 'end' }>) {
+  private async finish(e: Extract<kitchen.KitchenEvent, { type: 'end' }>) {
     this.ended = true;
     this.sendSnap(true);
     const userIds = [...new Set(this.clients.map((c) => (c.auth as User | undefined)?.id).filter((id): id is string => !!id))];
     const earnedByUser = grantPerUser(KitchenRoom.rewards, userIds, e.stars);
+    const credits: Array<Promise<unknown>> = [];
     for (const [userId, earned] of earnedByUser) {
       this.results.set(userId, { score: e.score, stars: e.stars, served: e.served, failed: e.failed, earned });
-      if (earned) void KitchenRoom.repo.creditCoins(userId, earned);
+      if (earned) credits.push(Promise.resolve(KitchenRoom.repo.creditCoins(userId, earned)).catch((err) => console.error('[kitchen] coin credit failed', userId, err)));
     }
+    // results go out after the coins land, so the client's wallet refetch sees the payout
+    await Promise.all(credits);
     for (const c of this.clients) {
       const u = c.auth as User | undefined;
       if (!u) continue;

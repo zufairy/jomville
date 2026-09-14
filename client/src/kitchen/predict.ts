@@ -72,6 +72,12 @@ export class Predictor {
     this.oy *= k;
   }
 
+  /** where the sim has the chef (no display smoothing): what controls must aim from */
+  simPose(): Pose | null {
+    return this.me && { x: this.me.x, y: this.me.y, fx: this.me.fx, fy: this.me.fy };
+  }
+
+  /** display pose: sim pose plus the decaying correction offset */
   pose(): Pose | null {
     return this.me && { x: this.me.x + this.ox, y: this.me.y + this.oy, fx: this.me.fx, fy: this.me.fy };
   }

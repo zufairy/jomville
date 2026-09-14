@@ -33,6 +33,7 @@ import { fetchInventory } from '../api';
 import { AVATAR_SCALE, Avatar } from './avatar';
 import { Camera } from './camera';
 import { GestureController } from './gestures';
+import { LeaseApp, StageLender } from './stageLease';
 import { LocalMover } from './localMover';
 import { Net, RemotePlayer } from '../net';
 import { BubblePool } from './bubbles';
@@ -176,6 +177,8 @@ export class Game {
   private ambient: AmbientActors | null = null;
   /** carousel horses, teacups, swings, drop tower and the coaster, posed from the clock */
   private rides = new RideSystem(this.actorLayer);
+  /** lends this app to full-screen scenes (kitchen rounds) instead of a second Pixi app */
+  private lender: StageLender<Container> | null = null;
 
   async mount(el: HTMLElement) {
     await this.app.init({
@@ -193,6 +196,8 @@ export class Game {
     }
     atlas.bind(this.app.renderer);
     el.appendChild(this.app.canvas);
+    // Pixi's full types don't line up with the lender's minimal structural interface (DOM/ticker generics)
+    this.lender = new StageLender<Container>(this.app as unknown as LeaseApp<Container>);
     if (import.meta.env.DEV) {
       const w = window as unknown as { __game: Game; __store: typeof useAppStore };
       w.__game = this;
@@ -306,6 +311,8 @@ export class Game {
     this.app.canvas.addEventListener(
       'wheel',
       (e) => {
+        // a borrowed stage (kitchen round) handles its own zoom
+        if (this.lender?.leased) return;
         e.preventDefault();
         const rect = this.app.canvas.getBoundingClientRect();
         this.gestures.wheel({ deltaY: e.deltaY, x: e.clientX - rect.left, y: e.clientY - rect.top });
@@ -313,7 +320,10 @@ export class Game {
       { passive: false },
     );
 
-    this.app.ticker.add((t) => this.update(t.deltaMS));
+    this.app.ticker.add((t) => {
+      // while a full-screen scene borrows the app the world is hidden and frozen
+      if (!this.lender?.leased) this.update(t.deltaMS);
+    });
     this.voiceTimer = setInterval(() => {
       const peers = [...this.actors].map(([id, a]) => ({ id, x: a.target.x, y: a.target.y, voice: a.target.voice }));
       this.voice.update(this.net.sessionId, this.mover && { x: this.mover.x, y: this.mover.y }, peers);
@@ -1359,6 +1369,29 @@ export class Game {
     const out: Record<string, unknown> = { sid, mover: this.mover && { x: this.mover.x, y: this.mover.y, moving: this.mover.moving } };
     for (const [id, a] of this.actors) out[id] = { ax: a.avatar.tx, ay: a.avatar.ty, sx: a.target.x, sy: a.target.y };
     return out;
+  }
+
+  /**
+   * Hand this app's canvas and renderer to a full-screen scene (kitchen round):
+   * the world is hidden, ignores input and stops updating until release. The
+   * page keeps one renderer — a second Pixi app breaks shared GPU state.
+   */
+  lendStage(root: Container, host: HTMLElement, background?: number): { app: Application; release: () => void } | null {
+    if (!this.initialised || this.disposed || !this.lender) return null;
+    const bg = this.app.renderer.background.color.toNumber();
+    const release = this.lender.lend(root, host);
+    if (!release) return null;
+    if (background !== undefined) this.app.renderer.background.color = background;
+    let done = false;
+    return {
+      app: this.app,
+      release: () => {
+        if (done || this.disposed) return;
+        done = true;
+        this.app.renderer.background.color = bg;
+        release();
+      },
+    };
   }
 
   /** stop rendering the world while a full-screen minigame covers it */

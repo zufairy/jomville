@@ -1,12 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import { kitchen } from '@dovey/shared';
 import { KitchenRound } from '../kitchen/net';
-import { CHEF_COLORS, drawKitchen } from '../kitchen/draw';
+import { IsoRenderer } from '../kitchen/isoRenderer';
+import { bindPointer } from '../kitchen/pointerInput';
 import { dishName, useKitchen } from '../kitchen/store';
 import { orderLeft } from '../kitchen/view';
-import { setGamePaused } from '../game/instance';
+import { dishItem, itemSprite } from '../kitchen/kitchenPixels';
+import { mapDataUrl } from '../kitchen/pixelTexture';
+import { ksfx } from '../kitchen/sounds';
+import type { Vec } from '../kitchen/aim';
+import { fetchInventory } from '../api';
+import { useAppStore } from '../store';
 
-const TOP_PAD = 86;
+const JOY_KEY = 'dovey.kitchen.joystick';
+
+function loadJoystick(): boolean {
+  try {
+    return localStorage.getItem(JOY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveJoystick(on: boolean) {
+  try {
+    localStorage.setItem(JOY_KEY, on ? '1' : '0');
+  } catch {
+    /* private mode */
+  }
+}
 
 export function KitchenRoundUI() {
   const phase = useKitchen((s) => s.phase);
@@ -16,54 +38,73 @@ export function KitchenRoundUI() {
 }
 
 function RoundScreen({ roomId }: { roomId: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const [round, setRound] = useState<KitchenRound | null>(null);
+  const [joystick, setJoystick] = useState(loadJoystick);
+  const joyRef = useRef(joystick);
+  joyRef.current = joystick;
+  const [stick, setStick] = useState<{ knob: Vec; origin: Vec } | null>(null);
+  const [dashAt, setDashAt] = useState(0);
 
   useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
     const r = new KitchenRound();
+    const renderer = new IsoRenderer(r);
     setRound(r);
-    setGamePaused(true);
-    const detach = r.controls.attach(window);
-    r.join(roomId).catch(() => useKitchen.getState().lost());
-    let raf = 0;
-    let last = performance.now();
-    const frame = (now: number) => {
-      raf = requestAnimationFrame(frame);
-      const canvas = canvasRef.current;
-      const view = r.view;
-      if (!canvas || !view) return;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const cssW = canvas.clientWidth;
-      const cssH = canvas.clientHeight;
-      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
-        canvas.width = Math.round(cssW * dpr);
-        canvas.height = Math.round(cssH * dpr);
+    r.onEvent = (e) => {
+      if (e.type === 'served') ksfx.serve();
+      else if (e.type === 'chopped' && e.chef === r.me) ksfx.ready();
+      else if (e.type === 'burnt' || e.type === 'expired') ksfx.burn();
+      else if (e.type === 'rejected' && e.chef === r.me) {
+        ksfx.nope();
+        renderer.shakeKind('window');
       }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      r.predictor?.frame(now - last);
-      last = now;
-      const chefs = view.chefs.map((c, i) => {
-        const pose = (c.id === r.me ? r.predictor?.pose() : r.interp.sample(c.id, now)) ?? c;
-        return { ...c, x: pose.x, y: pose.y, fx: pose.fx, fy: pose.fy, name: r.names[c.id] ?? 'chef', color: CHEF_COLORS[i % CHEF_COLORS.length], away: r.away.has(c.id), me: c.id === r.me };
-      });
-      drawKitchen(ctx, view, chefs, cssW, cssH, TOP_PAD, now);
     };
-    raf = requestAnimationFrame(frame);
+    const detachKeys = r.controls.attach(window);
+    let unbind = () => {};
+    let alive = true;
+    // the renderer borrows the world's Pixi app (no second app); destroy() hands it back
+    renderer
+      .mount(host)
+      .then((ok) => {
+        if (!ok || !alive) return;
+        unbind = bindPointer(renderer.canvas, r, renderer, {
+          joystick: () => joyRef.current,
+          onStick: setStick,
+          onDash: () => setDashAt(performance.now()),
+        });
+      })
+      .catch((err) => {
+        console.error('[kitchen] renderer failed', err);
+        if (alive) useKitchen.getState().lost();
+      });
+    r.join(roomId).catch(() => useKitchen.getState().lost());
     return () => {
-      cancelAnimationFrame(raf);
-      detach();
+      alive = false;
+      unbind();
+      detachKeys();
+      renderer.destroy();
       r.leave();
-      setGamePaused(false);
     };
   }, [roomId]);
 
   return (
     <div className="kr" role="application" aria-label="kitchen round">
-      <canvas ref={canvasRef} className="kr__canvas" />
-      <Hud />
-      {round && <TouchPad round={round} />}
+      <div ref={hostRef} className="kr__stage" />
+      {stick && (
+        <div className="kr-stick" style={{ left: stick.origin.x, top: stick.origin.y }}>
+          <i style={{ transform: `translate(${stick.knob.x * 0.4}px, ${stick.knob.y * 0.4}px)` }} />
+        </div>
+      )}
+      <Hud
+        joystick={joystick}
+        setJoystick={(on) => {
+          setJoystick(on);
+          saveJoystick(on);
+        }}
+      />
+      {round && <TouchPad round={round} dashAt={dashAt} onDash={() => setDashAt(performance.now())} />}
       <Results />
     </div>
   );
@@ -78,7 +119,7 @@ function useNow(ms: number) {
   return now;
 }
 
-function Hud() {
+function Hud({ joystick, setJoystick }: { joystick: boolean; setJoystick: (on: boolean) => void }) {
   const phase = useKitchen((s) => s.phase);
   const orders = useKitchen((s) => s.orders);
   const score = useKitchen((s) => s.score);
@@ -91,6 +132,7 @@ function Hud() {
   const note = useKitchen((s) => s.note);
   const now = useNow(250);
   const [shownNote, setShownNote] = useState<string | null>(null);
+  const [settings, setSettings] = useState(false);
 
   useEffect(() => {
     if (!note) return;
@@ -110,24 +152,40 @@ function Hud() {
         <div className="kr-orders">
           {orders.map((o) => {
             const l = orderLeft(o, now);
+            const k = l / o.total;
             return (
-              <div key={o.id} className={`kr-order ${l < kitchen.ORDER_WARN ? 'kr-order--late' : ''}`}>
+              <div key={o.id} className={`kr-ticket ${l < kitchen.ORDER_WARN ? 'kr-ticket--late' : ''}`} title={dishName(o.dish)}>
+                <img src={mapDataUrl(itemSprite(dishItem(o.dish)).map, 3)} alt="" />
                 <span>{dishName(o.dish)}</span>
-                <i style={{ width: `${(l / o.total) * 100}%` }} />
+                <i style={{ width: `${k * 100}%`, backgroundColor: k > 0.5 ? '#58c98b' : k > 0.25 ? '#f7c948' : '#ff3b30' }} />
               </div>
             );
           })}
+          {streak > 1 && <b className="kr-streak">combo x{streak}</b>}
         </div>
-        <div className="kr-stats">
-          <b className="kr-time">{clock}</b>
-          <b>{score}</b>
-          {streak > 1 && <em>x{streak}</em>}
-          {lag && <span title="slow connection">📶</span>}
-          <button className="kr-leave" onClick={() => useKitchen.getState().exit()} aria-label="leave kitchen">
+        <div className="kr-side">
+          <div className="kr-pill">
+            <span className={left < 30 ? 'kr-time--low' : ''}>{clock}</span>
+            <span>
+              {score}
+              <small> pts</small>
+            </span>
+            {lag && <span title="slow connection">📶</span>}
+          </div>
+          <button className="kr-icon" onClick={() => setSettings((s) => !s)} aria-label="kitchen settings" aria-expanded={settings}>
+            ⚙
+          </button>
+          <button className="kr-icon" onClick={() => useKitchen.getState().exit()} aria-label="leave kitchen">
             ✕
           </button>
         </div>
       </div>
+      {settings && (
+        <label className="kr-settings">
+          <input type="checkbox" checked={joystick} onChange={(e) => setJoystick(e.target.checked)} />
+          drag on the floor to steer (joystick)
+        </label>
+      )}
       {phase === 'joining' && <div className="kr-note">opening the kitchen…</div>}
       {reconnecting && <div className="kr-note">reconnecting…</div>}
       {shownNote && <div className="kr-note kr-note--pop">{shownNote}</div>}
@@ -135,86 +193,93 @@ function Hud() {
   );
 }
 
-function TouchPad({ round }: { round: KitchenRound }) {
+function TouchPad({ round, dashAt, onDash }: { round: KitchenRound; dashAt: number; onDash: () => void }) {
   const [coarse] = useState(() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
-  const stickRef = useRef<HTMLDivElement>(null);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const [chopping, setChopping] = useState(false);
+  const cooling = useNow(200) - dashAt < 1000;
   if (!coarse) return null;
 
-  const move = (e: React.PointerEvent) => {
-    const el = stickRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const rad = r.width / 2;
-    let dx = (e.clientX - (r.left + rad)) / rad;
-    let dy = (e.clientY - (r.top + rad)) / rad;
-    const len = Math.hypot(dx, dy);
-    if (len > 1) {
-      dx /= len;
-      dy /= len;
-    }
-    setKnob({ x: dx, y: dy });
-    round.controls.setStick(dx, dy);
-  };
-  const release = () => {
-    setKnob({ x: 0, y: 0 });
-    round.controls.setStick(0, 0);
+  const chop = (on: boolean) => {
+    setChopping(on);
+    round.controls.setUse(on);
   };
 
   return (
     <div className="kr-touch">
-      <div
-        ref={stickRef}
-        className="kr-stick"
+      <button
+        className={`kr-btn kr-btn--dash ${cooling ? 'kr-btn--cool' : ''}`}
+        key={`dash-${dashAt}`}
+        onPointerDown={() => {
+          if (cooling) return;
+          round.controls.pilot.cancel();
+          round.controls.pressDash();
+          ksfx.dash();
+          onDash();
+        }}
+      >
+        dash
+      </button>
+      <button
+        className={`kr-btn kr-btn--chop ${chopping ? 'kr-btn--on' : ''}`}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
-          move(e);
+          chop(true);
         }}
-        onPointerMove={(e) => e.buttons && move(e)}
-        onPointerUp={release}
-        onPointerCancel={release}
+        onPointerUp={() => chop(false)}
+        onPointerCancel={() => chop(false)}
+        onLostPointerCapture={() => chop(false)}
       >
-        <i style={{ transform: `translate(${knob.x * 32}px, ${knob.y * 32}px)` }} />
-      </div>
-      <div className="kr-btns">
-        <button className="kr-btn" onPointerDown={() => round.controls.pressDash()}>
-          dash
-        </button>
-        <button
-          className="kr-btn"
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            round.controls.setUse(true);
-          }}
-          onPointerUp={() => round.controls.setUse(false)}
-          onPointerCancel={() => round.controls.setUse(false)}
-          onLostPointerCapture={() => round.controls.setUse(false)}
-        >
-          chop
-        </button>
-        <button className="kr-btn kr-btn--big" onPointerDown={() => round.controls.pressGrab()}>
-          grab
-        </button>
-      </div>
+        chop
+      </button>
+      <button className="kr-btn kr-btn--grab" onPointerDown={() => round.controls.pressGrab()}>
+        grab
+      </button>
     </div>
   );
 }
 
 function Results() {
   const result = useKitchen((s) => s.result);
+  const setCoins = useAppStore((s) => s.setCoins);
+
+  // the round paid out on the server: refresh the world wallet
+  useEffect(() => {
+    if (!result) return;
+    let live = true;
+    fetchInventory()
+      .then((inv) => {
+        if (live && inv) setCoins(inv.coins);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [result, setCoins]);
+
   if (!result) return null;
   return (
     <div className="kr-result" role="dialog" aria-label="round results">
       <div className="kr-result__card">
         <h2>time's up!</h2>
-        <p className="kr-stars">{[0, 1, 2].map((i) => (i < result.stars ? '★' : '☆')).join(' ')}</p>
+        <p className="kr-stars" aria-label={`${result.stars} of 3 stars`}>
+          {[0, 1, 2].map((i) => (
+            <span key={i} className={`kr-star ${i < result.stars ? 'kr-star--on' : ''}`} style={{ animationDelay: `${0.25 + i * 0.3}s` }}>
+              ★
+            </span>
+          ))}
+        </p>
         <p>
           score <b>{result.score}</b> · served {result.served} · missed {result.failed}
         </p>
-        {result.earned > 0 && <p>+{result.earned} coins</p>}
-        <button className="btn" onClick={() => useKitchen.getState().exit()}>
-          back to the kitchen
-        </button>
+        {result.earned > 0 && <p className="kr-earned">+{result.earned} coins</p>}
+        <div className="kr-result__btns">
+          <button className="btn" onClick={() => useKitchen.getState().playAgain()}>
+            play again
+          </button>
+          <button className="btn" onClick={() => useKitchen.getState().exit()}>
+            back to the kitchen
+          </button>
+        </div>
       </div>
     </div>
   );

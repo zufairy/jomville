@@ -53,6 +53,10 @@ interface KitchenStore {
   onEvent: (e: kitchen.KitchenEvent, me: string) => void;
   lost: () => void;
   exit: () => void;
+  /** leave the results and start the same crew again once its kitchen closes */
+  again: boolean;
+  playAgain: () => void;
+  clearAgain: () => void;
 }
 
 export const useKitchen = create<KitchenStore>((set, get) => ({
@@ -71,7 +75,7 @@ export const useKitchen = create<KitchenStore>((set, get) => ({
   note: null,
   setCrew: (crew) => set({ crew }),
   go: (roomId) =>
-    set({ roomId, phase: 'joining', result: null, note: null, score: 0, streak: 0, orders: [], over: false, time: 0, timeAt: 0, lag: false, reconnecting: false }),
+    set({ roomId, phase: 'joining', result: null, note: null, score: 0, streak: 0, orders: [], over: false, time: 0, timeAt: 0, lag: false, reconnecting: false, again: false }),
   setPhase: (phase) => set({ phase }),
   setHud: (v) => {
     const s = get();
@@ -91,4 +95,7 @@ export const useKitchen = create<KitchenStore>((set, get) => ({
   },
   lost: () => set({ phase: 'off', roomId: null, reconnecting: false, note: 'lost the kitchen' }),
   exit: () => set({ phase: 'off', roomId: null, result: null, reconnecting: false }),
+  again: false,
+  playAgain: () => set({ again: true, phase: 'off', roomId: null, result: null, reconnecting: false }),
+  clearAgain: () => set({ again: false }),
 }));

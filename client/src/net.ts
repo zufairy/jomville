@@ -338,6 +338,8 @@ export class Net {
         not_friends: 'you can only invite friends',
         friend_offline: 'they went offline',
       };
+      // "play again" racing a crewmate's start: their k_go is on its way, not an error
+      if (m.code === 'already_cooking' && useKitchen.getState().again) return;
       store.flash(tradeSysText(m.code) ?? msgs[m.code] ?? 'nope');
       onTradeSys(m.code);
       // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray
