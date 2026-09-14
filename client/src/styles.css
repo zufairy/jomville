@@ -1881,6 +1881,30 @@ html, body, #root {
   .vip__card, .vip__trim, .vip__title, .vip__confirm { animation: none; }
 }
 
+/* VIP portraits */
+.vs { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 12px; }
+.vs__divider {
+  flex: none; font-weight: 900; font-size: 20px; font-style: italic; color: var(--vip-gold);
+  text-shadow: 0 0 10px rgba(232, 194, 106, 0.7); animation: vip-pulse 2.8s ease-in-out infinite;
+}
+.vs-card { flex: 1; min-width: 0; max-width: 170px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; border-radius: 18px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s; }
+.vs-card--active { border-color: var(--vip-pink); box-shadow: 0 0 18px rgba(255, 79, 163, 0.45); transform: translateY(-2px); }
+.vs-card__ring {
+  width: 96px; height: 96px; border-radius: 50%; padding: 3px; display: grid; place-items: center;
+  background: conic-gradient(from 200deg, var(--vip-gold), var(--vip-pink), var(--vip-violet), var(--vip-gold));
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.45);
+}
+.vs-card__img, .vs-card__fallback { width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #3a2160, #140a22); image-rendering: pixelated; display: grid; place-items: center; font-size: 40px; }
+.vs-card__name { max-width: 100%; font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vs-card__score { font-weight: 900; font-size: 22px; color: var(--vip-gold); text-shadow: 0 0 10px rgba(232, 194, 106, 0.6); }
+@media (max-width: 480px) {
+  .vs-card__ring { width: 72px; height: 72px; }
+  .vs-card__fallback { font-size: 30px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vs__divider { animation: none; }
+}
+
 /* ---- wearable catalog ---- */
 .wear__grid {
   display: grid;
