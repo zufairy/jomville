@@ -21,6 +21,9 @@ import {
   randomSlug,
   FURNITURE,
   isInstanceDef,
+  FRIEND_LIMIT,
+  FRIEND_PENDING_LIMIT,
+  serializeAvatar,
 } from '@dovey/shared';
 import { Db } from './db';
 
@@ -79,6 +82,22 @@ export interface RoomSummary {
   visitors24h: number;
   createdAt: string;
 }
+
+export type FriendRequestResult = 'sent' | 'accepted' | 'already' | 'pending' | 'blocked' | 'self' | 'limit' | 'no_user';
+export type FriendRespondResult = 'accepted' | 'declined' | 'no_request' | 'limit';
+export interface FriendRow {
+  id: string;
+  handle: string;
+  avatar: string;
+  since: string;
+}
+export interface PendingRow {
+  id: string;
+  handle: string;
+  avatar: string;
+  at: string;
+}
+const pair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
 
 const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
 const newId = () => randomBytes(12).toString('hex');
@@ -254,11 +273,107 @@ export class Repo {
   async block(blockerId: string, blockedId: string): Promise<boolean> {
     if (blockerId === blockedId) return false;
     await this.db.query('insert into blocks (blocker_id, blocked_id) values ($1, $2) on conflict do nothing', [blockerId, blockedId]);
+    // blocking ends any friendship and pending requests between the two
+    const [a, b] = pair(blockerId, blockedId);
+    await this.db.query('delete from friendships where user_a = $1 and user_b = $2', [a, b]);
+    await this.db.query('delete from friend_requests where (from_id = $1 and to_id = $2) or (from_id = $2 and to_id = $1)', [blockerId, blockedId]);
     return true;
   }
 
   async unblock(blockerId: string, blockedId: string) {
     await this.db.query('delete from blocks where blocker_id = $1 and blocked_id = $2', [blockerId, blockedId]);
+  }
+
+  // ---- friends
+
+  async areFriends(x: string, y: string): Promise<boolean> {
+    const [a, b] = pair(x, y);
+    return (await this.db.query('select 1 from friendships where user_a = $1 and user_b = $2', [a, b])).length > 0;
+  }
+
+  private async friendCount(userId: string): Promise<number> {
+    const r = await this.db.query<{ n: number }>('select count(*)::int as n from friendships where user_a = $1 or user_b = $1', [userId]);
+    return r[0]?.n ?? 0;
+  }
+
+  private async makeFriends(x: string, y: string) {
+    const [a, b] = pair(x, y);
+    await this.db.query('insert into friendships (user_a, user_b) values ($1, $2) on conflict do nothing', [a, b]);
+    await this.db.query('delete from friend_requests where (from_id = $1 and to_id = $2) or (from_id = $2 and to_id = $1)', [x, y]);
+  }
+
+  async requestFriend(from: string, to: string): Promise<FriendRequestResult> {
+    if (from === to) return 'self';
+    if (!(await this.userById(to))) return 'no_user';
+    const blocked = await this.db.query('select 1 from blocks where (blocker_id = $1 and blocked_id = $2) or (blocker_id = $2 and blocked_id = $1)', [from, to]);
+    if (blocked.length) return 'blocked';
+    if (await this.areFriends(from, to)) return 'already';
+    const reverse = await this.db.query('select 1 from friend_requests where from_id = $1 and to_id = $2', [to, from]);
+    if (reverse.length) {
+      if ((await this.friendCount(from)) >= FRIEND_LIMIT || (await this.friendCount(to)) >= FRIEND_LIMIT) return 'limit';
+      await this.makeFriends(from, to);
+      return 'accepted';
+    }
+    const same = await this.db.query('select 1 from friend_requests where from_id = $1 and to_id = $2', [from, to]);
+    if (same.length) return 'pending';
+    const out = await this.db.query<{ n: number }>('select count(*)::int as n from friend_requests where from_id = $1', [from]);
+    if ((out[0]?.n ?? 0) >= FRIEND_PENDING_LIMIT || (await this.friendCount(from)) >= FRIEND_LIMIT) return 'limit';
+    await this.db.query('insert into friend_requests (from_id, to_id) values ($1, $2) on conflict do nothing', [from, to]);
+    return 'sent';
+  }
+
+  async respondFriend(me: string, from: string, accept: boolean): Promise<FriendRespondResult> {
+    const req = await this.db.query('select 1 from friend_requests where from_id = $1 and to_id = $2', [from, me]);
+    if (!req.length) return 'no_request';
+    if (!accept) {
+      await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2', [from, me]);
+      return 'declined';
+    }
+    if ((await this.friendCount(me)) >= FRIEND_LIMIT || (await this.friendCount(from)) >= FRIEND_LIMIT) return 'limit';
+    await this.makeFriends(me, from);
+    return 'accepted';
+  }
+
+  async cancelFriendRequest(me: string, to: string) {
+    await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2', [me, to]);
+  }
+
+  async removeFriend(me: string, other: string) {
+    const [a, b] = pair(me, other);
+    await this.db.query('delete from friendships where user_a = $1 and user_b = $2', [a, b]);
+  }
+
+  async friendIdsOf(userId: string): Promise<string[]> {
+    const rows = await this.db.query<{ id: string }>(
+      'select case when user_a = $1 then user_b else user_a end as id from friendships where user_a = $1 or user_b = $1',
+      [userId],
+    );
+    return rows.map((r) => r.id);
+  }
+
+  async friendsOf(userId: string): Promise<FriendRow[]> {
+    const rows = await this.db.query<{ id: string; handle: string; avatar: unknown; since: Date | string }>(
+      `select u.id, u.handle, u.avatar, f.since from friendships f
+       join users u on u.id = case when f.user_a = $1 then f.user_b else f.user_a end
+       where f.user_a = $1 or f.user_b = $1
+       order by u.handle`,
+      [userId],
+    );
+    return rows.map((r) => ({ id: r.id, handle: r.handle, avatar: serializeAvatar(normalizeAvatar(r.avatar)), since: new Date(r.since).toISOString() }));
+  }
+
+  async pendingOf(userId: string): Promise<{ incoming: PendingRow[]; outgoing: PendingRow[] }> {
+    type Row = { id: string; handle: string; avatar: unknown; at: Date | string };
+    const map = (r: Row): PendingRow => ({ id: r.id, handle: r.handle, avatar: serializeAvatar(normalizeAvatar(r.avatar)), at: new Date(r.at).toISOString() });
+    const incoming = await this.db.query<Row>(
+      'select u.id, u.handle, u.avatar, r.created_at as at from friend_requests r join users u on u.id = r.from_id where r.to_id = $1 order by r.created_at desc',
+      [userId],
+    );
+    const outgoing = await this.db.query<Row>(
+      'select u.id, u.handle, u.avatar, r.created_at as at from friend_requests r join users u on u.id = r.to_id where r.from_id = $1 order by r.created_at desc',
+      [userId],
+    );
+    return { incoming: incoming.map(map), outgoing: outgoing.map(map) };
   }
 
   /** File a report for the moderation queue. Returns false only for self-reports. */
