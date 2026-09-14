@@ -105,6 +105,21 @@ html, body, #root {
   gap: 8px;
   justify-content: flex-end;
 }
+/* own stacking context so the chat shade sits behind the HUD but above the game canvas */
+.bottom { z-index: 1; }
+.chatfeed-shade {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  height: calc(220px + var(--safe-bottom));
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55) 40%, rgba(0, 0, 0, 0.85));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.chatfeed-shade--on { opacity: 1; }
 .chatfeed {
   display: flex;
   flex-direction: column;
@@ -123,17 +138,12 @@ html, body, #root {
 .chatfeed__line {
   align-self: flex-start;
   max-width: 100%;
-  padding: 6px 12px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(74, 30, 92, 0.88), rgba(220, 70, 150, 0.55));
+  padding: 2px 4px;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  animation: chatfeed-in 0.22s ease-out;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  animation: chatfeed-in 0.25s ease-out;
 }
-.chatfeed__line--roll {
-  background: linear-gradient(135deg, rgba(120, 84, 8, 0.9), rgba(245, 197, 84, 0.7));
-}
+.chatfeed__line--roll .chatfeed__text { color: #f5c554; }
 .chatfeed__name {
   display: block;
   font-size: 11px;
@@ -149,8 +159,8 @@ html, body, #root {
   word-break: break-word;
 }
 @keyframes chatfeed-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ---- camera recenter button, shown while free-panned ---- */
@@ -1923,6 +1933,13 @@ html, body, #root {
 }
 
 /* ---- wearable catalog ---- */
+/* the item you just pulled and put on: brief gold glow when the wardrobe opens on it */
+.wear--pulse { animation: wear-pulse 0.8s ease-in-out 2; }
+@keyframes wear-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 194, 106, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(232, 194, 106, 0.9), 0 0 18px rgba(232, 194, 106, 0.7); }
+}
+@media (prefers-reduced-motion: reduce) { .wear--pulse { animation: none; outline: 3px solid #e8c26a; } }
 .wear__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
@@ -2170,3 +2187,77 @@ html, body, #root {
 .kr-result { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); padding: 0 16px; }
 .kr-result__card { background: #fff8ec; border: 3px solid var(--ink); border-radius: 18px; padding: 18px 22px; text-align: center; font-weight: 700; max-width: 100%; }
 .kr-stars { font-size: 40px; color: #f5c542; margin: 4px 0; }
+
+/* ---- item info window: docked above the chat bar, pushes the chat feed up ---- */
+.iteminfo {
+  position: relative;
+  align-self: flex-start;
+  width: min(360px, 100%);
+  display: flex;
+  gap: 10px;
+  padding: 10px 34px 10px 10px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(40, 20, 52, 0.94), rgba(88, 34, 70, 0.9));
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  animation: chatfeed-in 0.18s ease-out;
+}
+.iteminfo--rare { border-color: rgba(63, 143, 224, 0.7); }
+.iteminfo--epic { border-color: rgba(214, 163, 255, 0.75); }
+.iteminfo__art {
+  flex: 0 0 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.iteminfo__art img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+.iteminfo__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.iteminfo__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.iteminfo__name { font-weight: 800; font-size: 15px; }
+.iteminfo__rarity {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.iteminfo__rarity--rare { background: #3f8fe0; }
+.iteminfo__rarity--epic { background: #9b6bdc; }
+.iteminfo__serial { font-size: 11px; font-weight: 700; color: #f7c948; }
+.iteminfo__blurb { font-size: 12.5px; line-height: 1.35; opacity: 0.9; }
+.iteminfo__status { font-size: 12px; font-weight: 800; color: #9ff5c0; }
+.iteminfo__actions { display: flex; gap: 6px; margin-top: 4px; }
+.iteminfo__btn {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+}
+.iteminfo__btn--use { background: var(--accent); }
+.iteminfo__btn:active { transform: scale(0.95); }
+.iteminfo__x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}

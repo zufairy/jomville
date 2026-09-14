@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AvatarConfig,
   BODY_TYPES,
@@ -14,6 +14,7 @@ import {
   randomAvatar,
 } from '@dovey/shared';
 import { useAppStore } from '../store';
+import { wearPatch } from '../wear';
 import { AvatarPreview, Focus } from './AvatarPreview';
 
 /** Swatch colours for the pack's named variants. Unknown names fall back to grey. */
@@ -56,6 +57,8 @@ const SLOT_FOCUS: Record<Slot, Focus> = {
 };
 type Tab = 'look' | Slot;
 const TABS: Tab[] = ['look', ...SLOTS];
+/** how long a just-pulled item's card glows after the wardrobe opens on it */
+const PULSE_MS = 1600;
 
 function Swatches({ values, current, onPick }: { values: readonly string[]; current: string; onPick: (v: string) => void }) {
   return (
@@ -81,6 +84,7 @@ function ItemCard({
   slot,
   selected,
   locked,
+  pulse = false,
   onPick,
 }: {
   item: ItemDef | null;
@@ -88,6 +92,7 @@ function ItemCard({
   slot: Slot;
   selected: boolean;
   locked: boolean;
+  pulse?: boolean;
   onPick: () => void;
 }) {
   const worn = useMemo<AvatarConfig>(() => {
@@ -101,9 +106,10 @@ function ItemCard({
 
   return (
     <button
-      className={`wear ${selected ? 'wear--on' : ''} ${locked ? 'wear--locked' : ''} ${item ? `wear--${item.rarity}` : ''}`}
+      className={`wear ${selected ? 'wear--on' : ''} ${locked ? 'wear--locked' : ''} ${item ? `wear--${item.rarity}` : ''} ${pulse ? 'wear--pulse' : ''}`}
       onClick={onPick}
       title={item?.name ?? 'none'}
+      data-item={item?.id ?? 'none'}
     >
       <span className="wear__art">
         {/* only the chosen card plays its gear animation, so a full tab stays light */}
@@ -124,7 +130,29 @@ export function Customizer({ embedded = false, onDone }: { embedded?: boolean; o
   const wardrobe = useAppStore((s) => s.wardrobe);
   const flash = useAppStore((s) => s.flash);
   const close = () => (onDone ? onDone() : useAppStore.getState().setCustomizing(false));
-  const [tab, setTab] = useState<Tab>('look');
+  // opened from a capsule's "wear it": start on that item's tab
+  const [focusId] = useState(() => useAppStore.getState().customizeFocus);
+  const [tab, setTab] = useState<Tab>(() => (focusId ? (itemDef(focusId)?.slot ?? 'look') : 'look'));
+  const [pulseId, setPulseId] = useState<string | null>(focusId);
+  const body = useRef<HTMLDivElement>(null);
+
+  // bring the just-pulled item into view once its cards exist, then forget the focus
+  useEffect(() => {
+    if (!focusId) return;
+    useAppStore.getState().setCustomizeFocus(null);
+    const raf = requestAnimationFrame(() => {
+      // the tab row scrolls sideways too; slide the opened tab into view
+      const activeTab = body.current?.parentElement?.querySelector<HTMLElement>('.cust__tabs .tab--on');
+      activeTab?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+      const card = body.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(focusId)}"]`);
+      card?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    const t = window.setTimeout(() => setPulseId(null), PULSE_MS);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
+  }, [focusId]);
 
   const owned = (id: string) => id === 'none' || wardrobe === null || wardrobe.includes(id) || itemDef(id)?.rarity === 'starter';
 
@@ -133,8 +161,6 @@ export function Customizer({ embedded = false, onDone }: { embedded?: boolean; o
     const gear = isGearSlot(slot);
     const colourKey = `${slot}Colour` as 'hairColour' | 'hatColour' | 'torsoColour' | 'legsColour' | 'feetColour';
     const def = itemDef(current);
-    const wearPatch = (i: ItemDef): Partial<AvatarConfig> =>
-      gear ? { [slot]: i.id } : { [slot]: i.id, [colourKey]: i.variants.includes(cfg[colourKey]) ? cfg[colourKey] : i.variants[0] };
     return (
       <>
         <div className="wear__grid">
@@ -149,7 +175,8 @@ export function Customizer({ embedded = false, onDone }: { embedded?: boolean; o
               slot={slot}
               selected={current === i.id}
               locked={!owned(i.id)}
-              onPick={() => (owned(i.id) ? set(wearPatch(i)) : flash('pull it from a capsule machine'))}
+              pulse={pulseId === i.id}
+              onPick={() => (owned(i.id) ? set(wearPatch(cfg, i)) : flash('pull it from a capsule machine'))}
             />
           ))}
         </div>
@@ -183,7 +210,7 @@ export function Customizer({ embedded = false, onDone }: { embedded?: boolean; o
           </button>
         ))}
       </div>
-      <div className="cust__body">
+      <div className="cust__body" ref={body}>
         {tab === 'look' ? (
           <>
             <h3>body</h3>

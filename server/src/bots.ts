@@ -94,6 +94,41 @@ function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
+/**
+ * Start tiles for the lobby locals: random walkable tiles spread over the map,
+ * clear of the arrival area in the middle, off seats, and apart from each other,
+ * so a freshly created lobby already looks lived-in instead of a crowd at the door.
+ * The spacing relaxes when the map is too small to honour it.
+ */
+export function scatterSpawns(grid: Grid, count: number, opts: { center: Tile; clearRadius: number; avoid: Set<string>; minGap: number }, rand: () => number = Math.random): Tile[] {
+  const open: Tile[] = [];
+  const nearCenter: Tile[] = [];
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      if (!grid.walkable[y]?.[x] || opts.avoid.has(`${x},${y}`)) continue;
+      const t = { x, y };
+      (dist(t, opts.center) > opts.clearRadius ? open : nearCenter).push(t);
+    }
+  }
+  const shuffle = (a: Tile[]) => {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+  };
+  shuffle(open);
+  shuffle(nearCenter);
+  const out: Tile[] = [];
+  for (let gap = opts.minGap; gap >= 0 && out.length < count; gap--) {
+    // only fall back to the arrival area once spacing has fully relaxed
+    for (const t of gap === 0 ? [...open, ...nearCenter] : open) {
+      if (out.length >= count) break;
+      if (!out.includes(t) && out.every((o) => dist(o, t) >= gap)) out.push(t);
+    }
+  }
+  return out;
+}
+
 /** Which bot should answer a human line: the one named, else the nearest within earshot. */
 export function pickResponder(text: string, from: { x: number; y: number }, bots: Array<{ p: Persona; pos: { x: number; y: number } | undefined }>): Persona | null {
   const lower = text.toLowerCase();
