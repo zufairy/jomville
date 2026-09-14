@@ -3,6 +3,8 @@ import { REPORT_NOTE_MAX, REPORT_REASONS, ReportReason } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { useRoster } from '../roster';
 import { friends, useFriends } from '../friends';
+import { StakePicker } from './duel/StakePicker';
+import { isBotUser } from './duel/stakes';
 
 /** Tap-on-avatar popover: who they are, what you can do with them, and how to get away from them. */
 export function ProfileSheet() {
@@ -16,6 +18,8 @@ export function ProfileSheet() {
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [note, setNote] = useState('');
+  const [staking, setStaking] = useState(false);
+  const coins = useAppStore((s) => s.coins);
   const mySession = useAppStore((s) => s.sessionId);
   const userId = useRoster((s) => (profile ? s.players[profile.sessionId]?.userId : undefined));
   const friendState = useFriends((s) =>
@@ -32,6 +36,7 @@ export function ProfileSheet() {
     setReporting(false);
     setReason(null);
     setNote('');
+    setStaking(false);
   };
 
   const start = (video: boolean) => {
@@ -89,6 +94,23 @@ export function ProfileSheet() {
     );
   }
 
+  if (staking) {
+    return (
+      <div className="sheet profile" role="dialog" aria-label={`duel ${handle}`}>
+        <StakePicker
+          handle={handle}
+          balance={coins}
+          bot={isBotUser(userId)}
+          onBack={() => setStaking(false)}
+          onSend={(stake) => {
+            actions?.duelInvite(sessionId, handle, stake);
+            close();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="sheet profile" role="dialog" aria-label={handle}>
       <div className="profile__head">
@@ -135,10 +157,7 @@ export function ProfileSheet() {
             <button
               className="btn btn--duel"
               disabled={duel.phase !== 'idle'}
-              onClick={() => {
-                actions?.duelInvite(sessionId, handle, 0);
-                close();
-              }}
+              onClick={() => setStaking(true)}
             >
               ⚔️ challenge to a duel
             </button>
