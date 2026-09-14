@@ -117,3 +117,47 @@ export async function claimDaily(): Promise<{ granted: boolean; coins: number } 
   if (!r.ok) return null;
   return r.json();
 }
+
+// ---- friends
+export interface FriendRoom {
+  slug: string;
+  name: string;
+}
+export interface FriendView {
+  id: string;
+  handle: string;
+  avatar: string;
+  since: string;
+  online: boolean;
+  room: FriendRoom | null;
+}
+export interface FriendRequestView {
+  id: string;
+  handle: string;
+  avatar: string;
+  at: string;
+}
+export interface FriendsPayload {
+  friends: FriendView[];
+  incoming: FriendRequestView[];
+  outgoing: FriendRequestView[];
+}
+
+export async function fetchFriends(): Promise<FriendsPayload | null> {
+  try {
+    const r = await fetch(`${base}/api/friends`, json({ token: deviceToken() }));
+    return r.ok ? r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function friendAction(path: 'request' | 'respond' | 'cancel' | 'remove', body: Record<string, unknown>): Promise<string> {
+  try {
+    const r = await fetch(`${base}/api/friends/${path}`, json({ token: deviceToken(), ...body }));
+    if (!r.ok) return 'error';
+    return ((await r.json()) as { result?: string }).result ?? 'error';
+  } catch {
+    return 'error';
+  }
+}
