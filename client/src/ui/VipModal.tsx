@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { exitIntent } from './vipModal';
+import { exitIntent } from './vipModalIntent';
 
 interface VipModalProps {
   title: ReactNode;

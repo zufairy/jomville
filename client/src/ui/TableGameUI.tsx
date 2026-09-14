@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { C4_COLS, C4_ROWS, DOTS_EDGES, DOTS_N, REV_N, TABLE_GAMES, TABLE_GAME_KINDS, TableGameKind, TableState, legalMoves } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { TableMatchView, tables, useTables } from '../tableGames';
+import { VipModal } from './VipModal';
+import { PlayersVs } from './PlayerVsCard';
 
 /**
  * Game Den popups: the games menu, matchmaking, and the live board for
@@ -37,26 +39,36 @@ export function TableGameUI() {
     );
   }
 
+  const leaveNow = () => {
+    if (phase === 'playing') tables.leave();
+    else if (phase === 'queue') tables.cancel();
+    else useTables.getState().close();
+  };
+  const live = phase === 'playing' && !!match && !match.over && !match.bot;
+  const title =
+    phase === 'playing' && match ? (
+      <>
+        {TABLE_GAMES[match.kind].icon} {TABLE_GAMES[match.kind].name}
+        {match.round > 1 && <span className="tg__round">round {match.round}</span>}
+      </>
+    ) : phase !== 'menu' && kind ? (
+      `${TABLE_GAMES[kind].icon} ${TABLE_GAMES[kind].name}`
+    ) : (
+      '🎲 game den'
+    );
+
   return (
-    <div className="tg" role="dialog" aria-label="board game">
-      <div className={`tg__card ${phase === 'playing' ? 'tg__card--play' : ''}`}>
-        {phase === 'menu' && <GameMenu />}
-        {(phase === 'queue' || phase === 'waiting') && kind && <Matchmaking kind={kind} waiting={phase === 'waiting'} />}
-        {phase === 'playing' && match && <MatchView match={match} />}
-      </div>
-    </div>
+    <VipModal title={title} label="board game" live={live} onExit={leaveNow} exitLabel={live ? 'forfeit & exit' : 'exit game'} wide={phase === 'playing'}>
+      {phase === 'menu' && <GameMenu />}
+      {(phase === 'queue' || phase === 'waiting') && kind && <Matchmaking kind={kind} waiting={phase === 'waiting'} />}
+      {phase === 'playing' && match && <MatchView match={match} />}
+    </VipModal>
   );
 }
 
 function GameMenu() {
   return (
     <>
-      <div className="tg__head">
-        <h2 className="tg__title">🎲 game den</h2>
-        <button className="tg__x" onClick={() => useTables.getState().close()} aria-label="close">
-          ✕
-        </button>
-      </div>
       <p className="tg__sub">pick a game. sit at a table opposite someone, or jump in here.</p>
       <div className="tg-menu">
         {TABLE_GAME_KINDS.map((k, i) => (
@@ -111,7 +123,7 @@ function Matchmaking({ kind, waiting }: { kind: TableGameKind; waiting: boolean 
         <span>🎲</span>
         <span>🎲</span>
       </div>
-      <h2 className="tg__title">{waiting ? `${g.name} table` : `finding a ${g.name} player`}</h2>
+      <div className="tg__title">{waiting ? `${g.name} table` : `finding a ${g.name} player`}</div>
       <p className="tg__sub">
         {waiting ? 'waiting for someone to sit opposite you' : 'looking for someone in the room'}
         <span className="tg-dots" aria-hidden>
@@ -159,21 +171,23 @@ function MatchView({ match }: { match: TableMatchView }) {
 
   return (
     <>
-      <div className="tg__head">
-        <h2 className="tg__title tg__title--small">
-          {TABLE_GAMES[match.kind].icon} {TABLE_GAMES[match.kind].name}
-          {match.round > 1 && <span className="tg__round">round {match.round}</span>}
-        </h2>
-        <button className="tg__x" onClick={() => tables.leave()} aria-label={match.over ? 'close' : 'forfeit'}>
-          ✕
-        </button>
-      </div>
-
-      <div className="tg-players">
-        <PlayerChip name="you" seat={me} kind={match.kind} active={!match.over && s.turn === me} score={scored ? s.score[me] : null} />
-        <div className="tg-players__vs">vs</div>
-        <PlayerChip name={match.names[them]} seat={them} kind={match.kind} active={!match.over && s.turn === them} score={scored ? s.score[them] : null} bot={match.bot} />
-      </div>
+      <PlayersVs
+        left={{
+          sessionId: match.seats[me],
+          name: 'you',
+          active: !match.over && s.turn === me,
+          score: scored ? s.score[me] : null,
+          badge: <span className={`tg-token tg-token--${match.kind} p${me}`}>{match.kind === 'ttt' ? (me === 0 ? '✕' : '○') : ''}</span>,
+        }}
+        right={{
+          sessionId: match.seats[them],
+          name: match.names[them],
+          bot: match.bot,
+          active: !match.over && s.turn === them,
+          score: scored ? s.score[them] : null,
+          badge: <span className={`tg-token tg-token--${match.kind} p${them}`}>{match.kind === 'ttt' ? (them === 0 ? '✕' : '○') : ''}</span>,
+        }}
+      />
 
       {!match.over && (
         <div className={`tg-turn ${myTurn ? 'tg-turn--me' : ''}`}>
@@ -195,30 +209,17 @@ function MatchView({ match }: { match: TableMatchView }) {
           <div className="tg-result__title">{won ? '🏆 you win!' : lost ? `${match.names[them]} wins` : "it's a draw"}</div>
           <div className="tg-result__sub">{won ? `+${match.bot ? 5 : 15} coins` : lost ? 'so close. run it back?' : 'evenly matched'}</div>
           <div className="tg__btns">
-            <button className="btn btn--go" disabled={match.rematch[me] || status !== 'connected'} onClick={() => tables.rematch()}>
+            <button className="vip__btn" disabled={match.rematch[me] || status !== 'connected'} onClick={() => tables.rematch()}>
               {match.rematch[me] ? (match.rematch[them] ? 'starting…' : 'waiting for them…') : match.rematch[them] ? 'accept rematch' : 'rematch'}
             </button>
-            <button className="btn" onClick={() => tables.leave()}>
-              leave
+            <button className="vip__btn vip__btn--ghost" onClick={() => tables.leave()}>
+              exit game
             </button>
           </div>
         </div>
       )}
       {!match.over && <p className="tg__hint">you play {SEAT_LABEL[match.kind][me]}</p>}
     </>
-  );
-}
-
-function PlayerChip({ name, seat, kind, active, score, bot }: { name: string; seat: number; kind: TableGameKind; active: boolean; score: number | null; bot?: boolean }) {
-  return (
-    <div className={`tg-chip ${active ? 'tg-chip--active' : ''}`}>
-      <span className={`tg-token tg-token--${kind} p${seat}`}>{kind === 'ttt' ? (seat === 0 ? '✕' : '○') : ''}</span>
-      <span className="tg-chip__name">
-        {bot ? '🤖 ' : ''}
-        {name}
-      </span>
-      {score !== null && <span className="tg-chip__score">{score}</span>}
-    </div>
   );
 }
 

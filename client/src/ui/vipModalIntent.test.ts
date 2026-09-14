@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exitIntent } from './vipModal';
+import { exitIntent } from './vipModalIntent';
 
 describe('exitIntent', () => {
   it('closes straight away when no match is live', () => {
