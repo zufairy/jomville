@@ -1807,6 +1807,80 @@ html, body, #root {
   .tg-launch { bottom: calc(70px + var(--safe-bottom)); }
 }
 
+/* ---- VIP game popup: neon arcade, gold trim */
+:root {
+  --vip-bg: rgba(18,10,28,.86);
+  --vip-gold: #e8c26a;
+  --vip-pink: #ff4fa3;
+  --vip-violet: #8b5cf6;
+}
+.vip {
+  position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: radial-gradient(80% 60% at 50% 40%, rgba(139, 92, 246, 0.22), rgba(6, 3, 12, 0.72));
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.vip__card {
+  position: relative; width: 100%; max-width: 460px; max-height: calc(100% - 20px); display: flex; flex-direction: column;
+  background: linear-gradient(180deg, rgba(40, 20, 60, 0.9), var(--vip-bg) 45%);
+  color: #fbf5ff; border: 1px solid var(--vip-gold); border-radius: 26px; outline: none; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(232, 194, 106, 0.25) inset, 0 0 40px rgba(255, 79, 163, 0.28), 0 18px 50px rgba(0, 0, 0, 0.55);
+  animation: vip-in 0.34s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.vip__card--wide { max-width: 500px; }
+.vip__trim {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(232, 194, 106, 0.18) 45%, transparent 60%) no-repeat;
+  background-size: 250% 100%; animation: vip-sheen 5s ease-in-out infinite;
+}
+.vip__head { position: relative; display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px 18px; border-bottom: 1px solid rgba(232, 194, 106, 0.22); }
+.vip__title {
+  flex: 1; min-width: 0; margin: 0; font-weight: 900; font-size: 20px; letter-spacing: 0.3px; text-align: left;
+  color: #fff; text-shadow: 0 0 10px var(--vip-pink), 0 0 22px rgba(255, 79, 163, 0.55); animation: vip-pulse 2.8s ease-in-out infinite;
+  display: flex; align-items: center; gap: 8px;
+}
+.vip__x {
+  flex: none; width: 40px; height: 40px; border-radius: 14px; border: 1px solid rgba(232, 194, 106, 0.55);
+  background: rgba(255, 255, 255, 0.06); color: var(--vip-gold); font-size: 18px; font-weight: 900; cursor: pointer;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.vip__x:hover { background: rgba(232, 194, 106, 0.16); box-shadow: 0 0 14px rgba(232, 194, 106, 0.45); }
+.vip__x:active { transform: scale(0.94); }
+.vip__body { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; text-align: center; }
+.vip__foot { position: relative; padding: 10px 16px 16px; }
+.vip__exit {
+  width: 100%; min-height: 44px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.22); background: transparent;
+  color: rgba(255, 255, 255, 0.82); font: inherit; font-weight: 800; font-size: 14px; letter-spacing: 0.4px; text-transform: uppercase; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.vip__exit:hover { border-color: var(--vip-pink); color: #fff; background: rgba(255, 79, 163, 0.1); }
+.vip__btn {
+  min-height: 42px; padding: 8px 18px; border-radius: 14px; border: 1px solid rgba(232, 194, 106, 0.6);
+  background: linear-gradient(180deg, #f3d98f, var(--vip-gold)); color: #2a1a08; font: inherit; font-weight: 900; cursor: pointer;
+  box-shadow: 0 3px 0 #9c7a2e, 0 0 16px rgba(232, 194, 106, 0.35);
+}
+.vip__btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #9c7a2e; }
+.vip__btn:disabled { opacity: 0.5; cursor: default; }
+.vip__btn--pink { background: linear-gradient(180deg, #ff86c1, var(--vip-pink)); color: #fff; border-color: #ffb3d6; box-shadow: 0 3px 0 #a3185e, 0 0 16px rgba(255, 79, 163, 0.45); }
+.vip__btn--ghost { background: rgba(255, 255, 255, 0.06); color: #fff; border-color: rgba(255, 255, 255, 0.25); box-shadow: none; }
+.vip__btn--danger { background: linear-gradient(180deg, #ff7a8a, #e3344c); color: #fff; border-color: #ffb0ba; box-shadow: 0 3px 0 #8e1627; }
+.vip__confirm { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 16px; background: rgba(6, 3, 12, 0.7); animation: vip-fade 0.15s ease-out; }
+.vip__confirm-card { width: 100%; max-width: 300px; padding: 18px; border-radius: 20px; background: #1d1030; border: 1px solid var(--vip-pink); box-shadow: 0 0 30px rgba(255, 79, 163, 0.35); text-align: center; }
+.vip__confirm-title { font-weight: 900; font-size: 18px; }
+.vip__confirm-sub { margin: 6px 0 14px; font-weight: 700; font-size: 13px; opacity: 0.7; }
+.vip__confirm-btns { display: flex; gap: 10px; justify-content: center; }
+.vip .btn { color: var(--ink); }
+@keyframes vip-in { from { opacity: 0; transform: translateY(14px) scale(0.94); } }
+@keyframes vip-fade { from { opacity: 0; } }
+@keyframes vip-sheen { 0%, 60% { background-position: 150% 0; } 100% { background-position: -150% 0; } }
+@keyframes vip-pulse { 50% { text-shadow: 0 0 6px var(--vip-pink), 0 0 14px rgba(255, 79, 163, 0.35); } }
+@media (max-width: 480px) {
+  .vip { padding: 0; }
+  .vip__card, .vip__card--wide { max-width: none; max-height: none; height: 100%; border-radius: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vip__card, .vip__trim, .vip__title, .vip__confirm { animation: none; }
+}
+
 /* ---- wearable catalog ---- */
 .wear__grid {
   display: grid;
