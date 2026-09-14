@@ -21,11 +21,16 @@ import {
   randomSlug,
   FURNITURE,
   isInstanceDef,
+  parseOffer,
+  type Offer,
+  type TradeFailCode,
+  type TradeLogOffer,
   FRIEND_LIMIT,
   FRIEND_PENDING_LIMIT,
   serializeAvatar,
 } from '@dovey/shared';
 import { Db } from './db';
+import { TradeAbort, giveCoins, giveStack, takeCoins, takeStack, transferInstance } from './trade/ledger';
 
 export interface User {
   id: string;
@@ -56,6 +61,8 @@ export interface RoomRow {
   style: RoomStyle;
   layout: Placement[];
   is_public: boolean;
+  /** owner may turn trading off; GameRoom caches it on create */
+  trade_enabled: boolean;
   created_at: string;
 }
 
@@ -81,6 +88,37 @@ export interface RoomSummary {
   owner: string;
   visitors24h: number;
   createdAt: string;
+}
+
+export interface DuelSettleInput {
+  aId: string;
+  bId: string;
+  stake: number;
+  credits: Array<{ userId: string; amount: number }>;
+  winnerId: string | null;
+  outcome: 'win' | 'draw' | 'forfeit' | 'left';
+  roomId: string;
+  /** write a duels log row */
+  log: boolean;
+}
+
+/** Thrown inside the escrow transaction to roll it back when a side is short. */
+class ShortStake extends Error {
+  constructor(readonly side: 'a' | 'b') {
+    super('short_stake');
+  }
+}
+
+export interface TradeLogRow {
+  id: number;
+  a_id: string;
+  a_handle: string;
+  b_id: string;
+  b_handle: string;
+  a_offer: TradeLogOffer;
+  b_offer: TradeLogOffer;
+  room_id: string | null;
+  at: Date | string;
 }
 
 export type FriendRequestResult = 'sent' | 'accepted' | 'already' | 'pending' | 'blocked' | 'self' | 'limit' | 'no_user';
@@ -588,6 +626,138 @@ export class Repo {
 
   async pruneRolls(days = 7) {
     await this.db.query('delete from rolls where at < now() - make_interval(days => $1::int)', [days]);
+  }
+
+  // ---- duels
+
+  /**
+   * Take both duel stakes into escrow in one transaction. When either side
+   * cannot cover the stake nothing is debited and `short` names who came up short.
+   */
+  async escrowDuel(aId: string, bId: string, stake: number): Promise<{ ok: true; coins: [number, number] } | { ok: false; short: 'a' | 'b' }> {
+    if (!Number.isInteger(stake) || stake <= 0) throw new Error('escrowDuel needs a positive integer stake');
+    try {
+      return await this.db.transaction(async (tx) => {
+        const r = new Repo(tx);
+        const ca = await r.spendCoins(aId, stake);
+        if (ca === null) throw new ShortStake('a');
+        const cb = await r.spendCoins(bId, stake);
+        if (cb === null) throw new ShortStake('b');
+        return { ok: true as const, coins: [ca, cb] as [number, number] };
+      });
+    } catch (e) {
+      if (e instanceof ShortStake) return { ok: false, short: e.side };
+      throw e;
+    }
+  }
+
+  /**
+   * Pay out a finished duel in one transaction: every credit plus, for a staked
+   * duel, its log row. Returns each credited user's new balance.
+   */
+  async settleDuel(s: DuelSettleInput): Promise<Record<string, number>> {
+    return this.db.transaction(async (tx) => {
+      const r = new Repo(tx);
+      const coins: Record<string, number> = {};
+      for (const c of s.credits) coins[c.userId] = await r.creditCoins(c.userId, c.amount);
+      if (s.log) {
+        await tx.query('insert into duels (a_id, b_id, stake, winner_id, outcome, room_id) values ($1, $2, $3, $4, $5, $6)', [
+          s.aId,
+          s.bId,
+          s.stake,
+          s.winnerId,
+          s.outcome,
+          s.roomId,
+        ]);
+      }
+      return coins;
+    });
+  }
+
+  // ---- trading
+
+  /** Account age and play time, for the production trade gate. */
+  async tradeStanding(userId: string): Promise<{ createdAt: Date; playMinutes: number } | null> {
+    const r = await this.db.query<{ created_at: Date | string; play_minutes: number }>('select created_at, play_minutes from users where id = $1', [userId]);
+    return r[0] ? { createdAt: new Date(r[0].created_at), playMinutes: r[0].play_minutes } : null;
+  }
+
+  /** Called once a minute per connected user by the coin trickle. */
+  async addPlayMinute(userId: string) {
+    await this.db.query('update users set play_minutes = play_minutes + 1 where id = $1', [userId]);
+  }
+
+  /**
+   * Swap two offers atomically: coins, then stacks, then instances, then the log
+   * row, all inside one transaction. Every write is guarded again here, so an
+   * offer that went stale (item placed, coins spent) fails the whole trade.
+   * `offerA` is what `a` gives to `b`.
+   */
+  async executeTrade(
+    a: string,
+    b: string,
+    offerA: Offer,
+    offerB: Offer,
+    roomId: string | null,
+  ): Promise<{ ok: true; id: number } | { ok: false; code: TradeFailCode }> {
+    const pa = parseOffer(offerA);
+    const pb = parseOffer(offerB);
+    if (a === b || !pa || !pb) return { ok: false, code: 'bad_offer' };
+    const idsA = new Set(pa.slots.flatMap((s) => ('itemId' in s ? [s.itemId] : [])));
+    if (pb.slots.some((s) => 'itemId' in s && idsA.has(s.itemId))) return { ok: false, code: 'bad_offer' };
+    const sides = [
+      { from: a, to: b, offer: pa, log: { coins: pa.coins, slots: [] } as TradeLogOffer },
+      { from: b, to: a, offer: pb, log: { coins: pb.coins, slots: [] } as TradeLogOffer },
+    ];
+    try {
+      const id = await this.db.transaction(async (tx) => {
+        // take from both sides before giving to either, so no one pays with what they receive
+        for (const s of sides) await takeCoins(tx, s.from, s.offer.coins);
+        for (const s of sides)
+          for (const slot of s.offer.slots) {
+            if ('itemId' in slot) continue;
+            await takeStack(tx, s.from, slot.def, slot.qty);
+            s.log.slots.push({ def: slot.def, qty: slot.qty });
+          }
+        for (const s of sides) {
+          await giveCoins(tx, s.to, s.offer.coins);
+          for (const slot of s.offer.slots) if (!('itemId' in slot)) await giveStack(tx, s.to, slot.def, slot.qty);
+        }
+        for (const s of sides)
+          for (const slot of s.offer.slots) {
+            if (!('itemId' in slot)) continue;
+            const item = await transferInstance(tx, slot.itemId, s.from, s.to);
+            s.log.slots.push({ itemId: slot.itemId, def: item.def, serial: item.serial });
+          }
+        const r = await tx.query<{ id: number }>('insert into trades (a_id, b_id, a_offer, b_offer, room_id) values ($1, $2, $3, $4, $5) returning id', [
+          a,
+          b,
+          JSON.stringify(sides[0].log),
+          JSON.stringify(sides[1].log),
+          roomId,
+        ]);
+        return r[0].id;
+      });
+      return { ok: true, id };
+    } catch (e) {
+      if (e instanceof TradeAbort) return { ok: false, code: e.code };
+      console.error('[trade] execute failed', e);
+      return { ok: false, code: 'trade_failed' };
+    }
+  }
+
+  /** A user's trades on either side, newest first (mod view). */
+  async tradesFor(userId: string, limit = 50): Promise<TradeLogRow[]> {
+    return this.db.query<TradeLogRow>(
+      `select t.id, t.a_id, ua.handle as a_handle, t.b_id, ub.handle as b_handle, t.a_offer, t.b_offer, t.room_id, t.at
+       from trades t
+       join users ua on ua.id = t.a_id
+       join users ub on ub.id = t.b_id
+       where t.a_id = $1 or t.b_id = $1
+       order by t.at desc, t.id desc
+       limit $2`,
+      [userId, limit],
+    );
   }
 
   async room(slug: string): Promise<RoomRow | null> {

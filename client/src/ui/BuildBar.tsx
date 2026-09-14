@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FURNITURE, furnitureDef, isInstanceDef } from '@dovey/shared';
 import { useAppStore } from '../store';
 
-function Thumb({ def }: { def: string }) {
+export function Thumb({ def }: { def: string }) {
   const preview = useAppStore((s) => s.actions?.previewOf);
   const [src, setSrc] = useState('');
   useEffect(() => {

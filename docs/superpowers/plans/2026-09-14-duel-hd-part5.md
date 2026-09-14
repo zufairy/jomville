@@ -1,0 +1,529 @@
+# Duel HD Implementation Plan (part 5 of 7: Tasks 12-13, arena styles, stake picker)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+Header, Global Constraints and File Map: `docs/superpowers/plans/2026-09-14-duel-hd.md`. Spec: `docs/superpowers/specs/2026-09-14-duel-hd-design.md`. Tasks 1-11 must be done first. Client tests run in vitest's **node** environment (no DOM); every unit-tested client module is pure TypeScript.
+
+---
+
+## Task 12: Arena and picker styles (`duel.css`)
+
+**Files:**
+- Create: `client/src/ui/duel/duel.css`
+
+**Interfaces:**
+- Consumes: the CSS variables `--vip-gold`, `--vip-pink`, `--vip-violet` defined on `:root` in `client/src/styles.css` (read only), and the existing `.vip__card`, `.btn--duel`, `.profile__head` classes.
+- Produces: the class contract used by Tasks 13-14:
+  - Card and root: `.dhd-card`, `.dhd`, `.dhd-fx`, `.dhd-sr`, `.dhd-mute`.
+  - HUD: `.dhd-hud`, `.dhd-hud__mid`, `.dhd-hud__round`, `.dhd-hud__pot`, `.dhd-pips` (`i.on`), `.dhd-coin`, `.dhd-coin--big`.
+  - Stage: `.dhd-stagewrap`, `.dhd-stage[data-reveal][data-outcome]`, `.dhd-stage__glow`.
+  - Fighters: `.dhd-fighter--left|right` with pose classes `is-ready|is-lunge|is-hit|is-victory|is-slump`; parts `__body`, `__img`, `__ghost`, `__shadow`, `__name`, `__pop`; thinking bubble `.dhd-dots` (`--inline`).
+  - Clash area: `.dhd-clash`, `.dhd-vs`, `.dhd-locked` (`__icon`), `.dhd-fist--left|right` with state classes `is-push|is-broken|is-bump`, `.dhd-fist__hand`, `.dhd-fist__icon`, `.dhd-crack`, `.dhd-flash`, `.dhd-word` (`--shoot`), `.dhd-stamp`, `.dhd-caption--left|right|draw`.
+  - Pick controls: `.dhd-pick`, `.dhd-pick__row`, `.dhd-pick__prompt`, `.dhd-timer` (`--hurry`, `--rest`), `__track`, `__bar`, `.dhd-hands` (`--rest`), `.dhd-hand` (`--locked`, `--dim`), `__icon`, `__label`, `.dhd-keys`.
+  - Invite: `.dhd-invite`, `__sub`, `__accept`, `__warn`, `.dhd-stakebadge` (`--free`).
+  - Result: `.dhd-result--win|lose|draw`, `__title`, `__sub`, `__coins`, `__net` (`.up`/`.down`), `__back`.
+  - Stake picker: `.dhd-stake`, `__note`, `__chips`, `__pot`, `__bal`, `__send`, `.dhd-chip` (`--on`).
+
+This file is imported by the components. Nothing is added to `client/src/styles.css`.
+
+- [ ] **Step 1: Create `client/src/ui/duel/duel.css`**
+
+```css
+/* Duel HD arena + stake picker. Imported by client/src/ui/duel components; keep these out of styles.css. */
+
+.vip__card.dhd-card { max-width: 720px; }
+
+.dhd { position: relative; display: flex; flex-direction: column; gap: 12px; user-select: none; -webkit-user-select: none; }
+.dhd-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+.dhd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* header sound toggle */
+.dhd-mute {
+  flex: none; width: 40px; height: 40px; border-radius: 14px; border: 1px solid rgba(232, 194, 106, 0.55);
+  background: rgba(255, 255, 255, 0.06); color: var(--vip-gold); display: grid; place-items: center; cursor: pointer;
+}
+.dhd-mute[aria-pressed="true"] { color: rgba(255, 255, 255, 0.5); border-color: rgba(255, 255, 255, 0.25); }
+.dhd-mute:focus-visible { outline: 3px solid var(--vip-gold); outline-offset: 2px; }
+
+/* HUD: pips, round, pot */
+.dhd-hud { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.dhd-hud > .dhd-pips:last-child { justify-content: flex-end; }
+.dhd-pips { display: flex; gap: 8px; }
+.dhd-pips i {
+  width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(232, 194, 106, 0.6); background: rgba(255, 255, 255, 0.06);
+  transition: background 0.25s, box-shadow 0.25s;
+}
+.dhd-pips i.on {
+  background: radial-gradient(circle at 35% 30%, #fff3c4, var(--vip-gold) 60%, #9c7a2e);
+  box-shadow: 0 0 12px rgba(232, 194, 106, 0.8); animation: dhd-pip 0.45s cubic-bezier(0.34, 1.8, 0.64, 1);
+}
+.dhd-hud__mid { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.dhd-hud__round { font-weight: 900; font-size: 13px; letter-spacing: 2px; color: rgba(255, 255, 255, 0.7); }
+.dhd-hud__pot { display: inline-flex; align-items: center; gap: 6px; font-weight: 900; font-size: 18px; color: var(--vip-gold); text-shadow: 0 0 10px rgba(232, 194, 106, 0.6); }
+.dhd-coin { width: 18px; height: 18px; flex: none; }
+.dhd-coin--big { width: 28px; height: 28px; }
+
+/* stage */
+.dhd-stagewrap { position: relative; }
+.dhd-stage {
+  position: relative; display: grid; grid-template-columns: 1fr minmax(150px, 1.1fr) 1fr; align-items: end;
+  min-height: 270px; padding: 10px 6px 14px; border-radius: 22px; overflow: hidden;
+  background:
+    radial-gradient(120% 80% at 50% 110%, rgba(255, 79, 163, 0.28), transparent 60%),
+    linear-gradient(180deg, #1a0d2c 0%, #2a1446 55%, #3a1b52 100%);
+  border: 1px solid rgba(232, 194, 106, 0.28); box-shadow: inset 0 -30px 60px rgba(0, 0, 0, 0.35);
+}
+.dhd-stage__glow {
+  position: absolute; left: 8%; right: 8%; bottom: 18px; height: 34px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(139, 92, 246, 0.55), transparent); filter: blur(4px); pointer-events: none;
+}
+
+/* fighters */
+.dhd-fighter { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.dhd-fighter__body { position: relative; display: grid; place-items: end center; }
+.dhd-fighter__img { display: block; image-rendering: crisp-edges; image-rendering: pixelated; filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.25)); }
+.dhd-fighter__ghost { border-radius: 40% 40% 12px 12px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)); }
+.dhd-fighter__shadow { position: absolute; bottom: 2px; left: 50%; width: 60%; height: 12px; translate: -50% 0; border-radius: 50%; background: rgba(0, 0, 0, 0.4); filter: blur(2px); }
+.dhd-fighter__name {
+  max-width: 100%; padding: 2px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.35);
+  font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dhd-fighter--left .dhd-fighter__name { border: 1px solid rgba(232, 194, 106, 0.5); }
+.dhd-fighter--right .dhd-fighter__name { border: 1px solid rgba(255, 79, 163, 0.5); }
+.dhd-fighter.is-ready .dhd-fighter__img { filter: drop-shadow(0 0 10px rgba(232, 194, 106, 0.85)) drop-shadow(0 6px 0 rgba(0, 0, 0, 0.25)); }
+.dhd-fighter--left.is-lunge .dhd-fighter__body { animation: dhd-lunge-l 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.3); }
+.dhd-fighter--right.is-lunge .dhd-fighter__body { animation: dhd-lunge-r 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.3); }
+.dhd-fighter--left.is-hit .dhd-fighter__body { animation: dhd-knock-l 0.5s ease-out; }
+.dhd-fighter--right.is-hit .dhd-fighter__body { animation: dhd-knock-r 0.5s ease-out; }
+.dhd-fighter.is-hit .dhd-fighter__img { animation: dhd-hurt 0.5s linear; }
+.dhd-fighter.is-victory .dhd-fighter__body { animation: dhd-victory 0.7s cubic-bezier(0.3, 1.6, 0.6, 1) infinite; }
+.dhd-fighter.is-slump .dhd-fighter__body { transform: translateY(8px) rotate(var(--slump, -6deg)) scale(0.94); filter: grayscale(0.6) brightness(0.8); transition: transform 0.5s, filter 0.5s; }
+.dhd-fighter--right.is-slump { --slump: 6deg; }
+.dhd-fighter__pop {
+  position: absolute; top: 8%; left: 50%; translate: -50% 0; font-weight: 900; font-size: 30px; color: #ff5a6e;
+  text-shadow: 0 2px 0 #5a0f1c, 0 0 12px rgba(255, 90, 110, 0.8); animation: dhd-pop 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+}
+.dhd-dots { position: absolute; top: 4%; left: 50%; translate: -50% 0; display: flex; gap: 5px; padding: 8px 12px; border-radius: 16px; background: #fff; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); }
+.dhd-dots::after { content: ''; position: absolute; bottom: -7px; left: 50%; translate: -50% 0; border: 7px solid transparent; border-top-color: #fff; border-bottom: 0; }
+.dhd-dots i { width: 8px; height: 8px; border-radius: 50%; background: #5b3a86; animation: dhd-dot 1s ease-in-out infinite; }
+.dhd-dots i:nth-child(2) { animation-delay: 0.15s; }
+.dhd-dots i:nth-child(3) { animation-delay: 0.3s; }
+.dhd-dots--inline { position: static; translate: none; display: inline-flex; margin-left: 8px; padding: 4px 8px; vertical-align: middle; background: rgba(255, 255, 255, 0.12); box-shadow: none; }
+.dhd-dots--inline::after { display: none; }
+.dhd-dots--inline i { width: 6px; height: 6px; background: #fff; }
+
+/* centre: VS, locked hand, clashing fists */
+.dhd-clash { position: relative; align-self: stretch; min-height: 200px; }
+.dhd-vs {
+  position: absolute; inset: 0; display: grid; place-items: center; font-weight: 900; font-style: italic; font-size: 44px;
+  color: var(--vip-gold); text-shadow: 0 0 14px rgba(232, 194, 106, 0.8), 0 3px 0 #6b4a12;
+}
+.dhd-locked { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 4px; font-weight: 800; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--vip-gold); }
+.dhd-locked__icon { width: 84px; height: 84px; filter: drop-shadow(0 0 12px rgba(232, 194, 106, 0.8)); animation: dhd-breathe 1.4s ease-in-out infinite; }
+
+.dhd-fist {
+  position: absolute; top: 50%; left: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; z-index: 2;
+  transition: translate 0.22s cubic-bezier(0.3, 1.5, 0.6, 1), scale 0.22s, opacity 0.3s;
+}
+.dhd-fist--left { translate: -150px 0; }
+.dhd-fist--right { translate: 150px 0; }
+.dhd-fist__hand { width: 100%; height: 100%; }
+/* hands are drawn fingers-up: turn them to point at each other, thumb on top */
+.dhd-fist--left .dhd-fist__hand { rotate: 90deg; }
+.dhd-fist--right .dhd-fist__hand { rotate: -90deg; scale: -1 1; }
+.dhd-fist__icon { display: block; width: 100%; height: 100%; filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.3)); }
+
+.dhd-stage[data-reveal="count"] .dhd-fist { animation: dhd-pump 0.2s ease-in-out infinite alternate; }
+.dhd-stage[data-reveal="shoot"] .dhd-fist { transition-duration: 0.18s; transition-timing-function: cubic-bezier(0.5, 0, 0.9, 0.4); }
+.dhd-stage[data-reveal="shoot"] .dhd-fist--left,
+.dhd-stage[data-reveal="clash"] .dhd-fist--left,
+.dhd-stage[data-reveal="resolve"] .dhd-fist--left,
+.dhd-stage[data-reveal="settle"] .dhd-fist--left { translate: -58px 0; }
+.dhd-stage[data-reveal="shoot"] .dhd-fist--right,
+.dhd-stage[data-reveal="clash"] .dhd-fist--right,
+.dhd-stage[data-reveal="resolve"] .dhd-fist--right,
+.dhd-stage[data-reveal="settle"] .dhd-fist--right { translate: 58px 0; }
+.dhd-stage[data-reveal="clash"] .dhd-fist { animation: dhd-impact 0.2s ease-out; }
+.dhd-stage[data-reveal] .dhd-fist--left.is-push { translate: 10px 0; scale: 1.18; }
+.dhd-stage[data-reveal] .dhd-fist--right.is-push { translate: -10px 0; scale: 1.18; }
+.dhd-fist--left.is-broken { animation: dhd-break-l 0.6s cubic-bezier(0.3, 0.1, 0.7, 1) forwards; }
+.dhd-fist--right.is-broken { animation: dhd-break-r 0.6s cubic-bezier(0.3, 0.1, 0.7, 1) forwards; }
+.dhd-fist--left.is-bump { animation: dhd-bump-l 0.45s ease-out; }
+.dhd-fist--right.is-bump { animation: dhd-bump-r 0.45s ease-out; }
+.dhd-crack path { stroke-dasharray: 80; stroke-dashoffset: 80; animation: dhd-crack 0.18s ease-out forwards; }
+
+.dhd-flash {
+  position: absolute; left: 50%; top: 50%; width: 260px; height: 260px; margin: -130px 0 0 -130px; border-radius: 50%; z-index: 3; pointer-events: none;
+  background: radial-gradient(closest-side, #fff 0%, rgba(255, 246, 194, 0.9) 30%, rgba(255, 159, 67, 0.35) 60%, transparent 72%);
+  animation: dhd-flash 0.2s ease-out forwards;
+}
+.dhd-word {
+  position: absolute; left: 50%; top: 10px; translate: -50% 0; z-index: 4; white-space: nowrap;
+  font-weight: 900; font-size: 34px; letter-spacing: 1px; color: #fff; -webkit-text-stroke: 2px #3a1452; paint-order: stroke fill;
+  text-shadow: 0 4px 0 #3a1452, 0 0 18px rgba(255, 79, 163, 0.8); animation: dhd-word 0.2s cubic-bezier(0.3, 1.8, 0.6, 1);
+}
+.dhd-word--shoot { font-size: 44px; color: var(--vip-gold); text-shadow: 0 4px 0 #6b4a12, 0 0 22px rgba(232, 194, 106, 0.9); }
+.dhd-stamp {
+  position: absolute; left: 50%; top: 50%; z-index: 4; translate: -50% -50%; rotate: -12deg; padding: 4px 16px;
+  border: 4px solid #cfc8d8; border-radius: 10px; background: rgba(60, 50, 72, 0.55); color: #e7e2ee;
+  font-weight: 900; font-size: 34px; letter-spacing: 4px; animation: dhd-stamp 0.32s cubic-bezier(0.2, 1.6, 0.5, 1) both;
+}
+.dhd-caption { position: absolute; left: 50%; bottom: 4px; translate: -50% 0; z-index: 4; white-space: nowrap; padding: 4px 12px; border-radius: 999px; font-weight: 900; font-size: 14px; animation: dhd-rise 0.3s ease-out both; }
+.dhd-caption--left { background: rgba(232, 194, 106, 0.2); color: var(--vip-gold); }
+.dhd-caption--right { background: rgba(255, 79, 163, 0.18); color: #ff9ccb; }
+
+/* picking */
+.dhd-pick { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.dhd-pick__row { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 64px; }
+.dhd-pick__prompt { margin: 0; font-weight: 800; font-size: 15px; opacity: 0.85; }
+.dhd-timer { position: relative; width: 60px; height: 60px; flex: none; }
+.dhd-timer--rest { visibility: hidden; }
+.dhd-timer svg { width: 100%; height: 100%; rotate: -90deg; }
+.dhd-timer__track { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 6; }
+.dhd-timer__bar { fill: none; stroke: var(--vip-gold); stroke-width: 6; stroke-linecap: round; stroke-dashoffset: 0; animation: dhd-ring var(--ring-ms, 20000ms) linear forwards; }
+.dhd-timer--hurry .dhd-timer__bar { stroke: var(--vip-pink); }
+.dhd-timer span { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
+.dhd-timer--hurry span { color: #ff9ccb; animation: dhd-beat 0.5s ease-in-out infinite; }
+
+.dhd-hands { display: flex; justify-content: center; gap: 14px; width: 100%; }
+.dhd-hand {
+  position: relative; flex: 0 1 128px; min-width: 96px; aspect-ratio: 1 / 1.08; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: 10px 8px 8px; border-radius: 24px; border: 1px solid rgba(232, 194, 106, 0.55);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)); color: #fff; font: inherit; cursor: pointer;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform 0.12s, box-shadow 0.12s, opacity 0.2s, filter 0.2s; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.dhd-hand__icon { width: 76%; height: auto; pointer-events: none; transition: transform 0.15s; }
+.dhd-hand__label { font-weight: 900; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.85; }
+.dhd-hand:hover:not(:disabled) { box-shadow: 0 5px 0 rgba(0, 0, 0, 0.4), 0 0 22px rgba(255, 79, 163, 0.5); }
+.dhd-hand:hover:not(:disabled) .dhd-hand__icon { transform: translateY(-4px) rotate(-6deg); }
+.dhd-hand:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
+.dhd-hand:focus-visible { outline: 3px solid var(--vip-gold); outline-offset: 3px; }
+.dhd-hand:disabled { cursor: default; }
+.dhd-hand--locked {
+  border-color: var(--vip-gold); background: linear-gradient(180deg, rgba(232, 194, 106, 0.35), rgba(232, 194, 106, 0.1));
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 26px rgba(232, 194, 106, 0.75); transform: translateY(3px) scale(1.04);
+  animation: dhd-lock 0.35s cubic-bezier(0.3, 1.8, 0.6, 1);
+}
+.dhd-hand--dim { opacity: 0.35; filter: grayscale(0.7); }
+.dhd-hands--rest .dhd-hand { opacity: 0.25; filter: grayscale(0.8); }
+.dhd-keys { margin: 0; font-size: 11px; font-weight: 700; opacity: 0.45; letter-spacing: 0.5px; }
+
+/* invite */
+.dhd-invite { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.dhd-stakebadge {
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: 18px; border: 1px solid var(--vip-gold);
+  background: linear-gradient(180deg, rgba(232, 194, 106, 0.28), rgba(232, 194, 106, 0.08));
+  font-weight: 900; font-size: 22px; color: #fff3c4; text-shadow: 0 0 10px rgba(232, 194, 106, 0.7); animation: dhd-rise 0.35s ease-out both;
+}
+.dhd-stakebadge--free { font-size: 18px; border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.06); text-shadow: none; }
+.dhd-invite__sub { margin: 0; font-weight: 700; font-size: 14px; opacity: 0.8; }
+.dhd-invite__accept { min-width: 180px; min-height: 48px; font-size: 16px; }
+.dhd-invite__warn { margin: 0; font-weight: 800; font-size: 13px; color: #ff9ccb; }
+
+/* result */
+.dhd-result { position: relative; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; animation: dhd-rise 0.4s ease-out both; }
+.dhd-result__title { font-weight: 900; font-size: 44px; letter-spacing: 4px; line-height: 1; -webkit-text-stroke: 2px #2a1040; paint-order: stroke fill; }
+.dhd-result--win .dhd-result__title { color: var(--vip-gold); text-shadow: 0 4px 0 #6b4a12, 0 0 26px rgba(232, 194, 106, 0.9); animation: dhd-title 0.6s cubic-bezier(0.2, 1.7, 0.5, 1) both; }
+.dhd-result--lose .dhd-result__title { color: #b9a9c9; text-shadow: 0 4px 0 #2a1040; }
+.dhd-result--draw .dhd-result__title { color: #e7e2ee; text-shadow: 0 4px 0 #3c3248; }
+.dhd-result__sub { margin: 0; font-weight: 700; font-size: 14px; opacity: 0.8; }
+.dhd-result__coins { display: inline-flex; align-items: center; gap: 8px; font-weight: 900; font-size: 34px; color: #fff3c4; font-variant-numeric: tabular-nums; text-shadow: 0 0 14px rgba(232, 194, 106, 0.8); }
+.dhd-result__net { font-weight: 800; font-size: 13px; opacity: 0.85; }
+.dhd-result__net.up { color: #7dff9a; }
+.dhd-result__net.down { color: #ff9ccb; }
+.dhd-result__back { min-width: 200px; min-height: 48px; margin-top: 6px; font-size: 16px; }
+
+/* stake picker (inside the light profile sheet) */
+.dhd-stake { display: flex; flex-direction: column; gap: 10px; }
+.dhd-stake__note { margin: 0; font-size: 13px; font-weight: 700; opacity: 0.7; }
+.dhd-stake__chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dhd-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; border-radius: 14px;
+  border: 2px solid rgba(0, 0, 0, 0.12); background: #fff; color: inherit; font: inherit; font-weight: 900; font-size: 16px; cursor: pointer;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12); transition: transform 0.1s, border-color 0.15s, background 0.15s;
+}
+.dhd-chip--on { border-color: #e8a93a; background: #fff3c4; box-shadow: 0 3px 0 #c98a1e, 0 0 0 3px rgba(232, 194, 106, 0.35); }
+.dhd-chip:active:not(:disabled) { transform: translateY(2px); }
+.dhd-chip:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; }
+.dhd-stake__pot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 900; font-size: 15px; }
+.dhd-stake__bal { font-weight: 700; font-size: 12px; opacity: 0.6; }
+.dhd-stake__send { width: 100%; min-height: 48px; }
+
+@keyframes dhd-pip { from { transform: scale(0.2); } }
+@keyframes dhd-pump { from { transform: translateY(6px) rotate(4deg); } to { transform: translateY(-16px) rotate(-6deg); } }
+@keyframes dhd-impact { from { transform: scale(1.25); } to { transform: none; } }
+@keyframes dhd-break-l { 20% { transform: translateX(-6px) rotate(-6deg); } 100% { transform: translate(-140px, 60px) rotate(-70deg); opacity: 0; } }
+@keyframes dhd-break-r { 20% { transform: translateX(6px) rotate(6deg); } 100% { transform: translate(140px, 60px) rotate(70deg); opacity: 0; } }
+@keyframes dhd-bump-l { 30% { transform: translateX(-26px); } 60% { transform: translateX(4px); } 100% { transform: none; } }
+@keyframes dhd-bump-r { 30% { transform: translateX(26px); } 60% { transform: translateX(-4px); } 100% { transform: none; } }
+@keyframes dhd-crack { to { stroke-dashoffset: 0; } }
+@keyframes dhd-flash { 0% { opacity: 0; scale: 0.4; } 30% { opacity: 1; scale: 1.05; } 100% { opacity: 0; scale: 1.3; } }
+@keyframes dhd-word { from { scale: 1.8; opacity: 0; } }
+@keyframes dhd-stamp { from { scale: 2.4; opacity: 0; } }
+@keyframes dhd-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes dhd-lunge-l { 40% { transform: translateX(34px) rotate(6deg); } 100% { transform: none; } }
+@keyframes dhd-lunge-r { 40% { transform: translateX(-34px) rotate(-6deg); } 100% { transform: none; } }
+@keyframes dhd-knock-l { 25% { transform: translateX(-26px) rotate(-8deg); } 100% { transform: none; } }
+@keyframes dhd-knock-r { 25% { transform: translateX(26px) rotate(8deg); } 100% { transform: none; } }
+@keyframes dhd-hurt { 0%, 50% { filter: brightness(1.1) sepia(1) saturate(8) hue-rotate(-35deg); } 25%, 75%, 100% { filter: none; } }
+@keyframes dhd-victory { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-22px) scale(1.04, 0.97); } }
+@keyframes dhd-pop { 0% { opacity: 0; transform: translateY(10px) scale(0.6); } 30% { opacity: 1; transform: translateY(-6px) scale(1.2); } 100% { opacity: 0; transform: translateY(-34px); } }
+@keyframes dhd-dot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-5px); opacity: 1; } }
+@keyframes dhd-breathe { 50% { transform: scale(1.06); } }
+@keyframes dhd-beat { 50% { transform: scale(1.18); } }
+@keyframes dhd-lock { from { transform: scale(0.85); } }
+@keyframes dhd-title { from { transform: scale(2); opacity: 0; } }
+@keyframes dhd-ring { to { stroke-dashoffset: var(--ring-c); } }
+
+/* phones: full-screen card (VipModal), stage above hands, >=96px hand buttons, safe areas */
+@media (max-width: 480px) {
+  .dhd { gap: 10px; padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  .dhd-stage { grid-template-columns: 1fr minmax(96px, 1fr) 1fr; min-height: 210px; padding: 8px 2px 12px; }
+  .dhd-clash { min-height: 150px; }
+  .dhd-fist { width: 84px; height: 84px; margin: -42px 0 0 -42px; }
+  .dhd-fist--left { translate: -96px 0; }
+  .dhd-fist--right { translate: 96px 0; }
+  .dhd-stage[data-reveal="shoot"] .dhd-fist--left,
+  .dhd-stage[data-reveal="clash"] .dhd-fist--left,
+  .dhd-stage[data-reveal="resolve"] .dhd-fist--left,
+  .dhd-stage[data-reveal="settle"] .dhd-fist--left { translate: -40px 0; }
+  .dhd-stage[data-reveal="shoot"] .dhd-fist--right,
+  .dhd-stage[data-reveal="clash"] .dhd-fist--right,
+  .dhd-stage[data-reveal="resolve"] .dhd-fist--right,
+  .dhd-stage[data-reveal="settle"] .dhd-fist--right { translate: 40px 0; }
+  .dhd-word { font-size: 24px; }
+  .dhd-word--shoot { font-size: 32px; }
+  .dhd-vs { font-size: 32px; }
+  .dhd-stamp { font-size: 26px; }
+  .dhd-locked__icon { width: 64px; height: 64px; }
+  .dhd-hands { gap: 10px; }
+  .dhd-hand { flex: 1 1 0; min-width: 96px; min-height: 96px; border-radius: 20px; }
+  .dhd-pick { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .dhd-result__title { font-size: 36px; }
+}
+
+/* reduced motion: no keyframes or transitions (shake and particles are skipped in FxLayer); the timer ring still runs */
+@media (prefers-reduced-motion: reduce) {
+  .dhd *, .dhd *::before, .dhd *::after { animation: none !important; transition: none !important; }
+  .dhd .dhd-timer__bar { animation: dhd-ring var(--ring-ms, 20000ms) linear forwards !important; }
+  .dhd .dhd-fist.is-broken { opacity: 0.35; }
+}
+```
+
+- [ ] **Step 2: Confirm styles.css is untouched and there are no class collisions**
+
+Run: `git diff --stat -- client/src/styles.css; grep -c "dhd" client/src/styles.css`
+Expected: no diff output, and `0`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add client/src/ui/duel/duel.css
+git commit -F - <<'MSG'
+feat(client): duel HD arena and stake picker styles
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01VVar73yCd7djZuRCdn4MzF
+MSG
+```
+
+---
+
+## Task 13: Stake picker in the profile sheet
+
+**Files:**
+- Create: `client/src/ui/duel/StakePicker.tsx`
+- Modify: `client/src/ui/ProfileSheet.tsx`
+
+**Interfaces:**
+- Consumes:
+  - `stakeChoices`, `isBotUser` (Task 7)
+  - `DUEL_REWARD`, `DuelStake` from `@dovey/shared`
+  - `GameActions.duelInvite(peer, handle, stake)` (Task 6)
+  - `useRoster((s) => s.players[id]?.userId)`
+  - `useAppStore((s) => s.coins)`
+  - `duel.css` (Task 12)
+- Produces:
+  - `CoinGlyph(props: { className?: string }): JSX.Element`
+  - `interface StakePickerProps { handle: string; balance: number | null; bot: boolean; onSend: (stake: DuelStake) => void; onBack: () => void }`
+  - `StakePicker(props: StakePickerProps): JSX.Element`
+
+- [ ] **Step 1: Create `client/src/ui/duel/StakePicker.tsx`**
+
+```tsx
+import { useState } from 'react';
+import { DUEL_REWARD, DuelStake } from '@dovey/shared';
+import { stakeChoices } from './stakes';
+import './duel.css';
+
+/** Small vector coin used by the picker, HUD and result screen. */
+export function CoinGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" aria-hidden>
+      <circle cx="10" cy="10" r="8.5" fill="#f5c542" stroke="#9c6b12" strokeWidth="2" />
+      <circle cx="10" cy="10" r="4.6" fill="none" stroke="#9c6b12" strokeWidth="1.5" opacity="0.7" />
+      <rect x="6" y="5" width="2" height="4" rx="1" fill="#fff" opacity="0.75" />
+    </svg>
+  );
+}
+
+export interface StakePickerProps {
+  handle: string;
+  /** your coins; null while unknown */
+  balance: number | null;
+  /** the target is a lobby local: free duels only */
+  bot: boolean;
+  onSend: (stake: DuelStake) => void;
+  onBack: () => void;
+}
+
+/** Choose what to put on a duel before sending the challenge. */
+export function StakePicker({ handle, balance, bot, onSend, onBack }: StakePickerProps) {
+  const [stake, setStake] = useState<DuelStake>(0);
+  const choices = stakeChoices(balance, { bot });
+  // a balance that dropped since the chip was chosen falls back to a free duel
+  const sendable = choices.find((c) => c.stake === stake)?.enabled ? stake : 0;
+
+  return (
+    <div className="dhd-stake">
+      <div className="profile__head">
+        <span className="profile__name">duel {handle}</span>
+        <button className="btn" onClick={onBack}>
+          back
+        </button>
+      </div>
+      <p className="dhd-stake__note">{bot ? 'locals duel for fun: no stakes' : 'you both put in the stake. winner takes the pot.'}</p>
+      <div className="dhd-stake__chips" role="radiogroup" aria-label="stake">
+        {choices.map((c) => (
+          <button
+            key={c.stake}
+            role="radio"
+            aria-checked={sendable === c.stake}
+            className={`dhd-chip ${sendable === c.stake ? 'dhd-chip--on' : ''}`}
+            disabled={!c.enabled}
+            title={c.blocked === 'coins' ? 'not enough coins' : c.blocked === 'bot' ? 'locals duel for free' : undefined}
+            onClick={() => setStake(c.stake)}
+          >
+            {c.stake === 0 ? (
+              'free'
+            ) : (
+              <>
+                <CoinGlyph className="dhd-coin" />
+                {c.stake}
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="dhd-stake__pot">
+        <span>{sendable === 0 ? `winner earns ${DUEL_REWARD} coins` : `pot ${sendable * 2} coins`}</span>
+        {balance !== null && <span className="dhd-stake__bal">you have {balance}</span>}
+      </div>
+      <button className="btn btn--duel dhd-stake__send" onClick={() => onSend(sendable)}>
+        send challenge
+      </button>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Open the picker from `client/src/ui/ProfileSheet.tsx`**
+
+Replace the import block:
+```ts
+import { useState } from 'react';
+import { REPORT_NOTE_MAX, REPORT_REASONS, ReportReason } from '@dovey/shared';
+import { useAppStore } from '../store';
+```
+with:
+```ts
+import { useState } from 'react';
+import { REPORT_NOTE_MAX, REPORT_REASONS, ReportReason } from '@dovey/shared';
+import { useAppStore } from '../store';
+import { useRoster } from '../roster';
+import { StakePicker } from './duel/StakePicker';
+import { isBotUser } from './duel/stakes';
+```
+
+Replace:
+```ts
+  const [note, setNote] = useState('');
+
+  if (!profile) return null;
+```
+with:
+```ts
+  const [note, setNote] = useState('');
+  const [staking, setStaking] = useState(false);
+  const coins = useAppStore((s) => s.coins);
+  const peerUserId = useRoster((s) => (profile ? s.players[profile.sessionId]?.userId : undefined));
+
+  if (!profile) return null;
+```
+
+In `close`, replace:
+```ts
+    setNote('');
+  };
+```
+with:
+```ts
+    setNote('');
+    setStaking(false);
+  };
+```
+
+Directly before the line `  return (\n    <div className="sheet profile" role="dialog" aria-label={handle}>` (the main return, after the `if (reporting) { … }` block), add:
+```tsx
+  if (staking) {
+    return (
+      <div className="sheet profile" role="dialog" aria-label={`duel ${handle}`}>
+        <StakePicker
+          handle={handle}
+          balance={coins}
+          bot={isBotUser(peerUserId)}
+          onBack={() => setStaking(false)}
+          onSend={(stake) => {
+            actions?.duelInvite(sessionId, handle, stake);
+            close();
+          }}
+        />
+      </div>
+    );
+  }
+
+```
+
+Replace the duel button's click handler:
+```tsx
+              onClick={() => {
+                actions?.duelInvite(sessionId, handle, 0);
+                close();
+              }}
+```
+with:
+```tsx
+              onClick={() => setStaking(true)}
+```
+
+- [ ] **Step 3: Types and tests**
+
+Run: `pnpm --filter @dovey/client typecheck && pnpm --filter @dovey/client test`
+Expected: no type errors; all client tests pass (including `stakes.test.ts`, which covers the chip disabling).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add client/src/ui/duel/StakePicker.tsx client/src/ui/ProfileSheet.tsx
+git commit -F - <<'MSG'
+feat(client): stake picker before sending a duel challenge
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01VVar73yCd7djZuRCdn4MzF
+MSG
+```
+
+---
+
+Continue with `docs/superpowers/plans/2026-09-14-duel-hd-part6.md`.

@@ -7,6 +7,7 @@ import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, onFriendUpdate } from './friends';
 import { fetchInventory } from './api';
+import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
 
 export interface RemotePlayer {
@@ -18,6 +19,17 @@ export interface RemotePlayer {
   moving: boolean;
   avatar: string;
   voice: boolean;
+}
+
+export interface DuelRoundMsg {
+  winner: 'a' | 'b' | 'draw';
+  picks: [number, number];
+  score: [number, number];
+  done: boolean;
+  /** coins each side put in */
+  stake: number;
+  /** what the winner takes: 2 × stake */
+  pot: number;
 }
 
 export interface NetEvents {
@@ -48,10 +60,11 @@ export interface NetEvents {
   onCoins: (coins: number, earned: number) => void;
   onRoomStyle: (style: RoomStyle) => void;
   onVendResult: (r: unknown) => void;
-  onDuelIncoming: (from: string, handle: string) => void;
-  onDuelStart: (peer: string, handle: string, you: 'a' | 'b') => void;
-  onDuelRound: (r: { winner: 'a' | 'b' | 'draw'; picks: [number, number]; score: [number, number]; done: boolean }) => void;
-  onDuelEnd: (reason: string) => void;
+  onDuelIncoming: (from: string, handle: string, stake: number) => void;
+  onDuelStart: (peer: string, handle: string, you: 'a' | 'b', stake: number) => void;
+  onDuelRound: (r: DuelRoundMsg) => void;
+  /** `pot` = coins credited to you because of this ending (0 when none) */
+  onDuelEnd: (reason: string, pot: number) => void;
   onMazeWin: (id: string, handle: string, reward: number) => void;
 }
 
@@ -224,12 +237,12 @@ export class Net {
     $(room.state).furniture.onRemove((_f: FurnitureState, id: string) => events.onFurnitureRemove(id));
 
     room.onMessage('vend_result', (r: unknown) => events.onVendResult(r));
-    room.onMessage('duel_incoming', (m: { from: string; handle: string }) => events.onDuelIncoming(m.from, m.handle));
+    room.onMessage('duel_incoming', (m: { from: string; handle: string; stake?: number }) => events.onDuelIncoming(m.from, m.handle, m.stake ?? 0));
     room.onMessage('duel_ringing', () => {});
     room.onMessage('duel_wait', () => {});
-    room.onMessage('duel_start', (m: { peer: string; handle: string; you: 'a' | 'b' }) => events.onDuelStart(m.peer, m.handle, m.you));
-    room.onMessage('duel_round', (m: { winner: 'a' | 'b' | 'draw'; picks: [number, number]; score: [number, number]; done: boolean }) => events.onDuelRound(m));
-    room.onMessage('duel_end', (m: { reason: string }) => events.onDuelEnd(m.reason));
+    room.onMessage('duel_start', (m: { peer: string; handle: string; you: 'a' | 'b'; stake?: number }) => events.onDuelStart(m.peer, m.handle, m.you, m.stake ?? 0));
+    room.onMessage('duel_round', (m: DuelRoundMsg) => events.onDuelRound({ ...m, stake: m.stake ?? 0, pot: m.pot ?? 0 }));
+    room.onMessage('duel_end', (m: { reason: string; pot?: number }) => events.onDuelEnd(m.reason, m.pot ?? 0));
     room.onMessage('duel_over', () => {});
     room.onMessage('maze_win', (m: { id: string; handle: string; reward: number }) => events.onMazeWin(m.id, m.handle, m.reward));
     room.onMessage('love', (m: import('@dovey/shared').LoveSnapshot) => useLove.getState().set(m));
@@ -251,6 +264,10 @@ export class Net {
     room.onMessage('friend_invite_sent', onFriendInviteSent);
     room.onMessage('k_crew', (m: { crew: CrewInfo | null }) => useKitchen.getState().setCrew(m.crew));
     room.onMessage('k_go', (m: { roomId: string }) => useKitchen.getState().go(m.roomId));
+    room.onMessage('t_incoming', onTradeIncoming);
+    room.onMessage('t_waiting', onTradeWaiting);
+    room.onMessage('t_state', onTradeState);
+    room.onMessage('t_done', onTradeDone);
 
     room.onMessage('coins', (m: { coins: number; earned: number }) => events.onCoins(m.coins, m.earned));
     room.onMessage('inventory_delta', (m: { def: string; delta: number }) => store.addInventory(m.def, m.delta));
@@ -294,10 +311,23 @@ export class Net {
         love_full: 'that line is full, try again soon',
         love_busy: 'you are already on the loveseat',
         sold_out: 'sold out. only trades now',
+        bot_no_stake: 'locals only duel for fun, no stakes',
+        not_enough_coins: 'not enough coins',
+        trade_busy: 'they are already trading',
+        too_new: 'trading unlocks after 24 hours and 30 minutes of play',
+        trade_off: 'trading is turned off in this room',
+        no_trade: 'no trade going on',
+        bad_offer: 'that offer is not allowed',
+        insufficient_coins: 'you do not have that many coins',
+        insufficient_items: 'you do not have that many',
+        too_early: 'wait for the countdown',
+        not_accepted: 'both of you need to accept first',
+        trade_locked: 'the trade is already going through',
         not_friends: 'you can only invite friends',
         friend_offline: 'they went offline',
       };
-      store.flash(msgs[m.code] ?? 'nope');
+      store.flash(tradeSysText(m.code) ?? msgs[m.code] ?? 'nope');
+      onTradeSys(m.code);
       // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray
       const rollback = new Set(['not_owned', 'bad_request', 'overlap', 'out_of_bounds', 'room_full', 'bad_rot', 'bad_coords', 'unknown_def', 'rate_limited', 'not_owner']);
       if (rollback.has(m.code)) refreshInventory();

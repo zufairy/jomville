@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
+import { PGlite, type Transaction } from '@electric-sql/pglite';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 
@@ -8,6 +8,13 @@ import { mkdirSync } from 'node:fs';
  */
 export interface Db {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /**
+   * Run `fn` in one real transaction. PGlite has a single connection, so
+   * `pg.transaction()` holds it for the whole callback; a BEGIN/COMMIT through
+   * query() would let other rooms' statements run inside. Inside `fn` use only
+   * `tx`; any throw rolls everything back and is rethrown unchanged.
+   */
+  transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -115,6 +122,28 @@ create table if not exists friendships (
   check (user_a < user_b)
 );
 create index if not exists friendships_b on friendships(user_b);
+create table if not exists duels (
+  id serial primary key,
+  a_id text not null references users(id),
+  b_id text not null references users(id),
+  stake int not null,
+  winner_id text references users(id),
+  outcome text not null,
+  room_id text,
+  at timestamptz not null default now()
+);
+create index if not exists duels_at on duels(at);
+create table if not exists trades (
+  id serial primary key,
+  a_id text not null,
+  b_id text not null,
+  a_offer jsonb not null,
+  b_offer jsonb not null,
+  room_id text,
+  at timestamptz not null default now()
+);
+create index if not exists trades_a on trades(a_id, at);
+create index if not exists trades_b on trades(b_id, at);
 `;
 
 /** Additive column migrations, applied one by one (PGlite chokes on batched ADD COLUMN IF NOT EXISTS). */
@@ -127,6 +156,8 @@ const COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: 'users', column: 'coins', ddl: 'alter table users add column coins int not null default 1500' },
   { table: 'rooms', column: 'mask', ddl: 'alter table rooms add column mask jsonb' },
   { table: 'rooms', column: 'style', ddl: 'alter table rooms add column style jsonb' },
+  { table: 'users', column: 'play_minutes', ddl: 'alter table users add column play_minutes int not null default 0' },
+  { table: 'rooms', column: 'trade_enabled', ddl: 'alter table rooms add column trade_enabled boolean not null default true' },
 ];
 
 async function migrate(pg: PGlite) {
@@ -135,6 +166,30 @@ async function migrate(pg: PGlite) {
     const r = await pg.query('select 1 from information_schema.columns where table_name = $1 and column_name = $2', [m.table, m.column]);
     if (!r.rows.length) await pg.exec(m.ddl);
   }
+}
+
+/** A Db view of an open transaction; nested transaction() joins it. */
+function txDb(tx: Transaction): Db {
+  const db: Db = {
+    async query<T>(sql: string, params: unknown[] = []) {
+      const r = await tx.query<T>(sql, params);
+      return r.rows;
+    },
+    transaction: (fn) => fn(db),
+    close: () => Promise.reject(new Error('cannot close the database inside a transaction')),
+  };
+  return db;
+}
+
+function dbOf(pg: PGlite): Db {
+  return {
+    async query<T>(sql: string, params: unknown[] = []) {
+      const r = await pg.query<T>(sql, params);
+      return r.rows;
+    },
+    transaction: (fn) => pg.transaction((tx) => fn(txDb(tx))),
+    close: () => pg.close(),
+  };
 }
 
 export async function openDb(): Promise<Db> {
@@ -146,13 +201,7 @@ export async function openDb(): Promise<Db> {
   const pg = new PGlite(dir);
   await pg.waitReady;
   await migrate(pg);
-  return {
-    async query<T>(sql: string, params: unknown[] = []) {
-      const r = await pg.query<T>(sql, params);
-      return r.rows;
-    },
-    close: () => pg.close(),
-  };
+  return dbOf(pg);
 }
 
 /** In-memory PGlite for tests. */
@@ -160,11 +209,5 @@ export async function openTestDb(): Promise<Db> {
   const pg = new PGlite();
   await pg.waitReady;
   await migrate(pg);
-  return {
-    async query<T>(sql: string, params: unknown[] = []) {
-      const r = await pg.query<T>(sql, params);
-      return r.rows;
-    },
-    close: () => pg.close(),
-  };
+  return dbOf(pg);
 }
