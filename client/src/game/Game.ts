@@ -43,6 +43,7 @@ import type { Me } from '../api';
 import { CallManager, unlockAudio } from '../call';
 import { ProximityVoice, VoiceSignal } from '../voice';
 import { resolveTap } from './tapTarget';
+import { arrivalReady } from './useArrival';
 import { Fixtures } from './fixtures';
 import { WALL_HEIGHT } from './walls';
 import { claimDaily, fetchWardrobe } from '../api';
@@ -119,6 +120,8 @@ export class Game {
   /** walk to this item, then switch it */
   private pendingUse: string | null = null;
   private pendingClose = false;
+  /** when the local mover reached a pending use's tile (0 = still walking) */
+  private arrivedAt = 0;
   private downAt = 0;
   private rightDown = false;
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
@@ -874,7 +877,7 @@ export class Game {
     else if (action.kind === 'use') this.useItem(action.item, e.button === 2 || this.rightDown || performance.now() - this.downAt > 500);
     else if (action.kind === 'seat') this.walkOntoSeat(action.item);
     // item info window: furniture taps select it, floor taps clear it
-    const picked = action.kind === 'use' || action.kind === 'seat' ? action.item : action.kind === 'none' ? (placementAt(t.x, t.y, placements) ?? this.itemAt(local.x, local.y, () => true)) : null;
+    const picked = action.kind === 'use' || action.kind === 'seat' ? action.item : action.kind === 'none' ? placementAt(t.x, t.y, placements) : null;
     useAppStore.getState().setSelectedItem(picked);
   }
 
@@ -1179,7 +1182,11 @@ export class Game {
       this.me.ty = this.mover.y;
       this.me.setDir(this.mover.dir);
       this.me.moving = this.mover.moving;
-      if (this.pendingUse && !this.mover.moving) {
+      if (!this.pendingUse || this.mover.moving) this.arrivedAt = 0;
+      else if (!this.arrivedAt) this.arrivedAt = performance.now();
+      const server = this.net.sessionId ? this.actors.get(this.net.sessionId)?.target : null;
+      if (this.pendingUse && this.arrivedAt && arrivalReady(this.mover, server, performance.now() - this.arrivedAt)) {
+        this.arrivedAt = 0;
         const id = this.pendingUse;
         this.pendingUse = null;
         if (this.pendingClose) this.net.sendClose(id);

@@ -132,23 +132,25 @@ export const LID_OPEN = ['open1', 'open2', 'open3'] as const;
 export const LID_CLOSE = ['close1', 'close2', 'close3'] as const;
 const LID_ANGLE: Record<string, number> = { open1: 25, open2: 55, open3: 85, close1: 85, close2: 55, close3: 25 };
 
-const DM = { W: 32, H: 55, OX: 13, OY: 39, BX: 16, BY: 10, ZB: 13, ZT: 24 };
+const DM = { W: 26, H: 38, OX: 12, OY: 28, BX: 12, BY: 10, ZB: 6, ZT: 13 };
 
-/** front-left face: honey wood bands running along the box, lighter up top */
+/** front-left face: honey wood bands running along the box, with a diagonal shine */
 function dmLeft(p: V3): string {
   const v = DM.ZT - p[2];
   const x = p[0];
-  if (x < 1.2) return v < 2 ? 'b' : 'c';
-  if (x < 2.6) return v < 1 ? 'w' : 'a';
-  const band = ['w', 'a', 'a', 'b', 'a', 'a', 'b', 'b', 'a', 'b', 'c', 'c'][Math.floor(v)] ?? 'c';
-  if (band !== 'w' && hash(x * 0.5, v, 7) < 0.12) return band === 'a' ? 'b' : 'c';
+  if (x < 1) return v < 1.5 ? 'b' : 'c';
+  if (x < 2) return v < 1 ? 'w' : 'a';
+  const s = x - v * 1.1;
+  if ((s > 4.4 && s < 5.6) || (s > 6.6 && s < 7.2)) return 'w';
+  const band = ['w', 'a', 'b', 'a', 'a', 'b', 'c'][Math.floor(v)] ?? 'c';
+  if (band !== 'w' && hash(x * 0.5, v, 7) < 0.1) return band === 'a' ? 'b' : 'c';
   return band;
 }
 
 function dmRight(p: V3): string {
   const v = DM.ZT - p[2];
-  const band = ['b', 'c', 'c', 'd', 'c', 'c', 'd', 'd', 'c', 'd', 'e', 'e'][Math.floor(v)] ?? 'e';
-  if (p[1] < 1.2) return 'd';
+  const band = ['b', 'c', 'd', 'c', 'c', 'd', 'e'][Math.floor(v)] ?? 'e';
+  if (p[1] < 1) return 'd';
   return hash(p[1], v, 3) < 0.1 ? 'e' : band;
 }
 
@@ -156,22 +158,21 @@ function dmStand(cv: PixelCanvas, iso: Iso) {
   layer(cv, (l) => {
     const li = new Iso(l, iso.ox, iso.oy);
     // central post, dark wood with a lit left edge
-    li.box(6, 3, 3, 10, 7, DM.ZB + 1, 'd', (p) => (p[0] < 7 ? 'c' : p[0] > 9 ? 'e' : 'd'), (p) => (p[1] < 4 ? 'e' : 'f'));
+    li.box(4.5, 3.5, 2, 7.5, 6.5, DM.ZB + 1, 'd', (p) => (p[0] < 5.5 ? 'c' : p[0] > 6.5 ? 'e' : 'd'), (p) => (p[1] < 4.5 ? 'e' : 'f'));
     // two arched legs facing the camera, flaring out to the feet
     const [cx, cy] = li.p(DM.BX / 2, DM.BY / 2, 0);
-    const span = 12;
-    const rise = 5;
+    const span = 10;
+    const rise = 3;
     for (let sx = -span; sx <= span; sx++) {
       const u = sx / span;
       const topY = Math.round(cy + 1 - rise * (1 - u * u));
-      const thick = 3 + Math.round(2 * (1 - Math.abs(u)));
+      const thick = 2 + Math.round(1.5 * (1 - Math.abs(u)));
       for (let k = 0; k < thick; k++) {
         const key = k === 0 ? (u < 0.2 ? 'a' : 'b') : k === thick - 1 ? 'e' : u < 0 ? 'c' : 'd';
         l.set(cx + sx, topY + k, key);
       }
     }
-    // feet pads
-    l.rect(cx - span - 2, cy + 2, 4, 2, 'd').rect(cx + span - 1, cy + 2, 4, 2, 'e');
+    l.rect(cx - span - 1, cy + 2, 2, 1, 'd').rect(cx + span, cy + 2, 2, 1, 'e');
   });
 }
 
@@ -195,7 +196,7 @@ function dmBody(cv: PixelCanvas, iso: Iso, dy: number, dx: number, interior: boo
   if (interior) {
     // lit rim along the open top edge
     const rim = new Iso(cv, iso.ox + dx, iso.oy + dy);
-    for (let x = 1; x < DM.BX; x += 0.5) rim.dot(x, DM.BY, DM.ZT - 0.5, x < 9 ? 'w' : 'a');
+    for (let x = 1; x < DM.BX; x += 0.5) rim.dot(x, DM.BY, DM.ZT - 0.5, x < 7 ? 'w' : 'a');
     for (let y = 1; y < DM.BY; y += 0.5) rim.dot(DM.BX, y, DM.ZT - 0.5, 'b');
   }
   dmHardware(cv, iso, dx, dy);
@@ -203,23 +204,26 @@ function dmBody(cv: PixelCanvas, iso: Iso, dy: number, dx: number, interior: boo
 
 /** round brass latch on the front, hinge knob on the right side */
 function dmHardware(cv: PixelCanvas, iso: Iso, dx: number, dy: number) {
-  const [lx, ly] = iso.p(3.5, DM.BY, DM.ZT - 3);
-  cv.text(['.ooo.', 'oawbo', 'oabco', 'obcdo', '.ooo.'], Math.round(lx) - 2 + dx, Math.round(ly) - 2 + dy);
-  const [hx, hy] = iso.p(DM.BX, 4, DM.ZT - 5);
-  cv.text(['.oo.', 'oabo', 'ocdo', 'oddo', '.oo.'], Math.round(hx) - 1 + dx, Math.round(hy) - 2 + dy);
+  const [lx, ly] = iso.p(3, DM.BY, DM.ZT - 3.5);
+  cv.text(['.oo.', 'owbo', 'obdo', '.oo.'], Math.round(lx) - 2 + dx, Math.round(ly) - 2 + dy);
+  const [hx, hy] = iso.p(DM.BX, 3, DM.ZT - 3.5);
+  cv.text(['.o.', 'oao', 'odo', '.o.'], Math.round(hx) - 1 + dx, Math.round(hy) - 2 + dy);
 }
 
-/** ivory die sitting in the box, top face showing `face` */
+/** ivory die filling the box opening, top face showing `face` with 2x2 pips */
 function dmDie(cv: PixelCanvas, iso: Iso, face: string, dx: number, dy: number) {
-  const [x0, y0, x1, y1] = [4, 1, 12, 9];
+  const [x0, y0, x1, y1] = [1, 0, 11, 10];
   const z0 = DM.ZT - 3;
-  const z1 = DM.ZT + 3;
+  const z1 = DM.ZT + 2;
   layer(
     cv,
     (l) => {
       const li = new Iso(l, iso.ox, iso.oy);
-      li.box(x0, y0, z0, x1, y1, z1, (p) => (p[0] < x0 + 1 || p[1] < y0 + 1 ? 'i' : p[0] > x1 - 1 || p[1] > y1 - 1 ? 'j' : 'i'), (p) => (p[2] > z1 - 1 ? 'i' : 'j'), (p) => (p[2] > z1 - 1 ? 'j' : 'k'));
-      for (const [col, row] of dicePips(face)) li.dot(x0 + 2 + col * 2, y0 + 2 + row * 2, z1,face === '1' ? 'r' : 'p', 2);
+      li.box(x0, y0, z0, x1, y1, z1, (p) => (p[0] > x1 - 1 || p[1] > y1 - 1 ? 'j' : 'i'), (p) => (p[2] > z1 - 1 ? 'i' : 'j'), (p) => (p[2] > z1 - 1 ? 'j' : 'k'));
+      for (const [col, row] of dicePips(face)) {
+        const [sx, sy] = li.p(x0 + 2 + col * 3, y0 + 2 + row * 3, z1);
+        l.rect(Math.floor(sx) - 1, Math.floor(sy) - 1, 2, 2, face === '1' ? 'r' : 'p');
+      }
     },
     'o',
     dx,
@@ -230,18 +234,18 @@ function dmDie(cv: PixelCanvas, iso: Iso, face: string, dx: number, dy: number) 
 /** lid slab hinged along the back edge (y=0), swung up by `deg` */
 function dmLid(cv: PixelCanvas, iso: Iso, deg: number, dx: number, dy: number) {
   const a = (deg * Math.PI) / 180;
-  const T = 3;
-  const L = DM.BY + 0.4;
-  // along the lid (hinge -> free edge) and its outward normal
+  const T = 2;
+  const L = DM.BY + 0.3;
   const u: V3 = [0, Math.cos(a), Math.sin(a)];
   const n: V3 = [0, -Math.sin(a), Math.cos(a)];
   const P = (x: number, s: number, t: number): V3 => [x, u[1] * s + n[1] * t, DM.ZT + u[2] * s + n[2] * t];
   const [xa, xb] = [-0.3, DM.BX + 0.3];
   const outer = (p: V3) => {
-    // distance along lid from hinge
     const s = p[1] * u[1] + (p[2] - DM.ZT) * u[2];
     if (s > L - 1.2) return 'w';
     if (p[0] < 1.5) return 'b';
+    const k = p[0] - (L - s) * 1.1;
+    if (k > 4.4 && k < 5.6) return 'w';
     return ['a', 'b', 'a', 'a', 'b', 'a', 'b', 'b', 'c', 'c', 'c'][Math.floor(L - s)] ?? 'c';
   };
   const inner = (p: V3) => (p[0] < 1.2 || p[0] > DM.BX - 1.2 ? 'd' : hash(p[0], p[2]) < 0.15 ? 'f' : 'e');
@@ -272,17 +276,16 @@ function dmFrame(key: string, frame: number): PixelMap {
   const angle = face ? 108 : (LID_ANGLE[key] ?? 0);
   if (key === '-1') {
     // shut and rattling: the box hops off its stand, dust puffs when it lands
-    const hop = [0, 2, 3, 2, 0, 1, 0, 0][frame % 8];
+    const hop = [0, 1, 2, 1, 0, 1, 0, 0][frame % 8];
     const jig = [0, 1, 0, -1, 0, 1, 0, -1][frame % 8];
     dmBody(cv, iso, -hop, jig, false);
     dmLid(cv, iso, 0, jig, -hop);
     if (hop === 0) {
-      const puffs: Pt[] = frame % 2 ? [[1, 47], [30, 46], [4, 45]] : [[2, 46], [29, 45], [27, 47]];
+      const puffs: Pt[] = frame % 2 ? [[1, 36], [24, 35], [3, 34]] : [[2, 35], [23, 36], [22, 34]];
       for (const [x, y] of puffs) cv.set(x, y, 'j');
     }
-    if (hop >= 2) for (const [x, y] of [[3, 14 - hop], [26, 12 - hop], [22, 8 - hop]] as Pt[]) cv.set(x, y, frame % 2 ? 'a' : 'w');
+    if (hop >= 1) for (const [x, y] of [[3, 12 - hop], [21, 9 - hop], [17, 6 - hop]] as Pt[]) cv.set(x, y, frame % 2 ? 'a' : 'w');
   } else if (angle >= 70) {
-    // lid stands behind the open box
     dmLid(cv, iso, angle, 0, 0);
     dmBody(cv, iso, 0, 0, true, face || undefined);
   } else if (angle > 0) {
@@ -345,26 +348,28 @@ const HOLO_TINT: Record<string, [number, number, number, number]> = {
 };
 
 function holodiceFrame(key: string, frame: number): PixelMap {
-  const cv = new PixelCanvas(32, 44);
-  const iso = new Iso(cv, 16, 32);
+  const OX = 14;
+  const OY = 26;
+  const cv = new PixelCanvas(28, 36);
+  const iso = new Iso(cv, OX, OY);
   const rolling = key === '-1';
   const tint = HOLO_TINT[rolling ? ['lo', 'mid', 'hi'][Math.floor(frame / 3) % 3] : key] ?? HOLO_TINT['0'];
-  const hop = rolling ? [0, 2, 4, 5, 4, 2, 0, 0][frame % 8] : 0;
+  const hop = rolling ? [0, 1, 3, 4, 3, 1, 0, 0][frame % 8] : 0;
   // gold pedestal with a stepped cap
   layer(cv, (l) => {
-    const li = new Iso(l, 16, 32);
-    li.box(4, 4, 0, 12, 12, 7, 'b', (p) => (p[2] > 5 ? 'a' : p[0] < 5 ? 'b' : 'c'), (p) => (p[2] > 5 ? 'c' : 'd'));
-    li.box(3, 3, 7, 13, 13, 9, (p) => (p[0] < 4 || p[1] < 4 ? 'w' : 'a'), 'b', 'd');
+    const li = new Iso(l, OX, OY);
+    li.box(5, 5, 0, 11, 11, 5, 'b', (p) => (p[2] > 3.5 ? 'a' : p[0] < 6 ? 'b' : 'c'), (p) => (p[2] > 3.5 ? 'c' : 'd'));
+    li.box(4, 4, 5, 12, 12, 6.5, (p) => (p[0] < 5 || p[1] < 5 ? 'w' : 'a'), 'b', 'd');
   });
-  new Iso(cv, 16, 32).dot(8, 12, 3.5, 'e', 2);
+  iso.dot(8, 11, 2.5, 'e', 2);
   // glass cube, floating while it rolls
   const glow = rolling || key !== '0';
   const cube = new PixelCanvas(cv.w, cv.h);
-  const ci = new Iso(cube, 16, 32 - hop);
-  const edge = (p: V3, a: number, b: number) => a < 0.9 || b < 0.9 || a > 7.1 || b > 7.1;
-  ci.box(4, 4, 11, 12, 12, 19, (p) => (edge(p, p[0] - 4, p[1] - 4) ? 'x' : 'y'), (p) => (edge(p, p[0] - 4, p[2] - 11) ? 'y' : 'z'), (p) => (edge(p, p[1] - 4, p[2] - 11) ? 'z' : 'q'));
-  // glint streak across the glass
-  for (let s = 0; s < 4; s++) cube.paint(13 + s, 14 - hop + s, 'x');
+  const ci = new Iso(cube, OX, OY - hop);
+  const edge = (a: number, b: number) => a < 0.9 || b < 0.9 || a > 5.1 || b > 5.1;
+  ci.box(5, 5, 8, 11, 11, 14, (p) => (edge(p[0] - 5, p[1] - 5) ? 'x' : 'y'), (p) => (edge(p[0] - 5, p[2] - 8) ? 'y' : 'z'), (p) => (edge(p[1] - 5, p[2] - 8) ? 'z' : 'q'));
+  const [gx, gy] = ci.p(6, 11, 13);
+  for (let s = 0; s < 3; s++) cube.paint(gx + 1 + s, gy + s, 'x');
   if (glow) {
     const halo = cube.clone();
     halo.outline('g');
@@ -373,12 +378,13 @@ function holodiceFrame(key: string, frame: number): PixelMap {
   }
   cube.outline('n');
   cv.stamp(cube);
-  if (rolling) for (let i = 0; i < 4; i++) {
-    const a = ((frame + i * 2) / 8) * Math.PI * 2;
-    cv.set(16 + Math.round(Math.cos(a) * 12), 16 - hop + Math.round(Math.sin(a) * 5), i % 2 ? 'g' : 'x');
-  }
-  if (!rolling && key !== '0') iso.dot(8, 8, 27, 'x');
-  return cv.toMap({ ...GOLD, x: tint[0], y: tint[1], z: tint[2], q: shadeHex(tint[2], 0.8), g: tint[3], n: shadeHex(tint[2], 0.45) }, 4);
+  if (rolling)
+    for (let i = 0; i < 4; i++) {
+      const a = ((frame + i * 2) / 8) * Math.PI * 2;
+      cv.set(OX + Math.round(Math.cos(a) * 10), OY - 12 - hop + Math.round(Math.sin(a) * 4), i % 2 ? 'g' : 'x');
+    }
+  if (!rolling && key !== '0') iso.dot(8, 8, 18, 'x');
+  return cv.toMap({ ...GOLD, x: tint[0], y: tint[1], z: tint[2], q: shadeHex(tint[2], 0.8), g: tint[3], n: shadeHex(tint[2], 0.45) }, cv.h - (OY + 8));
 }
 
 function shadeHex(c: number, k: number): number {
@@ -405,22 +411,21 @@ export function wheelSegmentAtPointer(rot: number): number {
 }
 
 function wheelFrame(key: string, frame: number): PixelMap {
-  const cv = new PixelCanvas(48, 72);
-  const OY = 50;
-  const iso = new Iso(cv, 16, OY);
+  const OY = 36;
+  const cv = new PixelCanvas(40, 58);
   const groundY = OY + 12;
-  const cx = 24;
-  const cy = groundY - 38;
-  const R = 19;
+  const cx = 20;
+  const cy = groundY - 28;
+  const R = 14;
   // red lacquer base with gold trim
   layer(cv, (l) => {
-    const li = new Iso(l, 16, OY);
-    li.box(4, 4, 0, 28, 12, 7, 'M', (p) => (p[2] > 5.5 ? 'b' : p[2] < 1.2 ? 'd' : 'R'), (p) => (p[2] > 5.5 ? 'c' : 'M'));
-    li.box(6, 6, 7, 26, 10, 9, 'a', 'b', 'd');
+    const li = new Iso(l, 12, OY);
+    li.box(4, 4, 0, 28, 12, 5, 'M', (p) => (p[2] > 3.5 ? 'b' : p[2] < 1 ? 'd' : 'R'), (p) => (p[2] > 3.5 ? 'c' : 'M'));
+    li.box(6, 6, 5, 26, 10, 6.5, 'a', 'b', 'd');
   });
   // A-frame struts
   layer(cv, (l) => {
-    for (const s of [-1, 1]) for (let t = 0; t < 2; t++) l.line(cx + s * (12 + t), groundY - 8, cx + s * t, cy, t ? 'c' : 'b');
+    for (const s of [-1, 1]) for (let t = 0; t < 2; t++) l.line(cx + s * (9 + t), groundY - 6, cx + s * t, cy, t ? 'c' : 'b');
   });
   const rot = wheelRotation(key, frame);
   const TAU = Math.PI * 2;
@@ -429,26 +434,26 @@ function wheelFrame(key: string, frame: number): PixelMap {
       const dx = x + 0.5 - cx;
       const dy = y + 0.5 - cy;
       const r = Math.hypot(dx, dy);
-      if (r > R - 2.5) return r > R - 1 ? 'd' : 'b';
-      if (r < 3.2) return r < 1.8 ? 'w' : 'c';
+      if (r > R - 2) return r > R - 0.8 ? 'd' : 'b';
+      if (r < 2.6) return r < 1.5 ? 'w' : 'c';
       const a = (((Math.atan2(dy, dx) + Math.PI / 2 + TAU / 16 - rot) % TAU) + TAU) % TAU;
       const seg = Math.floor(a / (TAU / 8)) % 8;
       const edge = (a / (TAU / 8)) % 1;
-      if (edge < 0.07 * (R / Math.max(r, 1)) || edge > 1 - 0.07 * (R / Math.max(r, 1))) return 'a';
+      const w = 0.06 * (R / Math.max(r, 1));
+      if (edge < w || edge > 1 - w) return 'a';
       const k = WHEEL_KEYS[seg];
-      return r < 7 && k === 'K' ? 'V' : k;
+      return r < 5 && k === 'K' ? 'V' : k;
     });
   });
   // bulbs chase around the rim
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * TAU;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
     const on = (i + frame) % 3 === 0;
-    cv.set(Math.round(cx + Math.cos(a) * (R - 1.2) - 0.5), Math.round(cy + Math.sin(a) * (R - 1.2) - 0.5), on ? 'w' : 'i');
+    cv.set(Math.round(cx + Math.cos(a) * (R - 1) - 0.5), Math.round(cy + Math.sin(a) * (R - 1) - 0.5), on ? 'w' : 'i');
   }
   // pointer
-  layer(cv, (l) => l.text(['iiiii', 'ijjji', '.iji.', '.iji.', '..j..'], cx - 3, cy - R - 3));
-  void iso;
-  return cv.toMap({ ...GOLD, ...WHEEL_PAL }, 10);
+  layer(cv, (l) => l.text(['iiiii', 'ijjji', '.iji.', '..j..'], cx - 3, cy - R - 3));
+  return cv.toMap({ ...GOLD, ...WHEEL_PAL }, cv.h - groundY);
 }
 
 // ---------------------------------------------------------------- dragon egg
@@ -487,17 +492,17 @@ function dragonEggFrame(frame: number): PixelMap {
 // ---------------------------------------------------------------- throne
 
 function throneFrame(frame: number): PixelMap {
-  const cv = new PixelCanvas(32, 62);
-  const OY = 48;
+  const OY = 34;
+  const cv = new PixelCanvas(32, 49);
   const red = (p: V3) => (hash(p[0], p[1] + p[2], 5) < 0.1 ? 'S' : 'R');
   layer(cv, (l) => {
     const li = new Iso(l, 16, OY);
     // backrest with a velvet panel and crest
-    li.box(3, 2, 14, 13, 4, 40, 'a', (p) => (p[0] > 4.5 && p[0] < 11.5 && p[2] > 17 && p[2] < 37 ? red(p) : p[0] < 4.5 ? 'a' : 'b'), 'd');
+    li.box(3, 2, 9, 13, 4, 28, 'a', (p) => (p[0] > 4.5 && p[0] < 11.5 && p[2] > 11 && p[2] < 26 ? red(p) : p[0] < 4.5 ? 'a' : 'b'), 'd');
   });
   layer(cv, (l) => {
-    const [x, y] = new Iso(l, 16, OY).p(8, 3, 43);
-    orb(l, x, y, 3.5, 3.5, ['a', 'b', 'c', 'd']);
+    const [x, y] = new Iso(l, 16, OY).p(8, 3, 31);
+    orb(l, x, y, 3, 3, ['a', 'b', 'c', 'd']);
     l.set(x, y - 1, 'R');
     l.set(x - 1, y - 1, 'R');
     l.set(x, y, 'S');
@@ -505,16 +510,15 @@ function throneFrame(frame: number): PixelMap {
   layer(cv, (l) => {
     const li = new Iso(l, 16, OY);
     // gilded seat block with a skirt band
-    li.box(3, 4, 0, 13, 13, 14, 'b', (p) => (p[2] < 2 ? 'd' : p[2] > 12 ? 'a' : p[0] < 4.5 ? 'a' : 'b'), (p) => (p[2] < 2 ? 'e' : p[2] > 12 ? 'c' : 'd'));
-    li.box(4.5, 5, 14, 11.5, 12.5, 17, red, 'S', 'M');
+    li.box(3, 4, 0, 13, 13, 9, 'b', (p) => (p[2] < 1.5 ? 'd' : p[2] > 7.5 ? 'a' : p[0] < 4.5 ? 'a' : 'b'), (p) => (p[2] < 1.5 ? 'e' : p[2] > 7.5 ? 'c' : 'd'));
+    li.box(4.5, 5, 9, 11.5, 12.5, 11, red, 'S', 'M');
   });
   // armrests
-  for (const x0 of [3, 11]) layer(cv, (l) => new Iso(l, 16, OY).box(x0, 4, 14, x0 + 2, 13, 22, 'a', 'b', 'd'));
-  // studs on the seat front
+  for (const x0 of [3, 11]) layer(cv, (l) => new Iso(l, 16, OY).box(x0, 4, 9, x0 + 2, 13, 15, 'a', 'b', 'd'));
   const iso = new Iso(cv, 16, OY);
-  for (const x of [5, 8, 11]) iso.dot(x, 13, 7, 'w');
+  for (const x of [5, 8, 11]) iso.dot(x, 13, 4.5, 'w');
   shimmer(cv, frame);
-  return cv.toMap({ ...GOLD, R: 0xc8102e, S: 0x8e0f24, M: 0x5e0a18 }, 6);
+  return cv.toMap({ ...GOLD, R: 0xc8102e, S: 0x8e0f24, M: 0x5e0a18 }, cv.h - (OY + 8));
 }
 
 // ---------------------------------------------------------------- felt table
@@ -648,43 +652,42 @@ function neonFrame(frame: number): PixelMap {
 const REEL = ['R', 'Y', 'K', 'G', 'Y', 'R'];
 
 function slotFrame(frame: number, on: boolean): PixelMap {
-  const cv = new PixelCanvas(32, 54);
-  const OY = 40;
+  const OY = 32;
+  const cv = new PixelCanvas(32, 46);
   layer(cv, (l) => {
     const li = new Iso(l, 16, OY);
-    li.box(3, 4, 0, 13, 12, 30, (p) => (p[0] < 4 || p[1] < 5 ? 'a' : 'b'), (p) => {
-      if (p[2] < 3) return 'd';
-      if (p[2] > 27) return 'b';
+    li.box(3, 4, 0, 13, 12, 22, (p) => (p[0] < 4 || p[1] < 5 ? 'a' : 'b'), (p) => {
+      if (p[2] < 2) return 'd';
+      if (p[2] > 19.5) return 'b';
       // reel window
-      if (p[2] > 15 && p[2] < 25 && p[0] > 4.5 && p[0] < 11.5) {
-        if (p[2] < 15.9 || p[2] > 24.1 || p[0] < 5.2 || p[0] > 10.8) return 'b';
+      if (p[2] > 11 && p[2] < 19 && p[0] > 4.5 && p[0] < 11.5) {
+        if (p[2] < 11.9 || p[2] > 18.1 || p[0] < 5.2 || p[0] > 10.8) return 'b';
         const reel = Math.floor((p[0] - 5.2) / 1.87);
         if ((p[0] - 5.2) % 1.87 < 0.35) return 'j';
         const scroll = on ? frame * (reel + 1) * 0.9 : 0;
         const row = Math.floor((p[2] + scroll) / 3);
         const inner = (p[2] + scroll) % 3;
-        return inner > 0.6 && inner < 2.4 && Math.abs(p[2] - 20) < 3.5 ? REEL[(row + reel * 2) % REEL.length] : 'i';
+        return inner > 0.6 && inner < 2.4 && Math.abs(p[2] - 15) < 2.6 ? REEL[(row + reel * 2) % REEL.length] : 'i';
       }
-      if (p[2] > 7 && p[2] < 11 && p[0] > 5 && p[0] < 11) return p[2] > 10 ? 'e' : 'f';
+      if (p[2] > 5 && p[2] < 8 && p[0] > 5 && p[0] < 11) return p[2] > 7 ? 'e' : 'f';
       return p[0] < 4.5 ? 'S' : 'C';
-    }, (p) => (p[2] < 3 ? 'e' : p[2] > 27 ? 'c' : p[1] > 10.5 ? 'M' : 'D'));
+    }, (p) => (p[2] < 2 ? 'e' : p[2] > 19.5 ? 'c' : p[1] > 10.5 ? 'M' : 'D'));
   });
   // crown light on top
   layer(cv, (l) => {
-    const [x, y] = new Iso(l, 16, OY).p(8, 8, 33);
-    orb(l, x, y, 3.5, 2.5, on && frame % 2 ? ['w', 'a', 'b'] : ['a', 'b', 'c', 'd']);
+    const [x, y] = new Iso(l, 16, OY).p(8, 8, 25);
+    orb(l, x, y, 3, 2, on && frame % 2 ? ['w', 'a', 'b'] : ['a', 'b', 'c', 'd']);
   });
   // lever on the right side
   layer(cv, (l) => {
-    const li = new Iso(l, 16, OY);
-    const [x0, y0] = li.p(13, 8, 18);
-    const pull = on ? [0, 0, 2, 4, 2, 0, 0, 0][frame % 8] : 0;
-    l.rect(x0 + 1, y0 - 12 + pull, 1, 12 - pull, 'c').rect(x0 + 2, y0 - 12 + pull, 1, 12 - pull, 'd');
-    orb(l, x0 + 1.5, y0 - 13 + pull, 2.2, 2.2, ['X', 'R', 'M']);
+    const [x0, y0] = new Iso(l, 16, OY).p(13, 8, 12);
+    const pull = on ? [0, 0, 1, 3, 1, 0, 0, 0][frame % 8] : 0;
+    l.rect(x0 + 1, y0 - 9 + pull, 1, 9 - pull, 'c').rect(x0 + 2, y0 - 9 + pull, 1, 9 - pull, 'd');
+    orb(l, x0 + 1.5, y0 - 10 + pull, 2, 2, ['X', 'R', 'M']);
   });
   const iso = new Iso(cv, 16, OY);
-  for (let i = 0; i < 4; i++) iso.dot(4.5 + i * 2, 12, 28.5, on && (i + frame) % 2 ? 'w' : 'Y');
-  return cv.toMap({ ...GOLD, C: 0xc8102e, S: 0xe23a52, D: 0x8e0f24, M: 0x5e0a18, R: 0xe0203c, X: 0xff8a9a, Y: 0xf7c948, K: 0x2a2446, G: 0x22915a, i: 0xfffbea, j: 0xc9b98f }, 6);
+  for (let i = 0; i < 4; i++) iso.dot(4.5 + i * 2, 12, 20.5, on && (i + frame) % 2 ? 'w' : 'Y');
+  return cv.toMap({ ...GOLD, C: 0xc8102e, S: 0xe23a52, D: 0x8e0f24, M: 0x5e0a18, R: 0xe0203c, X: 0xff8a9a, Y: 0xf7c948, K: 0x2a2446, G: 0x22915a, i: 0xfffbea, j: 0xc9b98f }, cv.h - (OY + 8));
 }
 
 // ---------------------------------------------------------------- velvet rope
@@ -786,6 +789,7 @@ export function allCasinoFrames(): Array<{ name: string; map: PixelMap }> {
 export function lidSequence(from: string, to: string): readonly string[] | null {
   const face = (s: string) => /^[1-6]$/.test(s);
   if (from === '-1' && face(to)) return LID_OPEN;
-  if (face(from) && (to === '0' || to === '')) return LID_CLOSE;
+  // closing, or rolling again straight from a shown face: swing shut first
+  if (face(from) && (to === '0' || to === '' || to === '-1')) return LID_CLOSE;
   return null;
 }

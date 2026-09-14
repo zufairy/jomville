@@ -40,7 +40,8 @@ describe('casino pixel sprites', () => {
     expect(lidSequence('-1', '4')).toBe(LID_OPEN);
     expect(lidSequence('4', '0')).toBe(LID_CLOSE);
     expect(lidSequence('0', '-1')).toBeNull();
-    expect(lidSequence('3', '-1')).toBeNull();
+    expect(lidSequence('3', '-1')).toBe(LID_CLOSE);
+    expect(lidSequence('0', '5')).toBeNull();
   });
 
   it('parks the winning wheel segment under the pointer', () => {

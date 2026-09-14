@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { blurbFor, furnitureDef } from '@dovey/shared';
+import { isTopModal, popModal, pushModal } from './modalStack';
 import { useAppStore } from '../store';
 import { chanceStatus, serialLine } from './itemInfoText';
 
@@ -8,6 +10,25 @@ export function ItemInfo() {
   const actions = useAppStore((s) => s.actions);
   const setSelectedItem = useAppStore((s) => s.setSelectedItem);
   const def = p ? furnitureDef(p.def) : undefined;
+  const open = !!p && !!def;
+  const modalId = useRef(Symbol('iteminfo'));
+
+  // Esc closes the card, but only when no popup is stacked above it
+  useEffect(() => {
+    if (!open) return;
+    const id = modalId.current;
+    pushModal(id);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !isTopModal(id)) return;
+      setSelectedItem(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      popModal(id);
+    };
+  }, [open, setSelectedItem]);
+
   if (!p || !def) return null;
 
   const img = actions?.previewOf(def.id) ?? '';
