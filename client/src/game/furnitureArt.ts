@@ -5,6 +5,7 @@ import { BEACH_PAINTERS } from './beachArt';
 import { DREAM_PAINTERS } from './dreamArt';
 import { PARK_PAINTERS, cylinder, grad, hgrad, rad } from './parkArt';
 import { DEN_PAINTERS } from './denArt';
+import { CASINO_PAINTERS } from './casinoArt';
 
 /**
  * Vector art for every furniture kind. Each item is drawn as a function of
@@ -194,6 +195,8 @@ export interface ArtCtx {
   /** 0..1 progress through the loop */
   t: number;
   on: boolean;
+  /** chance furni face key from artStateKey ('' for everything else) */
+  state: string;
   w: number;
   h: number;
   top: number;
@@ -1511,7 +1514,7 @@ function heartStroke(g: Graphics, cx: number, cy: number, r: number) {
   g.stroke({ width: 1.5, color: INK });
 }
 
-export function paintFurniture(g: Graphics, def: FurnitureDef, rot: number, frame: number, on: boolean) {
+export function paintFurniture(g: Graphics, def: FurnitureDef, rot: number, frame: number, on: boolean, state = '') {
   const { w, h } = footprint(def, rot);
   const centre = tileToScreen(w / 2, h / 2);
   const ctx: ArtCtx = {
@@ -1520,6 +1523,7 @@ export function paintFurniture(g: Graphics, def: FurnitureDef, rot: number, fram
     frame,
     t: def.anim > 1 ? frame / def.anim : 0,
     on,
+    state,
     w,
     h,
     top: PALETTE[def.colours[0]],
@@ -1527,7 +1531,7 @@ export function paintFurniture(g: Graphics, def: FurnitureDef, rot: number, fram
     cx: centre.x,
     cy: centre.y,
   };
-  (PAINTERS[def.kind] ?? LAB_PAINTERS[def.kind] ?? BEACH_PAINTERS[def.kind] ?? DREAM_PAINTERS[def.kind] ?? PARK_PAINTERS[def.kind] ?? DEN_PAINTERS[def.kind] ?? PAINTERS.block)(g, ctx);
+  (PAINTERS[def.kind] ?? LAB_PAINTERS[def.kind] ?? BEACH_PAINTERS[def.kind] ?? DREAM_PAINTERS[def.kind] ?? PARK_PAINTERS[def.kind] ?? DEN_PAINTERS[def.kind] ?? CASINO_PAINTERS[def.kind] ?? PAINTERS.block)(g, ctx);
 }
 
 /** Pixel bounds of an item's art relative to its tile origin (used to size atlas frames). */

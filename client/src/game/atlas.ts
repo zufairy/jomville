@@ -1,6 +1,7 @@
 import { Container, Graphics, Rectangle, Renderer, Texture } from 'pixi.js';
-import { FurnitureDef, furnitureDef } from '@dovey/shared';
+import { FurnitureDef, ROLLING, furnitureDef } from '@dovey/shared';
 import { artBounds, paintFurniture } from './furnitureArt';
+import { artStateKey } from './casinoArt';
 
 /**
  * Runtime sprite sheet for furniture. Every (item, rotation, on/off) is baked
@@ -30,17 +31,20 @@ class FurnitureAtlas {
     return !!this.renderer;
   }
 
-  frames(def: FurnitureDef, rot: number, on: boolean): FrameSet {
-    const key = `${def.id}:${rot}:${on ? 1 : 0}`;
+  frames(def: FurnitureDef, rot: number, on: boolean, state = ''): FrameSet {
+    const sk = artStateKey(def, state);
+    const key = `${def.id}:${rot}:${on ? 1 : 0}:${sk}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
     if (!this.renderer) throw new Error('atlas not bound');
     const b = artBounds(def, rot);
     const frame = new Rectangle(b.x, b.y, b.w, b.h);
     const textures: Texture[] = [];
-    for (let f = 0; f < def.anim; f++) {
+    // a shown face is a still; only rolling animates
+    const count = def.interaction && sk !== ROLLING ? 1 : def.anim;
+    for (let f = 0; f < count; f++) {
       const g = new Graphics();
-      paintFurniture(g, def, rot, f, on);
+      paintFurniture(g, def, rot, f, on, sk);
       const tex = this.renderer.generateTexture({ target: g, frame, resolution: ATLAS_RES });
       textures.push(tex);
       g.destroy();
@@ -56,10 +60,11 @@ class FurnitureAtlas {
     if (hit) return hit;
     const def = furnitureDef(defId);
     if (!def || !this.renderer) return '';
-    const set = this.frames(def, 0, true);
+    const face = def.interaction === 'wheel' ? '1' : def.interaction ? '5' : '';
+    const set = this.frames(def, 0, true, face);
     const wrap = new Container();
     const g = new Graphics();
-    paintFurniture(g, def, 0, 0, true);
+    paintFurniture(g, def, 0, 0, true, artStateKey(def, face));
     g.position.set(-set.offsetX, -set.offsetY);
     wrap.addChild(g);
     const canvas = this.renderer.extract.canvas({ target: wrap, resolution: ATLAS_RES }) as HTMLCanvasElement;

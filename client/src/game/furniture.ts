@@ -24,7 +24,8 @@ export class FurnitureSprite extends Container {
   }
 
   setPlacement(p: Placement) {
-    const changed = p.def !== this.placement.def || p.rot !== this.placement.rot || (p.on ?? true) !== this.lit;
+    const changed =
+      p.def !== this.placement.def || p.rot !== this.placement.rot || (p.on ?? true) !== this.lit || (p.state ?? '') !== (this.placement.state ?? '');
     this.placement = p;
     this.lit = p.on ?? true;
     if (changed) this.redraw();
@@ -54,7 +55,7 @@ export class FurnitureSprite extends Container {
   redraw() {
     const d = furnitureDef(this.placement.def);
     if (!d || !atlas.ready) return;
-    const set = atlas.frames(d, this.placement.rot, this.lit);
+    const set = atlas.frames(d, this.placement.rot, this.lit, this.placement.state ?? '');
     this.sprite.textures = set.textures;
     this.sprite.position.set(set.offsetX, set.offsetY);
     if (set.textures.length > 1) {
