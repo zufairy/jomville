@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- simplified 16/32px Leypark smiley: bolder features, larger heart -->
+  <!-- simplified 16/32px Leypark smiley: bold features, a big outlined heart that survives 16px -->
   <defs>
     <linearGradient id="f" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ff9a5a" />
@@ -7,9 +7,10 @@
       <stop offset="1" stop-color="#f0418c" />
     </linearGradient>
   </defs>
-  <circle cx="16" cy="16" r="15.5" fill="url(#f)" />
-  <circle cx="11" cy="12.5" r="2.4" fill="#2a0e2f" />
-  <circle cx="20.5" cy="12.5" r="2.4" fill="#2a0e2f" />
-  <path d="M8.5 18.5C10.5 23 13 24.5 16 24.5C18.6 24.5 20.5 23.2 21.8 21" fill="none" stroke="#2a0e2f" stroke-width="3" stroke-linecap="round" />
-  <path d="M25 23.6C21.6 21.5 20.8 18.6 22.4 17.5C23.5 16.8 24.6 17.3 25 18.3C25.4 17.3 26.5 16.8 27.6 17.5C29.2 18.6 28.4 21.5 25 23.6Z" fill="#fff" />
+  <circle cx="15" cy="15" r="14.5" fill="url(#f)" />
+  <circle cx="10" cy="11.5" r="2.4" fill="#2a0e2f" />
+  <circle cx="19" cy="11.5" r="2.4" fill="#2a0e2f" />
+  <path d="M7.5 17.5C9.3 21.4 11.6 22.8 14.2 22.8C15.6 22.8 16.8 22.4 17.8 21.6" fill="none" stroke="#2a0e2f" stroke-width="3" stroke-linecap="round" />
+  <!-- two round lobes + point: reads as a heart even at 16px -->
+  <path d="M24.5 31L18.4 24.9A3.9 3.9 0 0 1 24.5 19.6A3.9 3.9 0 0 1 30.6 24.9Z" fill="#fff" stroke="#2a0e2f" stroke-width="1.6" stroke-linejoin="round" />
 </svg>

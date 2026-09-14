@@ -49,7 +49,7 @@ const SAFETY = [
   { title: 'Block in one tap', body: 'From anyone’s profile. Blocked players can’t see your messages or call you.' },
   { title: 'Report with context', body: 'Reports go to a moderation queue and are reviewed by real people.' },
   { title: 'Calls are opt-in', body: 'Nobody sees or hears you on a call unless you accept it.' },
-  { title: 'Love features are 18+', body: 'The Love Meter and romance rooms are for adults only.' },
+  { title: 'Love features are for adults 18+', body: 'The Love Meter and romance rooms are meant for adults only.' },
 ];
 
 type Live = { state: 'loading' } | { state: 'error' } | { state: 'ok'; total: number; bySlug: Record<string, number> };
@@ -190,6 +190,16 @@ export function Landing() {
             Play free
           </button>
         </div>
+        {/* mobile-only (<860px) scrollable section row; desktop uses .lk-nav__links above */}
+        <nav className="lk-subnav" aria-label="Sections">
+          <div className="lk-subnav__row">
+            {NAV.map((n) => (
+              <a key={n.href} href={n.href}>
+                {n.label}
+              </a>
+            ))}
+          </div>
+        </nav>
       </header>
 
       <main id="main">
@@ -319,7 +329,7 @@ export function Landing() {
               <button className="lk-btn" onClick={() => goToRoom('lovemeter')}>
                 Enter the Love Meter
               </button>
-              <span className="lk-note">Love features are for adults 18+ only.</span>
+              <span className="lk-note">Love features are for adults 18+.</span>
             </div>
           </div>
         </section>

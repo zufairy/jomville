@@ -245,13 +245,29 @@
   .lk-nav__links a { padding: 0 10px; }
   .lk-hero__grid, .lk-feature, .lk-split { grid-template-columns: 1fr; gap: 48px; }
   .lk-hero__visual { max-width: 720px; }
-  .lk-steps, .lk-play, .lk-callfacts { grid-template-columns: 1fr; }
+  .lk-steps, .lk-play, .lk .lk-callfacts { grid-template-columns: 1fr; }
   .lk-section { padding: 88px 0; }
 }
+.lk-subnav { display: none; }
 @media (max-width: 860px) {
+  .lk { scroll-padding-top: 116px; }
   .lk-nav__links { display: none; }
   .lk-nav__row { justify-content: space-between; min-height: 64px; }
-  .lk-hero { margin-top: -64px; padding: 104px 0 88px; }
+  .lk-subnav { display: block; }
+  .lk-subnav__row {
+    display: flex; gap: 4px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    padding: 0 16px 6px; -webkit-overflow-scrolling: touch;
+  }
+  .lk-subnav__row::-webkit-scrollbar { display: none; }
+  /* trailing gutter: padding-right is dropped at the end of a scrolling flex row */
+  .lk-subnav__row::after { content: ''; flex: 0 0 12px; }
+  .lk-subnav a {
+    display: inline-flex; flex: none; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 999px;
+    font-size: 14px; font-weight: 600; white-space: nowrap; color: var(--lk-muted); background: rgba(255, 255, 255, 0.06);
+  }
+  .lk-subnav a:hover, .lk-subnav a:active { color: var(--lk-text); background: rgba(255, 255, 255, 0.12); }
+  /* header is 64px row + 50px section row; hero slides under both so the glow reaches the top */
+  .lk-hero { margin-top: -114px; padding: 146px 0 88px; }
   .lk-chip--call { right: 8px; top: -22px; }
   .lk-chip--match { left: 8px; bottom: -30px; }
 }
