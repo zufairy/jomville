@@ -7,6 +7,7 @@ export * from './profanity';
 export * from './avatar';
 export * from './gear';
 export * from './furniture';
+export * from './interactions';
 export * from './names';
 export * from './lobby';
 export * from './harbor';

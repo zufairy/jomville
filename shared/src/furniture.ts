@@ -1,3 +1,4 @@
+import type { InteractionKind } from './interactions';
 import { Grid, makeGrid } from './grid';
 
 export type FurnitureKind =
@@ -132,9 +133,21 @@ export type FurnitureKind =
   | 'pool_table'
   | 'dice_rug'
   | 'pixel_lamp'
-  | 'wall_den';
+  | 'wall_den'
+  // casino
+  | 'dicemaster'
+  | 'holodice'
+  | 'wheel_fortune'
+  | 'dragon_egg'
+  | 'throne'
+  | 'felt_table'
+  | 'chip_stack'
+  | 'casino_carpet'
+  | 'neon_casino'
+  | 'slot_prop'
+  | 'velvet_rope_gold';
 
-export const FURNITURE_CATS = ['seating', 'tables', 'lights', 'fun', 'outdoor', 'decor', 'floor'] as const;
+export const FURNITURE_CATS = ['seating', 'tables', 'lights', 'fun', 'outdoor', 'decor', 'floor', 'casino'] as const;
 export type FurnitureCat = (typeof FURNITURE_CATS)[number];
 
 export type Rarity = 'common' | 'rare' | 'epic';
@@ -162,6 +175,10 @@ export interface FurnitureDef {
   /** shop price in coins; 0 = not sold (system décor) */
   price: number;
   rarity: Rarity;
+  /** limited edition: only this many serials are ever sold */
+  ltd?: number;
+  /** chance furni behaviour on use (dice, wheel) */
+  interaction?: InteractionKind;
 }
 
 interface Opts {
@@ -170,6 +187,8 @@ interface Opts {
   use?: boolean;
   anim?: number;
   rarity?: Rarity;
+  ltd?: number;
+  interaction?: InteractionKind;
 }
 
 const def = (
@@ -198,6 +217,8 @@ const def = (
   use: o.use ?? false,
   anim: o.anim ?? 1,
   rarity: o.rarity ?? 'common',
+  ...(o.ltd ? { ltd: o.ltd } : {}),
+  ...(o.interaction ? { interaction: o.interaction } : {}),
 });
 
 /**
@@ -375,6 +396,18 @@ export const FURNITURE: FurnitureDef[] = [
   def('neon_game', 'GAME ON neon', 'wall_den', 'decor', 3, 1, 96, [11, 7], 0, { walkable: true, anim: 8, rarity: 'epic' }),
   def('scoreboard', 'scoreboard', 'wall_den', 'decor', 3, 1, 96, [28, 16], 0, { walkable: true, anim: 12, rarity: 'rare' }),
   def('dartboard', 'dartboard', 'wall_den', 'decor', 1, 1, 90, [5, 1], 120, { walkable: true, anim: 8 }),
+  // ---- casino (spec 2026-09-14): expensive rares, chance furni tracked per item
+  def('dicemaster', 'Dicemaster', 'dicemaster', 'casino', 1, 1, 26, [1, 0], 8000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice6' }),
+  def('holodice', 'Holodice', 'holodice', 'casino', 1, 1, 34, [9, 13], 15000, { use: true, anim: 8, rarity: 'epic', interaction: 'dice100' }),
+  def('wheel_fortune', 'Wheel of Fortune', 'wheel_fortune', 'casino', 2, 1, 96, [5, 24], 25000, { use: true, anim: 12, rarity: 'epic', interaction: 'wheel', ltd: 100 }),
+  def('dragon_egg', 'Dragon Egg', 'dragon_egg', 'casino', 1, 1, 30, [14, 24], 75000, { anim: 8, rarity: 'epic', ltd: 50 }),
+  def('throne_gold', 'Golden Throne', 'throne', 'casino', 1, 1, 58, [24, 5], 50000, { sit: true, anim: 8, rarity: 'epic', ltd: 100 }),
+  def('felt_table', 'casino felt table', 'felt_table', 'casino', 2, 1, 20, [15, 19], 900),
+  def('chip_stack', 'chip stack', 'chip_stack', 'casino', 1, 1, 18, [5, 24], 300),
+  def('casino_carpet', 'casino carpet', 'casino_carpet', 'casino', 1, 1, 0, [5, 24], 300, { walkable: true }),
+  def('neon_casino', 'CASINO neon', 'neon_casino', 'casino', 3, 1, 96, [5, 24], 2000, { walkable: true, anim: 8, rarity: 'rare' }),
+  def('slot_prop', 'slot machine prop', 'slot_prop', 'casino', 1, 1, 64, [5, 24], 1500, { use: true, anim: 8, rarity: 'rare' }),
+  def('velvet_rope_gold', 'gold velvet rope', 'velvet_rope_gold', 'casino', 1, 1, 34, [24, 5], 400),
 ];
 
 /** Rides whose platform lies flat under the vehicles drawn on top of it. */
@@ -393,6 +426,11 @@ export function furnitureDef(id: string): FurnitureDef | undefined {
   return BY_ID.get(id);
 }
 
+/** Items tracked one row per item (serials, per-item state) rather than as an inventory count. */
+export function isInstanceDef(d: FurnitureDef): boolean {
+  return !!d.ltd || !!d.interaction;
+}
+
 export interface Placement {
   id: string;
   def: string;
@@ -401,6 +439,12 @@ export interface Placement {
   rot: 0 | 1 | 2 | 3;
   /** usable items: switched on? (persisted with the layout) */
   on?: boolean;
+  /** chance furni face: '0' closed, '-1' rolling, else the result */
+  state?: string;
+  /** instance item row id (undefined for counted commons and system décor) */
+  itemId?: string;
+  /** LTD serial shown as #n */
+  serial?: number;
 }
 
 export function footprint(d: FurnitureDef, rot: number): { w: number; h: number } {
