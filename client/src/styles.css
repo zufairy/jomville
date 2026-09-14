@@ -105,6 +105,21 @@ html, body, #root {
   gap: 8px;
   justify-content: flex-end;
 }
+/* own stacking context so the chat shade sits behind the HUD but above the game canvas */
+.bottom { z-index: 1; }
+.chatfeed-shade {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  height: calc(220px + var(--safe-bottom));
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55) 40%, rgba(0, 0, 0, 0.85));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.chatfeed-shade--on { opacity: 1; }
 .chatfeed {
   display: flex;
   flex-direction: column;
@@ -123,17 +138,12 @@ html, body, #root {
 .chatfeed__line {
   align-self: flex-start;
   max-width: 100%;
-  padding: 6px 12px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(74, 30, 92, 0.88), rgba(220, 70, 150, 0.55));
+  padding: 2px 4px;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  animation: chatfeed-in 0.22s ease-out;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  animation: chatfeed-in 0.25s ease-out;
 }
-.chatfeed__line--roll {
-  background: linear-gradient(135deg, rgba(120, 84, 8, 0.9), rgba(245, 197, 84, 0.7));
-}
+.chatfeed__line--roll .chatfeed__text { color: #f5c554; }
 .chatfeed__name {
   display: block;
   font-size: 11px;
@@ -149,8 +159,8 @@ html, body, #root {
   word-break: break-word;
 }
 @keyframes chatfeed-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ---- camera recenter button, shown while free-panned ---- */
@@ -1923,6 +1933,13 @@ html, body, #root {
 }
 
 /* ---- wearable catalog ---- */
+/* the item you just pulled and put on: brief gold glow when the wardrobe opens on it */
+.wear--pulse { animation: wear-pulse 0.8s ease-in-out 2; }
+@keyframes wear-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 194, 106, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(232, 194, 106, 0.9), 0 0 18px rgba(232, 194, 106, 0.7); }
+}
+@media (prefers-reduced-motion: reduce) { .wear--pulse { animation: none; outline: 3px solid #e8c26a; } }
 .wear__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));

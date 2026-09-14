@@ -157,6 +157,9 @@ interface AppState {
   setUndoCount: (n: number) => void;
   setAvatar: (patch: Partial<AvatarConfig>) => void;
   setCustomizing: (v: boolean) => void;
+  /** item the wardrobe should open on (just pulled from a capsule); cleared once shown */
+  customizeFocus: string | null;
+  setCustomizeFocus: (id: string | null) => void;
   setStatus: (s: ConnStatus) => void;
   setSessionId: (id: string | null) => void;
   setPlayerCount: (n: number) => void;
@@ -275,6 +278,8 @@ export const useAppStore = create<AppState>((set) => ({
       return { avatar };
     }),
   setCustomizing: (customizing) => set({ customizing }),
+  customizeFocus: null,
+  setCustomizeFocus: (customizeFocus) => set({ customizeFocus }),
   setStatus: (status) => set({ status }),
   setSessionId: (sessionId) => set({ sessionId }),
   setPlayerCount: (playerCount) => set({ playerCount }),
