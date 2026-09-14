@@ -48,6 +48,7 @@ import { CallBook } from './calls';
 import { Duel, DuelBook, Pick, RoundResult, Settlement, duelSettlement } from './duel';
 import { settleOrLog } from './duelSettle';
 import { isDuelStake } from '@dovey/shared';
+import { TRADE_CLIENT_MESSAGES, TradeController } from './trade/controller';
 import { GAME_TABLE_KIND, TABLE_BOT_REWARD, TABLE_GAME_KINDS, TABLE_REWARD, TableGameKind, tableChairs } from '@dovey/shared';
 import { Match, TableBook, TableEvent, isBot } from './tableGames';
 import { BotCrew, PERSONAS, scatterSpawns } from './bots';
@@ -59,8 +60,8 @@ import { KitchenLobby } from './kitchen/lobby';
 import { ROUND_KEY } from './kitchen/rounds';
 import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
-import { registry } from './registry';
-import { presence } from './social';
+import { humanCount, registry } from './registry';
+import { inviteLimit, presence } from './social';
 
 export interface JoinOptions {
   slug?: string;
@@ -91,8 +92,6 @@ export class GameRoom extends Room<WorldState> {
   private chatLimit = new RateLimiter(CHAT_RATE.count, CHAT_RATE.windowMs);
   private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
   private blockLimit = new RateLimiter(BLOCK_RATE.count, BLOCK_RATE.windowMs);
-  /** one invite per (inviter, friend) per 30 s */
-  private inviteLimit = new RateLimiter(1, 30_000);
   private blocks = new BlockBook();
   private emoteLimit = new RateLimiter(EMOTE_RATE.count, EMOTE_RATE.windowMs);
   private avatarLimit = new RateLimiter(10, 5000);
@@ -109,6 +108,10 @@ export class GameRoom extends Room<WorldState> {
   /** userId -> last maze payout */
   private mazeAt = new Map<string, number>();
   private duelLimit = new RateLimiter(20, 5000);
+  /** player-to-player trades (server/src/trade) */
+  private trade!: TradeController;
+  /** rooms.trade_enabled, cached on create */
+  private tradeEnabled = true;
   private love: LoveMeter | null = null;
   /** lane tile each queued person was last sent to, so re-syncs don't re-path them */
   private loveSpots = new Map<string, string>();
@@ -128,6 +131,7 @@ export class GameRoom extends Room<WorldState> {
     this.state.style = JSON.stringify(row.style);
     this.state.mask = row.mask ? row.mask.join('|') : '';
     this.state.ownerId = row.owner_id;
+    this.tradeEnabled = row.trade_enabled !== false;
     this.size = row.size;
     this.mask = row.mask;
     if (repo.isSystemRoom(row.id)) this.furnitureCap = MAX_FURNITURE_SYSTEM_ROOM;
@@ -214,6 +218,7 @@ export class GameRoom extends Room<WorldState> {
       for (const c of this.clients) {
         const u = c.auth as User | undefined;
         if (!u) continue;
+        void GameRoom.repo.addPlayMinute(u.id).catch((e) => console.error('[trade] play minute', e));
         void GameRoom.repo.creditCoins(u.id, COINS_PER_MINUTE).then((coins) => c.send('coins', { coins, earned: COINS_PER_MINUTE }));
       }
     }, 60_000);
@@ -229,6 +234,7 @@ export class GameRoom extends Room<WorldState> {
         this.state.name = row.name;
         this.state.category = row.category;
         this.state.style = JSON.stringify(row.style);
+        for (const uid of presence.renameRoom(this.state.slug, this.state.name)) void this.announcePresence(uid);
       }
     });
 
@@ -324,7 +330,7 @@ export class GameRoom extends Room<WorldState> {
       const me = client.auth as User | undefined;
       const to = typeof msg?.toUserId === 'string' ? msg.toUserId : '';
       if (!me || !to || to === me.id) return;
-      if (!this.inviteLimit.allow(`${me.id}:${to}`)) return this.reject(client, 'rate_limited');
+      if (!inviteLimit.allow(`${me.id}:${to}`)) return this.reject(client, 'rate_limited');
       if (!(await GameRoom.repo.areFriends(me.id, to))) return this.reject(client, 'not_friends');
       if (!presence.isOnline(to)) return this.reject(client, 'friend_offline');
       const avatar = this.state.players.get(client.sessionId)?.avatar ?? serializeAvatar(me.avatar);
@@ -422,6 +428,7 @@ export class GameRoom extends Room<WorldState> {
         this.clients.find((c) => c.sessionId === callee)?.send('call_end', { reason: 'expired' });
       }
       for (const { duel, result } of this.duels.sweep()) this.sendRound(duel, result);
+      this.trade.sweep();
     }, 5000);
 
     // ---- duels: rock-paper-scissors, best of three, for a coin stake (or the free 25-coin reward)
@@ -523,6 +530,25 @@ export class GameRoom extends Room<WorldState> {
       if (r) this.sendRound(d, r);
     });
     this.onMessage('duel_end', (client) => this.quitDuel(client.sessionId, 'forfeit'));
+
+    // ---- trading: items + coins between two people here. Rules live in server/src/trade.
+    this.trade = new TradeController({
+      repo,
+      roomId: () => this.state.slug,
+      tradeEnabled: () => this.tradeEnabled,
+      userOf: (id) => {
+        const u = this.clientOf(id)?.auth as User | undefined;
+        const p = this.state.players.get(id);
+        return u && p ? { id: u.id, handle: p.handle } : null;
+      },
+      isHidden: (a, b) => this.blocks.isHidden(a, b),
+      send: (id, type, data) => this.clientOf(id)?.send(type, data),
+    });
+    for (const type of TRADE_CLIENT_MESSAGES) {
+      this.onMessage(type, (client, msg: unknown) => {
+        this.trade.handle(client.sessionId, type, msg).catch((e) => console.error('[trade]', type, e));
+      });
+    }
 
     // ---- table games: sit opposite someone at a game table, quick match, or play the house bot
     this.state.furniture.forEach((f) => {
@@ -701,7 +727,7 @@ export class GameRoom extends Room<WorldState> {
     void this.announcePresence(user.id);
     void this.reloadBlocks(client.sessionId, user.id);
     if (this.love) client.send('love', this.loveSnapshot());
-    registry.set(this.state.slug, this.state.players.size);
+    this.publishLive();
     void GameRoom.repo.coins(user.id).then((coins) => client.send('coins', { coins, earned: 0 }));
     this.bots?.onHumanJoin({ id: client.sessionId, handle: p.handle, x: p.x, y: p.y });
     if (process.env.DOVEY_DEBUG) console.log('[join]', this.state.slug, user.handle, 'now', this.state.players.size);
@@ -796,6 +822,11 @@ export class GameRoom extends Room<WorldState> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     await this.flush();
     registry.set(this.state.slug, 0);
+  }
+
+  /** public live count: real people only, the park's AI locals are not visitors */
+  private publishLive() {
+    registry.set(this.state.slug, humanCount(this.state.players.keys(), (id) => !!this.bots?.has(id)));
   }
 
   /** Nearest unoccupied tile to the room centre (Manhattan order, so neighbours before diagonals). */
@@ -1051,7 +1082,7 @@ export class GameRoom extends Room<WorldState> {
   }
 
   private sendTableState(m: Match) {
-    const names = m.players.map((id) => (isBot(id) ? 'Dovey Bot' : this.handleOf(id)));
+    const names = m.players.map((id) => (isBot(id) ? 'Leypark Bot' : this.handleOf(id)));
     const seats = m.players.map((id) => (isBot(id) ? '' : id));
     const now = Date.now();
     m.players.forEach((id, seat) => {
@@ -1152,6 +1183,7 @@ export class GameRoom extends Room<WorldState> {
     this.loveLeave(client.sessionId);
     // before the player is removed from state, so the settlement still knows both accounts
     this.quitDuel(client.sessionId, 'left');
+    this.trade.leave(client.sessionId);
     this.dispatchTables(this.tables.leave(client.sessionId));
     this.tableLimit.forget(client.sessionId);
     this.love?.forget(client.sessionId);
@@ -1178,7 +1210,7 @@ export class GameRoom extends Room<WorldState> {
     this.useLimit.forget(client.sessionId);
     this.chanceLimit.forget(client.sessionId);
     this.state.players.delete(client.sessionId);
-    registry.set(this.state.slug, this.state.players.size);
+    this.publishLive();
     if (process.env.DOVEY_DEBUG) console.log('[leave]', this.state.slug, 'now', this.state.players.size);
   }
 }

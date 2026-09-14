@@ -1,7 +1,7 @@
 import { Container, Graphics, Rectangle, Renderer, Texture } from 'pixi.js';
-import { FurnitureDef, ROLLING, furnitureDef } from '@dovey/shared';
+import { FurnitureDef, furnitureDef } from '@dovey/shared';
 import { artBounds, paintFurniture } from './furnitureArt';
-import { artStateKey } from './casinoArt';
+import { artFps, artFrameCount, artStateKey } from './casinoArt';
 
 /**
  * Runtime sprite sheet for furniture. Every (item, rotation, on/off) is baked
@@ -14,6 +14,8 @@ export interface FrameSet {
   /** where the texture's top-left sits relative to the item's tile origin */
   offsetX: number;
   offsetY: number;
+  /** playback speed override (frames per second), null for the item's usual loop speed */
+  fps: number | null;
 }
 
 export const ATLAS_RES = 2;
@@ -40,8 +42,8 @@ class FurnitureAtlas {
     const b = artBounds(def, rot);
     const frame = new Rectangle(b.x, b.y, b.w, b.h);
     const textures: Texture[] = [];
-    // a shown face is a still; only rolling animates
-    const count = def.interaction && sk !== ROLLING ? 1 : def.anim;
+    // a shown face is a still (the holodice loops a short idle); rolling animates
+    const count = artFrameCount(def, sk);
     for (let f = 0; f < count; f++) {
       const g = new Graphics();
       paintFurniture(g, def, rot, f, on, sk);
@@ -49,7 +51,7 @@ class FurnitureAtlas {
       textures.push(tex);
       g.destroy();
     }
-    const set = { textures, offsetX: b.x, offsetY: b.y };
+    const set: FrameSet = { textures, offsetX: b.x, offsetY: b.y, fps: artFps(def, sk) };
     this.cache.set(key, set);
     return set;
   }

@@ -7,6 +7,7 @@ import {
   RoomMask,
   RoomStyle,
   normalizeStyle,
+  LEGACY_SYSTEM_HANDLES,
   SYSTEM_HANDLE,
   SYSTEM_ROOMS,
   furnitureDef,
@@ -20,11 +21,16 @@ import {
   randomSlug,
   FURNITURE,
   isInstanceDef,
+  parseOffer,
+  type Offer,
+  type TradeFailCode,
+  type TradeLogOffer,
   FRIEND_LIMIT,
   FRIEND_PENDING_LIMIT,
   serializeAvatar,
 } from '@dovey/shared';
 import { Db } from './db';
+import { TradeAbort, giveCoins, giveStack, takeCoins, takeStack, transferInstance } from './trade/ledger';
 
 export interface User {
   id: string;
@@ -55,6 +61,8 @@ export interface RoomRow {
   style: RoomStyle;
   layout: Placement[];
   is_public: boolean;
+  /** owner may turn trading off; GameRoom caches it on create */
+  trade_enabled: boolean;
   created_at: string;
 }
 
@@ -99,6 +107,18 @@ class ShortStake extends Error {
   constructor(readonly side: 'a' | 'b') {
     super('short_stake');
   }
+}
+
+export interface TradeLogRow {
+  id: number;
+  a_id: string;
+  a_handle: string;
+  b_id: string;
+  b_handle: string;
+  a_offer: TradeLogOffer;
+  b_offer: TradeLogOffer;
+  room_id: string | null;
+  at: Date | string;
 }
 
 export type FriendRequestResult = 'sent' | 'accepted' | 'already' | 'pending' | 'blocked' | 'self' | 'limit' | 'no_user';
@@ -199,6 +219,8 @@ export class Repo {
 
   async setHandle(userId: string, handle: string): Promise<boolean> {
     if (!HANDLE.test(handle)) return false;
+    // the app's own account names are not up for grabs
+    if (handle === SYSTEM_HANDLE || LEGACY_SYSTEM_HANDLES.includes(handle)) return false;
     const prev = await this.userById(userId);
     if (!prev) return false;
     try {
@@ -228,7 +250,17 @@ export class Repo {
    * design changes ship without a migration.
    */
   async ensureSystemRooms(): Promise<void> {
-    let sys = await this.db.query<{ id: string }>('select id from users where handle = $1', [SYSTEM_HANDLE]);
+    // a database seeded before the rebrand: the system user is the lobby's owner under an old handle.
+    // Rename that same row (same id, rooms keep their owner) instead of creating a second system user.
+    const legacy = await this.db.query<{ id: string }>(
+      'select u.id from rooms r join users u on u.id = r.owner_id where r.id = $1 and u.handle = any($2::text[])',
+      [SYSTEM_ROOMS[0].slug, [...LEGACY_SYSTEM_HANDLES]],
+    );
+    if (legacy.length) {
+      const taken = await this.db.query('select 1 from users where handle = $1 and id <> $2', [SYSTEM_HANDLE, legacy[0].id]);
+      if (!taken.length) await this.db.query('update users set handle = $2 where id = $1', [legacy[0].id, SYSTEM_HANDLE]);
+    }
+    let sys = legacy.length ? legacy : await this.db.query<{ id: string }>('select id from users where handle = $1', [SYSTEM_HANDLE]);
     if (!sys.length) {
       const id = newId();
       // nobody holds this token; the hash is of random bytes so it can never be presented
@@ -340,13 +372,17 @@ export class Repo {
     return 'accepted';
   }
 
-  async cancelFriendRequest(me: string, to: string) {
-    await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2', [me, to]);
+  /** True only when a pending request actually existed and was deleted. */
+  async cancelFriendRequest(me: string, to: string): Promise<boolean> {
+    const r = await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2 returning 1', [me, to]);
+    return r.length > 0;
   }
 
-  async removeFriend(me: string, other: string) {
+  /** True only when a friendship actually existed and was deleted. */
+  async removeFriend(me: string, other: string): Promise<boolean> {
     const [a, b] = pair(me, other);
-    await this.db.query('delete from friendships where user_a = $1 and user_b = $2', [a, b]);
+    const r = await this.db.query('delete from friendships where user_a = $1 and user_b = $2 returning 1', [a, b]);
+    return r.length > 0;
   }
 
   async friendIdsOf(userId: string): Promise<string[]> {
@@ -636,6 +672,92 @@ export class Repo {
       }
       return coins;
     });
+  }
+
+  // ---- trading
+
+  /** Account age and play time, for the production trade gate. */
+  async tradeStanding(userId: string): Promise<{ createdAt: Date; playMinutes: number } | null> {
+    const r = await this.db.query<{ created_at: Date | string; play_minutes: number }>('select created_at, play_minutes from users where id = $1', [userId]);
+    return r[0] ? { createdAt: new Date(r[0].created_at), playMinutes: r[0].play_minutes } : null;
+  }
+
+  /** Called once a minute per connected user by the coin trickle. */
+  async addPlayMinute(userId: string) {
+    await this.db.query('update users set play_minutes = play_minutes + 1 where id = $1', [userId]);
+  }
+
+  /**
+   * Swap two offers atomically: coins, then stacks, then instances, then the log
+   * row, all inside one transaction. Every write is guarded again here, so an
+   * offer that went stale (item placed, coins spent) fails the whole trade.
+   * `offerA` is what `a` gives to `b`.
+   */
+  async executeTrade(
+    a: string,
+    b: string,
+    offerA: Offer,
+    offerB: Offer,
+    roomId: string | null,
+  ): Promise<{ ok: true; id: number } | { ok: false; code: TradeFailCode }> {
+    const pa = parseOffer(offerA);
+    const pb = parseOffer(offerB);
+    if (a === b || !pa || !pb) return { ok: false, code: 'bad_offer' };
+    const idsA = new Set(pa.slots.flatMap((s) => ('itemId' in s ? [s.itemId] : [])));
+    if (pb.slots.some((s) => 'itemId' in s && idsA.has(s.itemId))) return { ok: false, code: 'bad_offer' };
+    const sides = [
+      { from: a, to: b, offer: pa, log: { coins: pa.coins, slots: [] } as TradeLogOffer },
+      { from: b, to: a, offer: pb, log: { coins: pb.coins, slots: [] } as TradeLogOffer },
+    ];
+    try {
+      const id = await this.db.transaction(async (tx) => {
+        // take from both sides before giving to either, so no one pays with what they receive
+        for (const s of sides) await takeCoins(tx, s.from, s.offer.coins);
+        for (const s of sides)
+          for (const slot of s.offer.slots) {
+            if ('itemId' in slot) continue;
+            await takeStack(tx, s.from, slot.def, slot.qty);
+            s.log.slots.push({ def: slot.def, qty: slot.qty });
+          }
+        for (const s of sides) {
+          await giveCoins(tx, s.to, s.offer.coins);
+          for (const slot of s.offer.slots) if (!('itemId' in slot)) await giveStack(tx, s.to, slot.def, slot.qty);
+        }
+        for (const s of sides)
+          for (const slot of s.offer.slots) {
+            if (!('itemId' in slot)) continue;
+            const item = await transferInstance(tx, slot.itemId, s.from, s.to);
+            s.log.slots.push({ itemId: slot.itemId, def: item.def, serial: item.serial });
+          }
+        const r = await tx.query<{ id: number }>('insert into trades (a_id, b_id, a_offer, b_offer, room_id) values ($1, $2, $3, $4, $5) returning id', [
+          a,
+          b,
+          JSON.stringify(sides[0].log),
+          JSON.stringify(sides[1].log),
+          roomId,
+        ]);
+        return r[0].id;
+      });
+      return { ok: true, id };
+    } catch (e) {
+      if (e instanceof TradeAbort) return { ok: false, code: e.code };
+      console.error('[trade] execute failed', e);
+      return { ok: false, code: 'trade_failed' };
+    }
+  }
+
+  /** A user's trades on either side, newest first (mod view). */
+  async tradesFor(userId: string, limit = 50): Promise<TradeLogRow[]> {
+    return this.db.query<TradeLogRow>(
+      `select t.id, t.a_id, ua.handle as a_handle, t.b_id, ub.handle as b_handle, t.a_offer, t.b_offer, t.room_id, t.at
+       from trades t
+       join users ua on ua.id = t.a_id
+       join users ub on ub.id = t.b_id
+       where t.a_id = $1 or t.b_id = $1
+       order by t.at desc, t.id desc
+       limit $2`,
+      [userId, limit],
+    );
   }
 
   async room(slug: string): Promise<RoomRow | null> {

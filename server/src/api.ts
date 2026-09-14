@@ -1,6 +1,6 @@
 import express from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { SYSTEM_ROOMS, furnitureDef, isInstanceDef } from '@dovey/shared';
+import { RateLimiter, SYSTEM_ROOMS, furnitureDef, isInstanceDef } from '@dovey/shared';
 import { Repo } from './repo';
 import { registry } from './registry';
 import { presence } from './social';
@@ -65,9 +65,17 @@ export function buildApi(repo: Repo) {
   };
   const idOf = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : '');
 
+  // 20 writes/min per user across request/respond/cancel/remove
+  const friendWriteLimit = new RateLimiter(20, 60_000);
+  // at most one "friend_request" push notify per (from, to) pair per 10 min; the request is still stored either way
+  const friendRequestNotifyLimit = new RateLimiter(1, 10 * 60_000);
+  // 60 list reads/min per user
+  const friendListLimit = new RateLimiter(60, 60_000);
+
   app.post('/api/friends', async (req, res) => {
     const u = await userOf(req.body);
     if (!u) return res.status(401).json({ error: 'unknown' });
+    if (!friendListLimit.allow(u.id)) return res.status(429).json({ error: 'rate_limited' });
     const [friends, pending] = await Promise.all([repo.friendsOf(u.id), repo.pendingOf(u.id)]);
     res.json({
       friends: friends.map((f) => ({ ...f, online: presence.isOnline(f.id), room: presence.where(f.id) })),
@@ -79,10 +87,13 @@ export function buildApi(repo: Repo) {
   app.post('/api/friends/request', async (req, res) => {
     const u = await userOf(req.body);
     if (!u) return res.status(401).json({ error: 'unknown' });
+    if (!friendWriteLimit.allow(u.id)) return res.status(429).json({ result: 'rate_limited' });
     const to = idOf(req.body?.toUserId);
     if (!to) return res.status(400).json({ error: 'bad request' });
     const result = await repo.requestFriend(u.id, to);
-    if (result === 'sent') presence.notify(to, 'friend_request', { from: { id: u.id, handle: u.handle } });
+    if (result === 'sent' && friendRequestNotifyLimit.allow(`${u.id}:${to}`)) {
+      presence.notify(to, 'friend_request', { from: { id: u.id, handle: u.handle } });
+    }
     if (result === 'accepted') {
       presence.notify(to, 'friend_update', {});
       presence.notify(u.id, 'friend_update', {});
@@ -93,6 +104,7 @@ export function buildApi(repo: Repo) {
   app.post('/api/friends/respond', async (req, res) => {
     const u = await userOf(req.body);
     if (!u) return res.status(401).json({ error: 'unknown' });
+    if (!friendWriteLimit.allow(u.id)) return res.status(429).json({ result: 'rate_limited' });
     const from = idOf(req.body?.fromUserId);
     if (!from || typeof req.body?.accept !== 'boolean') return res.status(400).json({ error: 'bad request' });
     const result = await repo.respondFriend(u.id, from, req.body.accept);
@@ -103,20 +115,20 @@ export function buildApi(repo: Repo) {
   app.post('/api/friends/cancel', async (req, res) => {
     const u = await userOf(req.body);
     if (!u) return res.status(401).json({ error: 'unknown' });
+    if (!friendWriteLimit.allow(u.id)) return res.status(429).json({ result: 'rate_limited' });
     const to = idOf(req.body?.toUserId);
     if (!to) return res.status(400).json({ error: 'bad request' });
-    await repo.cancelFriendRequest(u.id, to);
-    presence.notify(to, 'friend_update', {});
+    if (await repo.cancelFriendRequest(u.id, to)) presence.notify(to, 'friend_update', {});
     res.json({ result: 'ok' });
   });
 
   app.post('/api/friends/remove', async (req, res) => {
     const u = await userOf(req.body);
     if (!u) return res.status(401).json({ error: 'unknown' });
+    if (!friendWriteLimit.allow(u.id)) return res.status(429).json({ result: 'rate_limited' });
     const other = idOf(req.body?.userId);
     if (!other) return res.status(400).json({ error: 'bad request' });
-    await repo.removeFriend(u.id, other);
-    presence.notify(other, 'friend_update', {});
+    if (await repo.removeFriend(u.id, other)) presence.notify(other, 'friend_update', {});
     res.json({ result: 'ok' });
   });
 
@@ -198,6 +210,14 @@ export function buildApi(repo: Repo) {
   app.get('/api/mod/reports', async (req, res) => {
     if (!isMod(req as never)) return res.status(404).json({ error: 'not found' });
     res.json(await repo.openReports());
+  });
+
+  /** A user's last 50 trades (both sides, offers with serials), for judging scam reports. */
+  app.get('/api/mod/trades', async (req, res) => {
+    if (!isMod(req as never)) return res.status(404).json({ error: 'not found' });
+    const user = typeof req.query.user === 'string' ? req.query.user : '';
+    if (!user) return res.status(400).json({ error: 'bad user' });
+    res.json(await repo.tradesFor(user, 50));
   });
 
   app.post('/api/mod/reports/:id', async (req, res) => {
