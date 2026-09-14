@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
+import { PGlite, type Transaction } from '@electric-sql/pglite';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 
@@ -8,7 +8,41 @@ import { mkdirSync } from 'node:fs';
  */
 export interface Db {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /**
+   * Run `fn` inside one transaction: commits when it resolves, rolls back (and
+   * rethrows) when it throws. Only use `tx` inside `fn` — PGlite has a single
+   * connection, so an outer `query` would wait for the transaction forever.
+   */
+  transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
   close(): Promise<void>;
+}
+
+/** A Db bound to an open transaction; a nested transaction() joins it. */
+function txDb(tx: Transaction): Db {
+  const self: Db = {
+    async query<T>(sql: string, params: unknown[] = []) {
+      const r = await tx.query<T>(sql, params);
+      return r.rows;
+    },
+    transaction<T>(fn: (inner: Db) => Promise<T>) {
+      return fn(self);
+    },
+    close: async () => {},
+  };
+  return self;
+}
+
+function wrap(pg: PGlite): Db {
+  return {
+    async query<T>(sql: string, params: unknown[] = []) {
+      const r = await pg.query<T>(sql, params);
+      return r.rows;
+    },
+    transaction<T>(fn: (tx: Db) => Promise<T>) {
+      return pg.transaction((tx) => fn(txDb(tx)));
+    },
+    close: () => pg.close(),
+  };
 }
 
 const SCHEMA = `
@@ -146,13 +180,7 @@ export async function openDb(): Promise<Db> {
   const pg = new PGlite(dir);
   await pg.waitReady;
   await migrate(pg);
-  return {
-    async query<T>(sql: string, params: unknown[] = []) {
-      const r = await pg.query<T>(sql, params);
-      return r.rows;
-    },
-    close: () => pg.close(),
-  };
+  return wrap(pg);
 }
 
 /** In-memory PGlite for tests. */
@@ -160,11 +188,5 @@ export async function openTestDb(): Promise<Db> {
   const pg = new PGlite();
   await pg.waitReady;
   await migrate(pg);
-  return {
-    async query<T>(sql: string, params: unknown[] = []) {
-      const r = await pg.query<T>(sql, params);
-      return r.rows;
-    },
-    close: () => pg.close(),
-  };
+  return wrap(pg);
 }
