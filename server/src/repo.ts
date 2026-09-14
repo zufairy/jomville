@@ -18,6 +18,8 @@ import {
   normalizeAvatar,
   randomHandle,
   randomSlug,
+  FURNITURE,
+  isInstanceDef,
 } from '@dovey/shared';
 import { Db } from './db';
 
@@ -53,9 +55,18 @@ export interface RoomRow {
   created_at: string;
 }
 
+export interface InstanceItem {
+  id: string;
+  def: string;
+  serial: number | null;
+  /** room slug while standing in a room, else null */
+  placed: string | null;
+}
+
 export interface Inventory {
   coins: number;
   items: Record<string, number>;
+  instances: InstanceItem[];
 }
 
 export interface RoomSummary {
@@ -277,7 +288,7 @@ export class Repo {
     const rows = await this.db.query<{ def: string; qty: number }>('select def, qty from inventory where user_id = $1 and qty > 0', [userId]);
     const items: Record<string, number> = {};
     for (const r of rows) items[r.def] = r.qty;
-    return { coins: coins[0]?.coins ?? 0, items };
+    return { coins: coins[0]?.coins ?? 0, items, instances: await this.instances(userId) };
   }
 
   async coins(userId: string): Promise<number> {
@@ -314,7 +325,7 @@ export class Repo {
   /** Buy `qty` of a catalog item. Fails (false) when unknown, unsold, or unaffordable. */
   async buy(userId: string, def: string, qty: number): Promise<{ ok: true; coins: number } | { ok: false; reason: string }> {
     const d = furnitureDef(def);
-    if (!d || d.price <= 0) return { ok: false, reason: 'not_for_sale' };
+    if (!d || d.price <= 0 || isInstanceDef(d)) return { ok: false, reason: 'not_for_sale' };
     if (!Number.isInteger(qty) || qty < 1 || qty > 20) return { ok: false, reason: 'bad_qty' };
     const cost = d.price * qty;
     const r = await this.db.query<{ coins: number }>('update users set coins = coins - $2::int where id = $1 and coins >= $2::int returning coins', [userId, cost]);
@@ -335,6 +346,80 @@ export class Repo {
     }
     const r = await this.db.query('update inventory set qty = qty + $3::int where user_id = $1 and def = $2 and qty >= -($3::int) returning qty', [userId, def, delta]);
     return r.length > 0;
+  }
+
+  // ---- instance items (LTD + chance furni)
+
+  /** Keep ltd_stock caps in step with the catalog; sold counts are never reset. */
+  async ensureLtdStock() {
+    for (const d of FURNITURE) {
+      if (!d.ltd) continue;
+      await this.db.query('insert into ltd_stock (def, cap) values ($1, $2) on conflict (def) do update set cap = excluded.cap', [d.id, d.ltd]);
+    }
+  }
+
+  async ltdStock(): Promise<Record<string, { sold: number; cap: number }>> {
+    const rows = await this.db.query<{ def: string; sold: number; cap: number }>('select def, sold, cap from ltd_stock');
+    const out: Record<string, { sold: number; cap: number }> = {};
+    for (const r of rows) out[r.def] = { sold: r.sold, cap: r.cap };
+    return out;
+  }
+
+  /**
+   * Buy one instance item. Coins are debited first (atomic guard), then an LTD
+   * serial is taken with a single guarded UPDATE; a sold-out LTD refunds the coins.
+   */
+  async buyInstance(
+    userId: string,
+    def: string,
+  ): Promise<{ ok: true; coins: number; item: InstanceItem } | { ok: false; reason: 'not_for_sale' | 'not_enough_coins' | 'sold_out' }> {
+    const d = furnitureDef(def);
+    if (!d || d.price <= 0 || !isInstanceDef(d)) return { ok: false, reason: 'not_for_sale' };
+    const coins = await this.spendCoins(userId, d.price);
+    if (coins === null) return { ok: false, reason: 'not_enough_coins' };
+    let serial: number | null = null;
+    if (d.ltd) {
+      const r = await this.db.query<{ sold: number }>('update ltd_stock set sold = sold + 1 where def = $1 and sold < cap returning sold', [def]);
+      if (!r.length) {
+        await this.creditCoins(userId, d.price);
+        return { ok: false, reason: 'sold_out' };
+      }
+      serial = r[0].sold;
+    }
+    const id = randomBytes(9).toString('base64url');
+    await this.db.query('insert into items (id, def, owner_id, serial) values ($1, $2, $3, $4)', [id, def, userId, serial]);
+    return { ok: true, coins, item: { id, def, serial, placed: null } };
+  }
+
+  async instances(userId: string): Promise<InstanceItem[]> {
+    const rows = await this.db.query<{ id: string; def: string; serial: number | null; placed_room: string | null }>(
+      'select id, def, serial, placed_room from items where owner_id = $1 order by def, serial nulls last, created_at',
+      [userId],
+    );
+    return rows.map((r) => ({ id: r.id, def: r.def, serial: r.serial, placed: r.placed_room }));
+  }
+
+  /** Mark an owned, unplaced instance as standing in a room. Null when not allowed. */
+  async claimPlacement(itemId: string, userId: string, def: string, roomId: string): Promise<{ serial: number | null } | null> {
+    const r = await this.db.query<{ serial: number | null }>(
+      'update items set placed_room = $4 where id = $1 and owner_id = $2 and def = $3 and placed_room is null returning serial',
+      [itemId, userId, def, roomId],
+    );
+    return r.length ? { serial: r[0].serial } : null;
+  }
+
+  /** Back to the owner's inventory. Returns the owner id, or null for an unknown item. */
+  async releasePlacement(itemId: string): Promise<string | null> {
+    const r = await this.db.query<{ owner_id: string }>('update items set placed_room = null where id = $1 returning owner_id', [itemId]);
+    return r[0]?.owner_id ?? null;
+  }
+
+  async recordRoll(roomId: string, furniId: string, userId: string, kind: string, result: number) {
+    await this.db.query('insert into rolls (room_id, furni_id, user_id, kind, result) values ($1, $2, $3, $4, $5)', [roomId, furniId, userId, kind, result]);
+  }
+
+  async pruneRolls(days = 7) {
+    await this.db.query('delete from rolls where at < now() - make_interval(days => $1::int)', [days]);
   }
 
   async room(slug: string): Promise<RoomRow | null> {

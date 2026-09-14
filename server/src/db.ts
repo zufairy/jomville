@@ -74,6 +74,32 @@ create table if not exists inventory (
   qty int not null default 0,
   primary key (user_id, def)
 );
+create table if not exists items (
+  id text primary key,
+  def text not null,
+  owner_id text not null references users(id),
+  serial int,
+  state jsonb not null default '{}',
+  placed_room text,
+  created_at timestamptz not null default now()
+);
+create index if not exists items_owner on items(owner_id);
+create unique index if not exists items_def_serial on items(def, serial) where serial is not null;
+create table if not exists ltd_stock (
+  def text primary key,
+  sold int not null default 0,
+  cap int not null
+);
+create table if not exists rolls (
+  id serial primary key,
+  room_id text not null,
+  furni_id text not null,
+  user_id text not null,
+  kind text not null,
+  result int not null,
+  at timestamptz not null default now()
+);
+create index if not exists rolls_room_at on rolls(room_id, at);
 `;
 
 /** Additive column migrations, applied one by one (PGlite chokes on batched ADD COLUMN IF NOT EXISTS). */
