@@ -35,8 +35,9 @@ const A = await client.joinOrCreate('room', { slug: 'casino', token: tokenA });
 const B = await client.joinOrCreate('room', { slug: 'casino', token: tokenB });
 const chats = [];
 for (const room of [A, B]) for (const t of ['emote', 'coins', 'sys', 'love', 'call_state', 'inventory_refresh', 'inventory_delta']) room.onMessage(t, () => {});
-A.onMessage('chat', () => {});
-B.onMessage('chat', (m) => chats.push(m));
+for (const room of [A, B]) room.onMessage('chat', () => {});
+A.onMessage('roll', () => {});
+B.onMessage('roll', (m) => chats.push(m));
 await wait(800);
 
 let dieId = null;

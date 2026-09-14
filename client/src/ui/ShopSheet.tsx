@@ -41,7 +41,7 @@ function ItemCard({
           {def.use && <span className="shopcard__tag shopcard__tag--use">usable</span>}
           {def.sit && <span className="shopcard__tag shopcard__tag--sit">sit</span>}
           {def.interaction && <span className="shopcard__tag shopcard__tag--use">chance</span>}
-          {def.ltd && <span className="shopcard__tag">LTD {stock ? `${stock.cap - stock.sold}/${stock.cap} left` : `of ${def.ltd}`}</span>}
+          {def.ltd && <span className="shopcard__tag">LTD {stock ? `${Math.max(0, stock.cap - stock.sold)}/${stock.cap} left` : `of ${def.ltd}`}</span>}
         </span>
       </div>
       <div className="shopcard__name">{def.name}</div>

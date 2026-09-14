@@ -100,6 +100,7 @@ export class Game {
   private pendingUse: string | null = null;
   private pendingClose = false;
   private downAt = 0;
+  private rightDown = false;
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
   private camera!: Camera;
   private net = new Net();
@@ -233,7 +234,13 @@ export class Game {
     this.app.stage.eventMode = 'static';
     this.app.stage.hitArea = this.app.screen;
     this.app.stage.on('pointertap', (e) => this.onTap(e));
-    this.app.stage.on('pointerdown', () => (this.downAt = performance.now()));
+    this.app.stage.on('pointerdown', (e) => {
+      this.downAt = performance.now();
+      // remember right-button presses: the following tap closes chance furni
+      this.rightDown = e.button === 2;
+    });
+    // keep the browser menu away so right-click reaches Pixi
+    this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     this.app.ticker.add((t) => this.update(t.deltaMS));
     this.voiceTimer = setInterval(() => {
@@ -279,11 +286,11 @@ export class Game {
         onAdd: (id, p) => this.onPlayerAdd(id, p),
         onChange: (id, p) => this.onPlayerChange(id, p),
         onRemove: (id) => this.onPlayerRemove(id),
-        onChat: (id, text) => {
+        onChat: (id, text, roll) => {
           // muting is local, so drop their lines before they ever reach a bubble
           const st = useAppStore.getState();
           if (st.muted.includes(id) || st.blocked.includes(id)) return;
-          this.bubbles.say(id, text);
+          this.bubbles.say(id, text, roll);
         },
         onGearUse: (id) => {
           // our own use already played locally when we tapped ourselves
@@ -802,7 +809,7 @@ export class Game {
       },
     });
     if (action.kind === 'walk') this.walkTo(action.x, action.y);
-    else if (action.kind === 'use') this.useItem(action.item, e.button === 2 || performance.now() - this.downAt > 500);
+    else if (action.kind === 'use') this.useItem(action.item, e.button === 2 || this.rightDown || performance.now() - this.downAt > 500);
     else if (action.kind === 'seat') this.walkOntoSeat(action.item);
   }
 

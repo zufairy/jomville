@@ -12,6 +12,13 @@ const STYLE = new TextStyle({
   lineHeight: 18,
 });
 
+/** Server-issued dice/wheel results: gold and heavier, so typed chat cannot pass for one. */
+const ROLL_STYLE = STYLE.clone();
+ROLL_STYLE.fontWeight = '800';
+ROLL_STYLE.fill = 0x7a4f00;
+const ROLL_BG = 0xfff1b8;
+const ROLL_OUTLINE = 0xc9941a;
+
 const PAD = 8;
 const RADIUS = 10;
 const TAIL = 8;
@@ -30,7 +37,10 @@ export class Bubble extends Container {
     this.text.resolution = 2;
   }
 
-  show(msg: string) {
+  show(msg: string, roll = false) {
+    const fill = roll ? ROLL_BG : 0xffffff;
+    const outline = roll ? ROLL_OUTLINE : OUTLINE;
+    this.text.style = roll ? ROLL_STYLE : STYLE;
     this.text.text = msg;
     const w = Math.ceil(this.text.width) + PAD * 2;
     const h = Math.ceil(this.text.height) + PAD * 2;
@@ -38,16 +48,16 @@ export class Bubble extends Container {
     this.bg
       .clear()
       .roundRect(-w / 2, -h - TAIL, w, h, RADIUS)
-      .fill(0xffffff)
-      .stroke({ width: 2, color: OUTLINE })
+      .fill(fill)
+      .stroke({ width: 2, color: outline })
       // tail
       .moveTo(-6, -TAIL)
       .lineTo(0, 0)
       .lineTo(6, -TAIL)
-      .fill(0xffffff);
+      .fill(fill);
     // cover the outline seam under the tail
-    this.bg.rect(-5, -TAIL - 1, 10, 2).fill(0xffffff);
-    this.bg.moveTo(-6, -TAIL).lineTo(0, 0).lineTo(6, -TAIL).stroke({ width: 2, color: OUTLINE });
+    this.bg.rect(-5, -TAIL - 1, 10, 2).fill(fill);
+    this.bg.moveTo(-6, -TAIL).lineTo(0, 0).lineTo(6, -TAIL).stroke({ width: 2, color: outline });
     this.age = 0;
     this.active = true;
     this.visible = true;
@@ -94,12 +104,12 @@ export class BubblePool {
   }
 
   /** Show a bubble for `id`; replaces that player's previous bubble. */
-  say(id: string, msg: string): Bubble {
+  say(id: string, msg: string, roll = false): Bubble {
     let b = this.pool.find((x) => this.owner.get(x) === id && x.active);
     if (!b) b = this.pool.find((x) => !x.active);
     if (!b) b = this.pool.reduce((a, x) => (x.age > a.age ? x : a));
     this.owner.set(b, id);
-    b.show(msg);
+    b.show(msg, roll);
     this.layer.setChildIndex(b, this.layer.children.length - 1);
     return b;
   }
