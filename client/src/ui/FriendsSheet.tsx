@@ -5,6 +5,7 @@ import { friends, useFriends } from '../friends';
 import { goToRoom } from '../router';
 import { useAppStore } from '../store';
 import { AvatarPreview } from './AvatarPreview';
+import { FriendCallButtons } from './FriendCallButtons';
 import './friends.css';
 
 function Head({ avatar, online }: { avatar: string; online?: boolean }) {
@@ -39,6 +40,7 @@ function FriendRow({ f, here }: { f: FriendView; here: string | undefined }) {
           </>
         ) : (
           <>
+            <FriendCallButtons f={f} />
             <button className="btn btn--primary" disabled={!f.online || sameRoom} onClick={() => friends.invite(f.id)} title="invite to my room">
               invite
             </button>

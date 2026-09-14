@@ -149,13 +149,13 @@ export function bindFriendCallSender(fn: Send | null) {
 }
 
 const END_TEXT: Record<string, string> = {
-  declined: 'Dia tak angkat',
-  busy: 'Kawan kau tengah sibuk',
-  cancelled: 'Panggilan dibatalkan',
-  ended: 'Panggilan tamat',
-  left: 'Dia dah keluar',
-  timeout: 'Tak berjawab',
-  lost: 'Talian terputus',
+  declined: 'They did not answer',
+  busy: 'Your friend is busy',
+  cancelled: 'Call cancelled',
+  ended: 'Call ended',
+  left: 'They left',
+  timeout: 'No answer',
+  lost: 'Call dropped',
 };
 
 /**
@@ -292,7 +292,7 @@ export class FriendCallManager {
     const saved = loadCall(Date.now(), this.storage, this.ownAccount());
     if (!saved) return;
     this.patch({ ...IDLE_FRIEND_CALL, phase: 'rejoining', peer: saved.peer, video: saved.video, initiator: saved.initiator });
-    this.startTimer(REJOIN_GRACE_MS, 'Talian terputus');
+    this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
     send?.('fcall_resume');
   }
 
@@ -348,7 +348,7 @@ export class FriendCallManager {
     const pc = this.pc;
     if (pc && pc.connectionState === 'connected') {
       // only the websocket blipped: keep the connection, restart ICE
-      this.startTimer(REJOIN_GRACE_MS, 'Talian terputus');
+      this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
       if (m.initiator) {
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
@@ -366,7 +366,7 @@ export class FriendCallManager {
   onEnd(m: { reason: string }) {
     if (this.s.phase === 'idle') return;
     // 'elsewhere': another tab of mine took the call
-    if (m.reason !== 'elsewhere') useAppStore.getState().flash(END_TEXT[m.reason] ?? 'Panggilan tamat');
+    if (m.reason !== 'elsewhere') useAppStore.getState().flash(END_TEXT[m.reason] ?? 'Call ended');
     this.teardown();
   }
 
@@ -384,7 +384,7 @@ export class FriendCallManager {
   private async connect(initiator: boolean, timeoutMs: number) {
     const peer = this.s.peer;
     if (!peer) return;
-    this.startTimer(timeoutMs, 'Tak dapat sambung');
+    this.startTimer(timeoutMs, 'Could not connect');
     if (!this.local) {
       try {
         this.local = await navigator.mediaDevices.getUserMedia({ audio: true, video: this.s.video ? { facingMode: 'user', width: { ideal: 640 } } : false });
@@ -453,7 +453,7 @@ export class FriendCallManager {
   private hold() {
     if (!LIVE.includes(this.s.phase)) return;
     this.patch({ phase: 'rejoining' });
-    if (!this.timer) this.startTimer(REJOIN_GRACE_MS, 'Talian terputus');
+    if (!this.timer) this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
   }
 
   private startTimer(ms: number, text: string) {
