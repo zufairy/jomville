@@ -1,4 +1,4 @@
-import { AuthContext, Client, Room, ServerError } from 'colyseus';
+import { AuthContext, Client, Room, ServerError, matchMaker } from 'colyseus';
 import {
   SLOTS,
   BLOCK_RATE,
@@ -45,6 +45,8 @@ import { BotCrew, PERSONAS } from './bots';
 import { LOBBY_MAZE_PRIZE, MAIN_LOBBY, MAZE_COOLDOWN_MS, MAZE_REWARD } from '@dovey/shared';
 import { LOVE_ROOM, LOVE_SEATS, LoveSide, LoveSnapshot, laneSpot, normalizeVibe } from '@dovey/shared';
 import { LoveEvent, LoveMeter } from './loveMeter';
+import { KITCHEN_WORLD } from '@dovey/shared';
+import { KitchenLobby } from './kitchen/lobby';
 import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
 import { registry } from './registry';
@@ -97,6 +99,8 @@ export class GameRoom extends Room<WorldState> {
   /** lane tile each queued person was last sent to, so re-syncs don't re-path them */
   private loveSpots = new Map<string, string>();
   private loveRecent: LoveSnapshot['recent'] = [];
+  /** crew rugs in the Kitchen world; null everywhere else */
+  private kitchen: KitchenLobby | null = null;
 
   async onCreate(options: JoinOptions) {
     const repo = GameRoom.repo;
@@ -127,6 +131,7 @@ export class GameRoom extends Room<WorldState> {
     this.rebuildGrid();
     if (row.id === LOVE_ROOM.slug) this.setupLove();
     if (row.id === MAIN_LOBBY.slug) this.spawnBots();
+    if (row.id === KITCHEN_WORLD.slug) this.setupKitchen();
 
     // ---- usable items: anyone nearby can switch a lamp/tv/jukebox on or off
     this.onMessage('furn_use', (client, msg: { id?: unknown }) => {
@@ -618,6 +623,7 @@ export class GameRoom extends Room<WorldState> {
   }
 
   async onDispose() {
+    this.kitchen?.dispose();
     if (this.saveTimer) clearTimeout(this.saveTimer);
     await this.flush();
     registry.set(this.state.slug, 0);
@@ -774,6 +780,33 @@ export class GameRoom extends Room<WorldState> {
     this.broadcast('duel_over', { a, b, winner });
   }
 
+  /** Kitchen world: stand on a crew rug, press start, cook in a private kitchen room. */
+  private setupKitchen() {
+    const limit = new RateLimiter(10, 5000);
+    this.kitchen = new KitchenLobby(
+      {
+        players: () =>
+          this.clients.flatMap((c) => {
+            const p = this.state.players.get(c.sessionId);
+            return p ? [{ sessionId: c.sessionId, userId: p.userId, handle: p.handle, x: p.x, y: p.y, moving: p.moving }] : [];
+          }),
+        send: (id, type, data) => this.clients.find((c) => c.sessionId === id)?.send(type, data),
+        walkTo: (id, x, y) => {
+          const p = this.state.players.get(id);
+          if (p) this.sim.requestMove(id, p, { x, y });
+        },
+      },
+      async (o) => (await matchMaker.createRoom('kitchen', o)).roomId,
+    );
+    this.onMessage('k_start', (client) => {
+      if (limit.allow(client.sessionId)) void this.kitchen?.start(client.sessionId);
+    });
+    this.onMessage('k_code', (client, msg: { code?: unknown }) => {
+      if (limit.allow(client.sessionId)) this.kitchen?.join(client.sessionId, msg?.code);
+    });
+    this.clock.setInterval(() => this.kitchen?.tick(), 250);
+  }
+
   /** Who sits in each game table's chairs, so the book can start a match or clear a wait. */
   private syncTables() {
     const placements = this.placements();
@@ -902,6 +935,7 @@ export class GameRoom extends Room<WorldState> {
   }
 
   onLeave(client: Client) {
+    this.kitchen?.leave(client.sessionId);
     this.loveLeave(client.sessionId);
     const duelPeer = this.duels.end(client.sessionId);
     if (duelPeer) this.clients.find((c) => c.sessionId === duelPeer)?.send('duel_end', { reason: 'left' });
