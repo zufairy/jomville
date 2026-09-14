@@ -9,7 +9,6 @@ import { dishItem, itemSprite } from '../kitchen/kitchenPixels';
 import { mapDataUrl } from '../kitchen/pixelTexture';
 import { ksfx } from '../kitchen/sounds';
 import type { Vec } from '../kitchen/aim';
-import { setGamePaused } from '../game/instance';
 import { fetchInventory } from '../api';
 import { useAppStore } from '../store';
 
@@ -53,7 +52,6 @@ function RoundScreen({ roomId }: { roomId: string }) {
     const r = new KitchenRound();
     const renderer = new IsoRenderer(r);
     setRound(r);
-    setGamePaused(true);
     r.onEvent = (e) => {
       if (e.type === 'served') ksfx.serve();
       else if (e.type === 'chopped' && e.chef === r.me) ksfx.ready();
@@ -66,14 +64,21 @@ function RoundScreen({ roomId }: { roomId: string }) {
     const detachKeys = r.controls.attach(window);
     let unbind = () => {};
     let alive = true;
-    void renderer.mount(host).then((ok) => {
-      if (!ok || !alive) return;
-      unbind = bindPointer(renderer.canvas, r, renderer, {
-        joystick: () => joyRef.current,
-        onStick: setStick,
-        onDash: () => setDashAt(performance.now()),
+    // the renderer borrows the world's Pixi app (no second app); destroy() hands it back
+    renderer
+      .mount(host)
+      .then((ok) => {
+        if (!ok || !alive) return;
+        unbind = bindPointer(renderer.canvas, r, renderer, {
+          joystick: () => joyRef.current,
+          onStick: setStick,
+          onDash: () => setDashAt(performance.now()),
+        });
+      })
+      .catch((err) => {
+        console.error('[kitchen] renderer failed', err);
+        if (alive) useKitchen.getState().lost();
       });
-    });
     r.join(roomId).catch(() => useKitchen.getState().lost());
     return () => {
       alive = false;
@@ -81,7 +86,6 @@ function RoundScreen({ roomId }: { roomId: string }) {
       detachKeys();
       renderer.destroy();
       r.leave();
-      setGamePaused(false);
     };
   }, [roomId]);
 

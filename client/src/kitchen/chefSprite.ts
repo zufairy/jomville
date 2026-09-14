@@ -11,6 +11,8 @@ import { mapTexture } from './pixelTexture';
 export const HAT_Y = -60;
 /** held items float at chest height */
 const HELD_Y = -22;
+/** facing the camera: carried at the hands, below the face */
+const HELD_Y_FRONT = -10;
 
 const TAG_STYLE = new TextStyle({
   fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
@@ -84,7 +86,15 @@ export class ChefSprite extends Container {
     if (held) {
       const side = dir === 1 ? 12 : dir === 3 ? -12 : 0;
       const bob = Math.round(Math.sin(now / 260) * 1.5);
-      place(this.held, itemSprite(held, Math.floor(now / 140)), side, HELD_Y + bob);
+      // facing the camera the item sits lower and a bit smaller, in the hands rather than over the face
+      const front = dir === 2;
+      const spr = itemSprite(held, Math.floor(now / 140));
+      place(this.held, spr, side, (front ? HELD_Y_FRONT : HELD_Y) + bob);
+      if (front) {
+        const s = PX * 0.8;
+        this.held.scale.set(s);
+        this.held.position.set(Math.round(side - spr.ax * s), Math.round(HELD_Y_FRONT + bob - spr.ay * s));
+      }
       this.held.zIndex = dir === 0 ? 0.5 : 3;
       this.held.visible = true;
     } else this.held.visible = false;

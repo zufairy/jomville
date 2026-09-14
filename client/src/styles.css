@@ -1939,7 +1939,7 @@ html, body, #root {
 .kr { position: fixed; inset: 0; z-index: 200; background: #2b2233; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden; }
 .kr__stage { position: absolute; inset: 0; }
 .kr__stage canvas { display: block; image-rendering: pixelated; }
-.kr-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: max(8px, env(safe-area-inset-top)) 12px 0; pointer-events: none; }
+.kr-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left)); pointer-events: none; }
 .kr-orders { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .kr-ticket { position: relative; display: flex; align-items: center; gap: 4px; padding: 3px 8px 9px 3px; background: #fffbe8; border: 2px solid #2a1a14; border-radius: 3px 3px 8px 8px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); font: 800 11px/1.1 system-ui, sans-serif; color: #2a1a14; overflow: hidden; animation: kr-slide 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
 .kr-ticket img { width: 40px; height: 34px; image-rendering: pixelated; }
@@ -1953,10 +1953,10 @@ html, body, #root {
 .kr-pill small { font-size: 11px; opacity: 0.7; font-weight: 700; }
 .kr-time--low { color: #ff9a8a; }
 .kr-icon { background: rgba(255, 248, 236, 0.92); border: 2px solid #2a1a14; border-radius: 8px; font-weight: 900; cursor: pointer; min-width: 32px; height: 30px; }
-.kr-settings { position: absolute; right: 12px; top: 50px; background: #fff8ec; border: 2px solid #2a1a14; border-radius: 10px; padding: 8px 10px; font-weight: 700; font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.kr-settings { position: absolute; right: max(12px, env(safe-area-inset-right)); top: calc(50px + env(safe-area-inset-top)); background: #fff8ec; border: 2px solid #2a1a14; border-radius: 10px; padding: 8px 10px; font-weight: 700; font-size: 13px; display: flex; gap: 6px; align-items: center; }
 .kr-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.12); pointer-events: none; }
 .kr-stick i { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); }
-.kr-note { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 6px 14px; border-radius: 999px; font-weight: 800; pointer-events: none; }
+.kr-note { position: absolute; top: calc(96px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 6px 14px; border-radius: 999px; font-weight: 800; pointer-events: none; }
 .kr-note--pop { animation: kr-pop 0.25s ease-out; }
 @keyframes kr-pop { from { transform: translate(-50%, 8px) scale(0.9); opacity: 0; } }
 .kr-touch { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto auto; gap: 8px; align-items: end; justify-items: center; pointer-events: none; }
