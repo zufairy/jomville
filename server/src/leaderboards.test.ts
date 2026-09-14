@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openTestDb } from './db';
-import { PlayMinuteGate, klMonday, priceTable } from './leaderboards';
+import { LeaderboardCache, PlayMinuteGate, klMonday, priceTable } from './leaderboards';
+import type { BoardSet } from './leaderboards';
 
 describe('klMonday', () => {
   it('uses Monday 00:00 Asia/Kuala_Lumpur as the week start', () => {
@@ -56,5 +57,45 @@ describe('leaderboard columns', () => {
       ['play_week_start', 'date'],
     ]);
     await db.close();
+  });
+});
+
+const EMPTY: BoardSet = { coins: [], assets: [], timeWeek: [], timeAll: [] };
+
+describe('LeaderboardCache', () => {
+  it('reuses a load for 60 s and shares an in-flight load', async () => {
+    let t = 1_000_000;
+    let loads = 0;
+    const cache = new LeaderboardCache(async () => {
+      loads++;
+      return EMPTY;
+    }, 60_000, () => t);
+    const [a, b] = await Promise.all([cache.get(), cache.get()]);
+    expect(loads).toBe(1);
+    expect(a).toBe(b);
+    expect(a.generatedAt).toBe(new Date(1_000_000).toISOString());
+    t += 59_999;
+    await cache.get();
+    expect(loads).toBe(1);
+    t += 1;
+    const c = await cache.get();
+    expect(loads).toBe(2);
+    expect(c.generatedAt).toBe(new Date(1_060_000).toISOString());
+  });
+
+  it('invalidate forces the next get to reload, even over an in-flight load', async () => {
+    let loads = 0;
+    let release: () => void = () => {};
+    const cache = new LeaderboardCache(async () => {
+      loads++;
+      if (loads === 1) await new Promise<void>((r) => (release = r));
+      return EMPTY;
+    }, 60_000, () => 0);
+    const first = cache.get();
+    cache.invalidate();
+    release();
+    await first;
+    await cache.get();
+    expect(loads).toBe(2);
   });
 });

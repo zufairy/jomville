@@ -69,3 +69,48 @@ export class PlayMinuteGate {
 }
 
 export const playMinutes = new PlayMinuteGate();
+
+/**
+ * Boards are recomputed at most once per TTL. Concurrent callers share one
+ * load; invalidate() (hide toggle) makes the next get reload and discards an
+ * in-flight result started before it.
+ */
+export class LeaderboardCache {
+  private value: Boards | null = null;
+  private at = 0;
+  private inflight: Promise<Boards> | null = null;
+  private gen = 0;
+
+  constructor(
+    private load: () => Promise<BoardSet>,
+    private ttlMs = LEADERBOARD_TTL_MS,
+    private now: () => number = Date.now,
+  ) {}
+
+  get(): Promise<Boards> {
+    const t = this.now();
+    if (this.value && t - this.at < this.ttlMs) return Promise.resolve(this.value);
+    if (this.inflight) return this.inflight;
+    const gen = this.gen;
+    const p = this.load()
+      .then((set) => {
+        const boards: Boards = { generatedAt: new Date(t).toISOString(), ...set };
+        if (gen === this.gen) {
+          this.value = boards;
+          this.at = t;
+        }
+        return boards;
+      })
+      .finally(() => {
+        if (this.inflight === p) this.inflight = null;
+      });
+    this.inflight = p;
+    return p;
+  }
+
+  invalidate() {
+    this.gen++;
+    this.value = null;
+    this.inflight = null;
+  }
+}
