@@ -58,7 +58,7 @@ import { ROUND_KEY } from './kitchen/rounds';
 import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
 import { humanCount, registry } from './registry';
-import { presence } from './social';
+import { inviteLimit, presence } from './social';
 
 export interface JoinOptions {
   slug?: string;
@@ -89,8 +89,6 @@ export class GameRoom extends Room<WorldState> {
   private chatLimit = new RateLimiter(CHAT_RATE.count, CHAT_RATE.windowMs);
   private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
   private blockLimit = new RateLimiter(BLOCK_RATE.count, BLOCK_RATE.windowMs);
-  /** one invite per (inviter, friend) per 30 s */
-  private inviteLimit = new RateLimiter(1, 30_000);
   private blocks = new BlockBook();
   private emoteLimit = new RateLimiter(EMOTE_RATE.count, EMOTE_RATE.windowMs);
   private avatarLimit = new RateLimiter(10, 5000);
@@ -227,6 +225,7 @@ export class GameRoom extends Room<WorldState> {
         this.state.name = row.name;
         this.state.category = row.category;
         this.state.style = JSON.stringify(row.style);
+        for (const uid of presence.renameRoom(this.state.slug, this.state.name)) void this.announcePresence(uid);
       }
     });
 
@@ -322,7 +321,7 @@ export class GameRoom extends Room<WorldState> {
       const me = client.auth as User | undefined;
       const to = typeof msg?.toUserId === 'string' ? msg.toUserId : '';
       if (!me || !to || to === me.id) return;
-      if (!this.inviteLimit.allow(`${me.id}:${to}`)) return this.reject(client, 'rate_limited');
+      if (!inviteLimit.allow(`${me.id}:${to}`)) return this.reject(client, 'rate_limited');
       if (!(await GameRoom.repo.areFriends(me.id, to))) return this.reject(client, 'not_friends');
       if (!presence.isOnline(to)) return this.reject(client, 'friend_offline');
       const avatar = this.state.players.get(client.sessionId)?.avatar ?? serializeAvatar(me.avatar);

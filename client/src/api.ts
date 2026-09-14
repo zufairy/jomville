@@ -155,8 +155,8 @@ export async function fetchFriends(): Promise<FriendsPayload | null> {
 export async function friendAction(path: 'request' | 'respond' | 'cancel' | 'remove', body: Record<string, unknown>): Promise<string> {
   try {
     const r = await fetch(`${base}/api/friends/${path}`, json({ token: deviceToken(), ...body }));
-    if (!r.ok) return 'error';
-    return ((await r.json()) as { result?: string }).result ?? 'error';
+    const data = (await r.json().catch(() => null)) as { result?: string } | null;
+    return data?.result ?? 'error';
   } catch {
     return 'error';
   }

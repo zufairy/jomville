@@ -334,13 +334,17 @@ export class Repo {
     return 'accepted';
   }
 
-  async cancelFriendRequest(me: string, to: string) {
-    await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2', [me, to]);
+  /** True only when a pending request actually existed and was deleted. */
+  async cancelFriendRequest(me: string, to: string): Promise<boolean> {
+    const r = await this.db.query('delete from friend_requests where from_id = $1 and to_id = $2 returning 1', [me, to]);
+    return r.length > 0;
   }
 
-  async removeFriend(me: string, other: string) {
+  /** True only when a friendship actually existed and was deleted. */
+  async removeFriend(me: string, other: string): Promise<boolean> {
     const [a, b] = pair(me, other);
-    await this.db.query('delete from friendships where user_a = $1 and user_b = $2', [a, b]);
+    const r = await this.db.query('delete from friendships where user_a = $1 and user_b = $2 returning 1', [a, b]);
+    return r.length > 0;
   }
 
   async friendIdsOf(userId: string): Promise<string[]> {

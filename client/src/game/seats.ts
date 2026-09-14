@@ -34,6 +34,7 @@ const POSES: Record<string, Partial<SeatPose>> = {
   park_bench: { z: 16 },
   game_chair: { z: 17 },
   bean_bag: { z: 10, back: false },
+  trade_sofa: { z: 22 },
 };
 
 export function seatPose(kind: string): SeatPose {

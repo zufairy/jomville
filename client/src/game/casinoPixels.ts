@@ -1,113 +1,14 @@
 import { PixelCanvas, PixelMap } from './pixelArt';
+import { GOLD, Iso, Pt, V3, cached, drum, hash, layer, mixHex, orb, shadeHex, shimmer } from './pixelKit';
+import { allTradingFrames, tradingMap } from './tradingPixels';
 
 /**
  * Pixel-art frames for the casino set, built on a small iso raster so every
  * piece shares the same 2:1 edges, dark outline and 3-4 tone ramps. Frames are
  * generated on first use and cached; keys match artStateKey ('0', '-1', faces,
- * holodice buckets) plus the dicemaster's client-only lid keys.
+ * holodice numbers) plus the client-only dicemaster lid and holodice lock-in keys.
  */
 
-type V3 = [number, number, number];
-type Pt = [number, number];
-type Shader = string | ((p: V3) => string | null);
-
-/** iso projection onto a canvas: +X runs down-right, +Y down-left, +Z up */
-class Iso {
-  constructor(
-    readonly cv: PixelCanvas,
-    readonly ox: number,
-    readonly oy: number,
-  ) {}
-
-  p(x: number, y: number, z: number): Pt {
-    return [this.ox + x - y, this.oy + (x + y) / 2 - z];
-  }
-
-  /** fills a planar 3D polygon; shaders receive the 3D point under each pixel */
-  face(pts: V3[], shader: Shader) {
-    const screen = pts.map((q) => this.p(...q));
-    if (typeof shader === 'string') return this.cv.poly(screen, shader);
-    const [a, b, c] = pts;
-    const n = cross(sub(b, a), sub(c, a));
-    const d = dot(n, a);
-    const nv = n[0] + n[1] + n[2];
-    return this.cv.poly(screen, (x, y) => {
-      const sx = x + 0.5 - this.ox;
-      const sy = y + 0.5 - this.oy;
-      const p0: V3 = [sx / 2 + sy, sy - sx / 2, 0];
-      const t = Math.abs(nv) < 1e-6 ? 0 : (d - dot(n, p0)) / nv;
-      return shader([p0[0] + t, p0[1] + t, p0[2] + t]);
-    });
-  }
-
-  /** axis-aligned box: the three faces the camera sees */
-  box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, top: Shader, left: Shader, right: Shader) {
-    this.face([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], left);
-    this.face([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], right);
-    this.face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], top);
-    return this;
-  }
-
-  /** convex solid from faces; only camera-facing faces are drawn */
-  solid(faces: Array<{ pts: V3[]; shader: Shader }>) {
-    const all = faces.flatMap((f) => f.pts);
-    const mid = all.reduce<V3>((m, q) => [m[0] + q[0] / all.length, m[1] + q[1] / all.length, m[2] + q[2] / all.length], [0, 0, 0]);
-    for (const f of faces) {
-      const [a, b, c] = f.pts;
-      let n = cross(sub(b, a), sub(c, a));
-      const fc = f.pts.reduce<V3>((m, q) => [m[0] + q[0] / f.pts.length, m[1] + q[1] / f.pts.length, m[2] + q[2] / f.pts.length], [0, 0, 0]);
-      if (dot(n, sub(fc, mid)) < 0) n = [-n[0], -n[1], -n[2]];
-      if (n[0] + n[1] + n[2] > 1e-6) this.face(f.pts, f.shader);
-    }
-    return this;
-  }
-
-  dot(x: number, y: number, z: number, key: string, w = 1) {
-    const [sx, sy] = this.p(x, y, z);
-    for (let i = 0; i < w; i++) this.cv.set(Math.floor(sx) - Math.floor(w / 2) + i, Math.floor(sy), key);
-  }
-}
-
-const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-
-/** stable per-pixel noise for grain and sparkle */
-function hash(a: number, b: number, c = 0): number {
-  let h = (Math.floor(a) * 374761393 + Math.floor(b) * 668265263 + Math.floor(c) * 2147483647) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-/** draws into a fresh layer, rings it with outline, then lays it over `base` */
-function layer(base: PixelCanvas, draw: (l: PixelCanvas) => void, outline = 'o', dx = 0, dy = 0) {
-  const l = new PixelCanvas(base.w, base.h);
-  draw(l);
-  if (outline) l.outline(outline);
-  base.stamp(l, dx, dy);
-  return l;
-}
-
-const memo = new Map<string, PixelMap>();
-function cached(key: string, build: () => PixelMap): PixelMap {
-  let m = memo.get(key);
-  if (!m) memo.set(key, (m = build()));
-  return m;
-}
-
-// ---------------------------------------------------------------- palettes
-
-/** warm brass & honey wood, dark brown ink */
-const GOLD = {
-  o: 0x3b1a0c, // outline
-  w: 0xfff6c8, // shine
-  a: 0xffe07a, // light gold
-  b: 0xf7b93e, // gold
-  c: 0xe08a2a, // amber
-  d: 0xb45f1e, // orange-brown
-  e: 0x7a3a14, // brown
-  f: 0x4e2410, // deep brown
-};
 
 const IVORY = { i: 0xfffbea, j: 0xeae0c2, k: 0xc9b98f, p: 0x3a2320, r: 0xc8102e };
 
@@ -303,93 +204,199 @@ export function dicemasterMap(key: string, frame = 0): PixelMap {
   return cached(`dicemaster:${k}:${k === '-1' ? frame % 8 : 0}`, () => dmFrame(k, frame));
 }
 
-// ---------------------------------------------------------------- shared shapes
-
-/** screen-space shaded ellipse lit from the upper left; ramp runs light -> dark */
-function orb(cv: PixelCanvas, cx: number, cy: number, rx: number, ry: number, ramp: string[], shine = true) {
-  cv.ellipse(cx, cy, rx, ry, (x, y) => {
-    const u = (x + 0.5 - cx) / rx;
-    const v = (y + 0.5 - cy) / ry;
-    const lit = -0.55 * u - 0.65 * v + 0.35 * Math.sqrt(Math.max(0, 1 - u * u - v * v));
-    const i = Math.max(0, Math.min(ramp.length - 1, Math.floor((0.75 - lit) * ramp.length * 0.75)));
-    return ramp[i];
-  });
-  if (shine) cv.set(Math.round(cx - rx * 0.45), Math.round(cy - ry * 0.5), 'w');
-}
-
-/** a squat screen-space cylinder (chips, cups, post bases) */
-function drum(cv: PixelCanvas, cx: number, top: number, rx: number, ry: number, h: number, lid: string, side: string[], stripe?: string) {
-  for (let y = 0; y <= h; y++)
-    cv.ellipse(cx, top + ry + y, rx, ry, (x) => {
-      const u = (x + 0.5 - cx) / rx;
-      if (stripe && y > 0 && y < h && Math.abs(u) > 0.2 && Math.abs(u) < 0.55) return stripe;
-      return side[Math.min(side.length - 1, Math.floor((u + 1) * 0.5 * side.length))];
-    });
-  cv.ellipse(cx, top + ry, rx, ry, lid);
-}
-
-/** gold shimmer: a diagonal glint sweeping across gold pixels */
-function shimmer(cv: PixelCanvas, frame: number, keys = 'ab', period = 28) {
-  const pos = (frame / 8) * period * 1.6 - 6;
-  for (let y = 0; y < cv.h; y++)
-    for (let x = 0; x < cv.w; x++) {
-      const d = x - y * 0.5 - pos;
-      if (d >= 0 && d < 2 && keys.includes(cv.get(x, y))) cv.set(x, y, d < 1 ? 'w' : 'a');
-    }
-}
 
 // ---------------------------------------------------------------- holodice
 
-const HOLO_TINT: Record<string, [number, number, number, number]> = {
-  '0': [0xd9d4ee, 0xa9a2c8, 0x7d7497, 0x9a92b8],
-  lo: [0xc9fbff, 0x5ef2ff, 0x2a9fc0, 0x5ef2ff],
-  mid: [0xeadcff, 0xc49bff, 0x8a5fd0, 0xc49bff],
-  hi: [0xfff1b0, 0xf7c948, 0xc98a1e, 0xffe07a],
+/**
+ * Hologram digit cores, 3x5, with clipped corners so they read as a little
+ * 8-bit display font rather than plain blocks. holoGlyph adds the dim bevel.
+ */
+export const HOLO_FONT: Record<string, string[]> = {
+  '0': ['.#.', '#.#', '#.#', '#.#', '.#.'],
+  '1': ['.#.', '##.', '.#.', '.#.', '###'],
+  '2': ['##.', '..#', '.#.', '#..', '###'],
+  '3': ['##.', '..#', '.#.', '..#', '##.'],
+  '4': ['#.#', '#.#', '###', '..#', '..#'],
+  '5': ['###', '#..', '##.', '..#', '##.'],
+  '6': ['.##', '#..', '##.', '#.#', '.#.'],
+  '7': ['###', '..#', '.#.', '.#.', '.#.'],
+  '8': ['.#.', '#.#', '.#.', '#.#', '.#.'],
+  '9': ['.#.', '#.#', '.##', '..#', '##.'],
+  '?': ['##.', '..#', '.#.', '...', '.#.'],
 };
+
+/** a 4x6 glyph: lit core '#' plus a dim bevel '+' dropped one pixel down-right */
+export function holoGlyph(ch: string): string[] {
+  const core = HOLO_FONT[ch] ?? HOLO_FONT['?'];
+  const out = Array.from({ length: 6 }, () => ['.', '.', '.', '.']);
+  core.forEach((r, y) => [...r].forEach((k, x) => k === '#' && (out[y][x] = '#')));
+  core.forEach((r, y) => [...r].forEach((k, x) => k === '#' && out[y + 1][x + 1] === '.' && (out[y + 1][x + 1] = '+')));
+  return out.map((r) => r.join(''));
+}
+
+/** idle loop frames for a shown number (gentle pulse + scrolling scanline) */
+export const HOLO_IDLE_FRAMES = 4;
+export const HOLO_LOCK = ['lock1', 'lock2', 'lock3'] as const;
+
+/**
+ * Normalised holodice art key: '0' closed, '-1' rolling, 'N' a shown number
+ * (1-100), or a client-only lock-in key 'lockK:N'.
+ */
+export function holoKey(state: string | undefined): string {
+  const s = state || '0';
+  if (s === '-1' || s === '0') return s;
+  const m = /^(lock[123]:)?(\d{1,3})$/.exec(s);
+  if (!m) return '0';
+  const n = Number(m[2]);
+  return n >= 1 && n <= 100 ? `${m[1] ?? ''}${n}` : '0';
+}
+
+/** client-only lock-in pop when a roll lands, or null when none plays */
+export function holoLockSequence(from: string, to: string): readonly string[] | null {
+  const k = holoKey(to);
+  return from === '-1' && /^\d+$/.test(k) && k !== '0' ? HOLO_LOCK.map((l) => `${l}:${k}`) : null;
+}
+
+/** glass edge light, top, left and right faces, outer glow, hologram core, core peak */
+const HOLO_TINT: Record<string, [number, number, number, number, number, number, number]> = {
+  '0': [0x8d88ad, 0x3d3859, 0x2e2a47, 0x221f37, 0x5a5480, 0x6d6890, 0x9a95c0],
+  lo: [0xbffbff, 0x1d5b74, 0x15455b, 0x0f3447, 0x5ef2ff, 0x6ff4ff, 0xe8ffff],
+  mid: [0xe9d8ff, 0x472d78, 0x382360, 0x2a1a4a, 0xc49bff, 0xc9a6ff, 0xf7eeff],
+  hi: [0xfff1b0, 0x6a4712, 0x53380e, 0x3f2a0a, 0xffd35a, 0xffdf78, 0xfffbe2],
+};
+
+const holoBand = (n: number) => (n <= 0 ? '0' : n <= 33 ? 'lo' : n <= 66 ? 'mid' : 'hi');
 
 function holodiceFrame(key: string, frame: number): PixelMap {
   const OX = 14;
-  const OY = 26;
-  const cv = new PixelCanvas(28, 36);
+  const OY = 28;
+  const cv = new PixelCanvas(28, 42);
   const iso = new Iso(cv, OX, OY);
   const rolling = key === '-1';
-  const tint = HOLO_TINT[rolling ? ['lo', 'mid', 'hi'][Math.floor(frame / 3) % 3] : key] ?? HOLO_TINT['0'];
-  const hop = rolling ? [0, 1, 3, 4, 3, 1, 0, 0][frame % 8] : 0;
-  // gold pedestal with a stepped cap
+  const lock = /^lock([123]):(\d+)$/.exec(key);
+  const stage = lock ? Number(lock[1]) : 0;
+  const shown = lock ? Number(lock[2]) : rolling || key === '0' ? 0 : Number(key);
+  const scramble = rolling ? 1 + Math.floor(hash(frame, 17, 5) * 100) : 0;
+  const band = rolling ? ['lo', 'mid', 'hi'][Math.floor(frame / 3) % 3] : holoBand(shown);
+  const [edgeC, topC, leftC, rightC, glowC, coreC, peakC] = HOLO_TINT[band];
+  const hop = rolling ? [0, 1, 3, 4, 3, 1, 0, 0][frame % 8] : stage === 1 ? 1 : 0;
+
+  // gold pedestal with a stepped cap as wide as the cube
   layer(cv, (l) => {
     const li = new Iso(l, OX, OY);
     li.box(5, 5, 0, 11, 11, 5, 'b', (p) => (p[2] > 3.5 ? 'a' : p[0] < 6 ? 'b' : 'c'), (p) => (p[2] > 3.5 ? 'c' : 'd'));
-    li.box(4, 4, 5, 12, 12, 6.5, (p) => (p[0] < 5 || p[1] < 5 ? 'w' : 'a'), 'b', 'd');
+    li.box(3.5, 3.5, 5, 12.5, 12.5, 6.5, (p) => (p[0] < 4.5 || p[1] < 4.5 ? 'w' : 'a'), 'b', 'd');
   });
   iso.dot(8, 11, 2.5, 'e', 2);
-  // glass cube, floating while it rolls
-  const glow = rolling || key !== '0';
+
+  // dark glass cube; its edge pixels are kept aside and laid back over the hologram
+  const C0 = 3.5;
+  const C1 = 12.5;
+  const Z0 = 8;
+  const Z1 = 17;
+  const E = 0.8;
+  // bright rim only on the silhouette; the three front edges stay dim so they never hide the number
   const cube = new PixelCanvas(cv.w, cv.h);
-  const ci = new Iso(cube, OX, OY - hop);
-  const edge = (a: number, b: number) => a < 0.9 || b < 0.9 || a > 5.1 || b > 5.1;
-  ci.box(5, 5, 8, 11, 11, 14, (p) => (edge(p[0] - 5, p[1] - 5) ? 'x' : 'y'), (p) => (edge(p[0] - 5, p[2] - 8) ? 'y' : 'z'), (p) => (edge(p[1] - 5, p[2] - 8) ? 'z' : 'q'));
-  const [gx, gy] = ci.p(6, 11, 13);
+  new Iso(cube, OX, OY - hop).box(
+    C0, C0, Z0, C1, C1, Z1,
+    (p) => (p[0] < C0 + E || p[1] < C0 + E ? 'x' : p[0] > C1 - E || p[1] > C1 - E ? 'D' : 'y'),
+    (p) => (p[0] < C0 + E || p[2] < Z0 + E ? 'x' : p[0] > C1 - E || p[2] > Z1 - E ? 'D' : 'z'),
+    (p) => (p[1] < C0 + E || p[2] < Z0 + E ? 'x' : p[1] > C1 - E || p[2] > Z1 - E ? 'D' : 'q'),
+  );
+  const [gx, gy] = new Iso(cube, OX, OY - hop).p(5, C1, Z1 - 1);
   for (let s = 0; s < 3; s++) cube.paint(gx + 1 + s, gy + s, 'x');
-  if (glow) {
-    const halo = cube.clone();
-    halo.outline('g');
-    if (frame % 2 === 0 || !rolling) halo.outline('.');
-    cv.stamp(halo);
+  const edges = cube.clone();
+  const glass = (k: string) => k === 'y' || k === 'z' || k === 'q';
+  const faceUnder = (x: number, y: number) => {
+    for (let dy = -1; dy <= 1; dy++) for (const k of [cube.get(x, y + dy), cube.get(x - 1, y), cube.get(x + 1, y)]) if (glass(k)) return k;
+    return 'z';
+  };
+  if (rolling || shown) {
+    const halo = cube.clone().outline('g');
+    if (stage === 1) halo.outline('g');
+    if (!rolling || frame % 2 === 0) cv.stamp(halo);
   }
   cube.outline('n');
+  for (let y = 0; y < cube.h; y++) for (let x = 0; x < cube.w; x++) if (cube.get(x, y) === 'x') cube.set(x, y, faceUnder(x, y));
   cv.stamp(cube);
+
+  // scanlines on the glass: one faint line when closed, scrolling bands when lit, a sweep while rolling
+  const top = Math.round(OY - hop - (Z1 - C0) + 0.5);
+  const bottom = Math.round(OY - hop + C1 - Z0);
+  const lit: Record<string, string> = { y: 'T', z: 'U', q: 'V', D: 'U' };
+  const scan = (y: number) => {
+    for (let x = 0; x < cv.w; x++) if (lit[cv.get(x, y)] && cube.get(x, y) !== 'n') cv.set(x, y, lit[cv.get(x, y)]);
+  };
+  if (!rolling && !shown) scan(OY - 4);
+  else if (rolling) scan(top + ((frame * 3) % (bottom - top)));
+  else for (let y = top + 1; y < bottom; y++) if ((y + frame) % 4 === 0) scan(y);
+
+  // the hologram number, centred mid-cube so the front edge crosses a bevel column
+  const text = rolling ? (frame % 4 === 3 ? '??' : String(scramble)) : shown ? String(shown) : '';
+  if (text) {
+    const holo = new PixelCanvas(cv.w, cv.h);
+    const x0 = text.length === 3 ? OX - 7 : text.length === 2 ? OX - 3 : OX - 3;
+    const y0 = OY - hop - 8;
+    [...text].forEach((ch, i) =>
+      holoGlyph(ch).forEach((r, gy) => [...r].forEach((k, gxx) => k !== '.' && holo.set(x0 + i * 4 + gxx, y0 + gy, k === '#' ? 'H' : 'J'))),
+    );
+    // glitch: while rolling one row band slips sideways
+    if (rolling && frame % 2 === 1) {
+      const band = y0 + ((frame >> 1) % 3) * 2;
+      for (const y of [band, band + 1]) {
+        const row = Array.from({ length: holo.w }, (_, x) => holo.get(x, y));
+        for (let x = 0; x < holo.w; x++) holo.set(x, y, row[x - 1] ?? '.');
+      }
+    }
+    const ring = holo.clone().outline('h');
+    const halo: Record<string, string> = { y: 'K', z: 'L', q: 'M', T: 'K', U: 'L', V: 'M', D: 'L' };
+    for (let y = 0; y < cv.h; y++)
+      for (let x = 0; x < cv.w; x++) {
+        const k = ring.get(x, y);
+        if (k === 'h' && halo[cv.get(x, y)]) cv.set(x, y, halo[cv.get(x, y)]);
+        else if (k === 'H' || k === 'J') {
+          const scanRow = !rolling && stage === 0 && (y + frame) % 4 === 0;
+          cv.set(x, y, k === 'H' ? (stage === 1 ? 'W' : scanRow ? 'I' : 'H') : 'J');
+        }
+      }
+    // the front glass edge and glint sit in front of the hologram (never over its lit core)
+    for (let y = 0; y < cv.h; y++) for (let x = 0; x < cv.w; x++) if (edges.get(x, y) === 'x' && cv.get(x, y) !== 'H' && cv.get(x, y) !== 'W' && cv.get(x, y) !== 'I') cv.set(x, y, 'x');
+  } else for (let y = 0; y < cv.h; y++) for (let x = 0; x < cv.w; x++) if (edges.get(x, y) === 'x') cv.set(x, y, 'x');
+
   if (rolling)
     for (let i = 0; i < 4; i++) {
       const a = ((frame + i * 2) / 8) * Math.PI * 2;
-      cv.set(OX + Math.round(Math.cos(a) * 10), OY - 12 - hop + Math.round(Math.sin(a) * 4), i % 2 ? 'g' : 'x');
+      cv.set(OX + Math.round(Math.cos(a) * 11), OY - 7 - hop + Math.round(Math.sin(a) * 4), i % 2 ? 'g' : 'x');
     }
-  if (!rolling && key !== '0') iso.dot(8, 8, 18, 'x');
-  return cv.toMap({ ...GOLD, x: tint[0], y: tint[1], z: tint[2], q: shadeHex(tint[2], 0.8), g: tint[3], n: shadeHex(tint[2], 0.45) }, cv.h - (OY + 8));
-}
 
-function shadeHex(c: number, k: number): number {
-  const ch = (s: number) => Math.min(255, Math.round(((c >> s) & 255) * k));
-  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+  // lock-in pop: flash bright, then settle; idle: the core breathes
+  const pulse = rolling ? 0.2 : stage === 1 ? 1 : stage === 2 ? 0.7 : stage === 3 ? 0.4 : [0, 0.25, 0.5, 0.25][frame % 4];
+  const faceLift = stage === 1 ? 0.3 : stage === 2 ? 0.15 : 0;
+  const face = (c: number) => mixHex(c, glowC, faceLift);
+  const core = mixHex(coreC, peakC, pulse);
+  return cv.toMap(
+    {
+      ...GOLD,
+      x: edgeC,
+      y: face(topC),
+      z: face(leftC),
+      q: face(rightC),
+      n: shadeHex(rightC, 0.55),
+      g: glowC,
+      H: core,
+      I: mixHex(core, leftC, 0.25),
+      J: mixHex(coreC, leftC, 0.55),
+      W: 0xffffff,
+      D: mixHex(face(leftC), edgeC, 0.3),
+      K: mixHex(glowC, face(topC), 0.62),
+      L: mixHex(glowC, face(leftC), 0.62),
+      M: mixHex(glowC, face(rightC), 0.62),
+      T: mixHex(face(topC), edgeC, 0.12),
+      U: mixHex(face(leftC), edgeC, 0.12),
+      V: mixHex(face(rightC), edgeC, 0.12),
+    },
+    cv.h - (OY + 8),
+  );
 }
 
 // ---------------------------------------------------------------- wheel of fortune
@@ -454,39 +461,6 @@ function wheelFrame(key: string, frame: number): PixelMap {
   // pointer
   layer(cv, (l) => l.text(['iiiii', 'ijjji', '.iji.', '..j..'], cx - 3, cy - R - 3));
   return cv.toMap({ ...GOLD, ...WHEEL_PAL }, cv.h - groundY);
-}
-
-// ---------------------------------------------------------------- dragon egg
-
-function dragonEggFrame(frame: number): PixelMap {
-  const cv = new PixelCanvas(30, 46);
-  const gy = 40;
-  const cx = 15;
-  const pulse = [0, 1, 2, 3, 3, 2, 1, 0][frame % 8];
-  // glow halo, denser at the peak of the pulse
-  if (pulse > 0)
-    cv.ellipse(cx, 19, 11 + pulse * 0.6, 14 + pulse * 0.6, (x, y) => (hash(x, y, frame) < 0.12 + pulse * 0.1 ? (pulse > 2 ? 'L' : 'H') : null));
-  // gold cup: foot, stem, bowl
-  layer(cv, (l) => {
-    drum(l, cx, gy - 4, 7, 2.5, 2, 'a', ['b', 'b', 'c', 'd', 'e']);
-    l.rect(cx - 2, gy - 12, 4, 8, 'c').rect(cx - 2, gy - 12, 1, 8, 'a').rect(cx + 1, gy - 12, 1, 8, 'd');
-    l.ellipse(cx, gy - 15, 9, 5, (x, y) => (y < gy - 16 ? null : x < cx - 4 ? 'a' : x < cx + 2 ? 'b' : x < cx + 6 ? 'c' : 'd'));
-  });
-  // the egg
-  layer(cv, (l) => {
-    orb(l, cx, 20, 8, 12, ['X', 'L', 'E', 'D', 'N'], false);
-    const spots: Pt[] = [[-4, -6], [2, -9], [4, -2], [-2, 1], [-5, 5], [3, 6], [0, -4], [5, 2]];
-    spots.forEach(([dx, dy], i) => {
-      l.paint(cx + dx, 20 + dy, i % 3 === 0 ? 'Y' : 'D');
-      if (i % 2 === 0) l.paint(cx + dx + 1, 20 + dy, 'D');
-    });
-    l.paint(cx - 4, 12, 'w');
-    l.paint(cx - 5, 13, 'X');
-  });
-  // bowl rim in front of the egg
-  layer(cv, (l) => l.ellipse(cx, gy - 15, 9, 3, (x, y) => (y < gy - 15 ? null : x < cx ? 'a' : 'c')));
-  if (pulse === 3) for (const [x, y] of [[4, 8], [26, 14], [6, 30]] as Pt[]) cv.set(x, y, 'X');
-  return cv.toMap({ ...GOLD, X: 0xc8ffd2, L: 0x7cf29a, E: 0x3fbf6e, D: 0x2a8a4f, N: 0x165c34, Y: 0xf7c948, H: 0x4fd67f }, 46 - gy);
 }
 
 // ---------------------------------------------------------------- throne
@@ -730,16 +704,15 @@ export function casinoMap(c: CasinoPaintCtx): PixelMap | null {
     case 'dicemaster':
       return dicemasterMap(c.state, c.frame);
     case 'holodice': {
-      const k = c.state === '-1' ? '-1' : HOLO_TINT[c.state] ? c.state : '0';
-      return cached(`holodice:${k}:${k === '-1' ? f8 : 0}`, () => holodiceFrame(k, f8));
+      const k = holoKey(c.state);
+      const f = k === '-1' ? f8 : /^\d+$/.test(k) && k !== '0' ? c.frame % HOLO_IDLE_FRAMES : 0;
+      return cached(`holodice:${k}:${f}`, () => holodiceFrame(k, f));
     }
     case 'wheel_fortune': {
       const k = c.state === '-1' || /^[1-8]$/.test(c.state) ? c.state : '0';
       const f = k === '-1' ? c.frame % 12 : 0;
       return cached(`wheel:${k}:${f}`, () => wheelFrame(k, f));
     }
-    case 'dragon_egg':
-      return cached(`egg:${f8}`, () => dragonEggFrame(f8));
     case 'throne':
       return cached(`throne:${f8}`, () => throneFrame(f8));
     case 'felt_table':
@@ -755,7 +728,7 @@ export function casinoMap(c: CasinoPaintCtx): PixelMap | null {
     case 'velvet_rope_gold':
       return cached('rope', ropeFrame);
     default:
-      return null;
+      return tradingMap(c);
   }
 }
 
@@ -767,11 +740,14 @@ export function allCasinoFrames(): Array<{ name: string; map: PixelMap }> {
   };
   for (const k of ['0', '1', '2', '3', '4', '5', '6', ...LID_OPEN, ...LID_CLOSE]) add('dicemaster', k, 1);
   add('dicemaster', '-1', 8);
-  for (const k of ['0', 'lo', 'mid', 'hi']) add('holodice', k, 1);
+  add('holodice', '0', 1);
+  for (const n of ['7', '42', '100']) {
+    for (const l of HOLO_LOCK) add('holodice', `${l}:${n}`, 1);
+    add('holodice', n, HOLO_IDLE_FRAMES);
+  }
   add('holodice', '-1', 8);
   for (const k of ['0', '1', '2', '3', '4', '5', '6', '7', '8']) add('wheel_fortune', k, 1);
   add('wheel_fortune', '-1', 12);
-  add('dragon_egg', '', 8);
   add('throne', '', 8);
   add('felt_table', '', 1);
   add('chip_stack', '', 1);
@@ -780,6 +756,7 @@ export function allCasinoFrames(): Array<{ name: string; map: PixelMap }> {
   add('slot_prop', '', 8);
   add('slot_prop', '', 1, false);
   add('velvet_rope_gold', '', 1);
+  out.push(...allTradingFrames());
   return out;
 }
 
