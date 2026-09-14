@@ -1,5 +1,5 @@
 import { Client, Room, ServerError } from 'colyseus';
-import { RateLimiter, kitchen } from '@dovey/shared';
+import { RateLimiter, kitchen, normalizeAvatar, serializeAvatar } from '@dovey/shared';
 import type { Repo, User } from '../repo';
 import { sanitizeInput } from './input';
 import { KitchenRewards, grantPerUser } from './rewards';
@@ -28,6 +28,8 @@ export class KitchenRoom extends Room {
   private sim!: kitchen.KitchenState;
   private allowed = new Set<string>();
   private handles = new Map<string, string>();
+  /** user id -> serialized avatar, sent on join only (never in k_snap) */
+  private looks = new Map<string, string>();
   private queues = new Map<string, kitchen.KitchenInput[]>();
   private last = new Map<string, kitchen.KitchenInput>();
   private limit = new RateLimiter(40, 1000);
@@ -60,11 +62,15 @@ export class KitchenRoom extends Room {
 
   onJoin(client: Client, _options: unknown, user: User) {
     this.handles.set(user.id, user.handle);
+    // the stored look (owned cosmetics only, checked when it was saved), normalized again here;
+    // clients can't rely on the world roster: crewmates may come from another room
+    this.looks.set(user.id, serializeAvatar(normalizeAvatar(user.avatar)));
     kitchen.addChef(this.sim, user.id);
     if (!this.queues.has(user.id)) this.queues.set(user.id, []);
     const names = Object.fromEntries(this.handles);
-    client.send('k_hello', { you: user.id, level: this.sim.level, names });
-    this.broadcast('k_roster', { names }, { except: client });
+    const looks = Object.fromEntries(this.looks);
+    client.send('k_hello', { you: user.id, level: this.sim.level, names, looks });
+    this.broadcast('k_roster', { names, looks }, { except: client });
     client.send('k_snap', kitchen.makeSnap(this.sim, 0, true));
   }
 

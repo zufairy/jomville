@@ -16,6 +16,8 @@ export class KitchenRound {
   view: KitchenView | null = null;
   me = '';
   names: Record<string, string> = {};
+  /** chef user id -> serialized avatar from the kitchen room (sent on join, not in snapshots) */
+  looks: Record<string, string> = {};
   readonly away = new Set<string>();
   readonly controls = new Controls();
   readonly interp = new Interp();
@@ -57,16 +59,20 @@ export class KitchenRound {
 
   private bind(room: Room) {
     this.room = room;
-    room.onMessage('k_hello', (m: { you: string; level: string; names: Record<string, string> }) => {
+    room.onMessage('k_hello', (m: { you: string; level: string; names: Record<string, string>; looks?: Record<string, string> }) => {
       this.me = m.you;
       this.names = m.names;
+      this.looks = { ...this.looks, ...m.looks };
       if (!this.view || this.view.level !== m.level) {
         this.view = createView(m.level);
         this.predictor = new Predictor(this.view.solid, this.view.w, this.view.h);
       }
       useKitchen.getState().setPhase('playing');
     });
-    room.onMessage('k_roster', (m: { names: Record<string, string> }) => (this.names = m.names));
+    room.onMessage('k_roster', (m: { names: Record<string, string>; looks?: Record<string, string> }) => {
+      this.names = m.names;
+      this.looks = { ...this.looks, ...m.looks };
+    });
     room.onMessage('k_snap', (snap: kitchen.KitchenSnap) => this.onSnap(snap));
     room.onMessage('k_event', (e: kitchen.KitchenEvent) => {
       useKitchen.getState().onEvent(e, this.me);
