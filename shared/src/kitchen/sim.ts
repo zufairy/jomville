@@ -1,6 +1,9 @@
-import { FIRST_ORDER, ROUND_TIME } from './constants';
+import { FIRST_ORDER, K_DT, ROUND_TIME } from './constants';
 import { levelDef, parseLevel } from './levels';
-import { KitchenState } from './types';
+import { starsFor, tickOrders } from './orders';
+import { moveChef, separateChefs } from './physics';
+import { interact, tickChop, tickStations } from './stations';
+import { KitchenEvent, KitchenInput, KitchenState } from './types';
 
 export function createKitchen(levelId: string, seed: number, chefIds: string[] = [], roundTime = ROUND_TIME): KitchenState {
   const def = levelDef(levelId);
@@ -53,4 +56,38 @@ export function removeChef(s: KitchenState, id: string) {
     s.floorV = ++s.rev;
   }
   delete s.chefs[id];
+}
+
+export const IDLE_INPUT: KitchenInput = { seq: 0, mx: 0, my: 0, grab: false, use: false, dash: false };
+
+/** One fixed step. Chefs act in sorted id order so the same inputs always give the same state. */
+export function step(s: KitchenState, inputs: Record<string, KitchenInput>, dt = K_DT): KitchenEvent[] {
+  const events: KitchenEvent[] = [];
+  if (s.over) return events;
+  const def = levelDef(s.level);
+  if (!def) throw new Error(`unknown level ${s.level}`);
+  const ids = Object.keys(s.chefs).sort();
+  for (const id of ids) {
+    const c = s.chefs[id];
+    const inp = inputs[id] ?? IDLE_INPUT;
+    if (inp.seq > c.seq) c.seq = inp.seq;
+    moveChef(c, inp, dt, s.solid, s.w, s.h);
+  }
+  separateChefs(ids.map((id) => s.chefs[id]), s.solid, s.w, s.h);
+  for (const id of ids) {
+    const c = s.chefs[id];
+    const inp = inputs[id] ?? IDLE_INPUT;
+    if (inp.grab) interact(s, c, events);
+    tickChop(s, c, inp.use, dt, events);
+  }
+  tickStations(s, dt, events);
+  tickOrders(s, def, dt, events);
+  s.tick++;
+  s.time = Math.max(0, s.roundTime - s.tick * dt);
+  if (s.time <= 1e-6) {
+    s.time = 0;
+    s.over = true;
+    events.push({ type: 'end', score: s.score, stars: starsFor(s.score, def), served: s.served, failed: s.failed });
+  }
+  return events;
 }
