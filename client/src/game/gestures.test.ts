@@ -119,4 +119,25 @@ describe('GestureController fling', () => {
     g.up({ pointerId: 1, x: 0, y: 0, t: 5 });
     expect(callbacks.onFling).not.toHaveBeenCalled();
   });
+
+  it('does not fling when the drag is aborted with cancel()', () => {
+    const callbacks = cbs();
+    const g = new GestureController(callbacks);
+    g.down({ pointerId: 1, x: 0, y: 0, t: 0 });
+    g.move({ pointerId: 1, x: 50, y: 0, t: 20 }); // well past the drag threshold
+    g.cancel({ pointerId: 1, x: 50, y: 0, t: 30 });
+    expect(callbacks.onFling).not.toHaveBeenCalled();
+  });
+});
+
+describe('GestureController right-click', () => {
+  it('ignores a right-button (button 2) drag: no pan, consumeTap stays false', () => {
+    const callbacks = cbs();
+    const g = new GestureController(callbacks);
+    g.down({ pointerId: 1, x: 0, y: 0, button: 2, t: 0 });
+    g.move({ pointerId: 1, x: 20, y: 0, t: 10 });
+    g.up({ pointerId: 1, x: 20, y: 0, t: 20 });
+    expect(callbacks.onPan).not.toHaveBeenCalled();
+    expect(g.consumeTap()).toBe(false);
+  });
 });

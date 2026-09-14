@@ -49,6 +49,11 @@ export class GestureController {
   constructor(private cb: GestureCallbacks) {}
 
   down(e: PointerEvt) {
+    // ignore non-primary mouse buttons (right/middle click); touch/pen report
+    // button 0 on down, so they're unaffected. Not adding the pointer means
+    // its move/up events are no-ops below, so it never feeds a pan/fling and
+    // never marks the tap as consumed.
+    if (e.button !== undefined && e.button !== 0) return;
     if (this.pts.size === 0) {
       this.sequenceDragged = false;
       this.hadPinch = false;
@@ -93,12 +98,22 @@ export class GestureController {
   }
 
   up(e: PointerEvt) {
+    this.end(e, true);
+  }
+
+  /** pointer sequence aborted (e.g. pointercancel) — ends the sequence like
+   *  up(), but never flings: an interrupted gesture shouldn't leave momentum. */
+  cancel(e: PointerEvt) {
+    this.end(e, false);
+  }
+
+  private end(e: PointerEvt, allowFling: boolean) {
     const p = this.pts.get(e.pointerId);
     this.pts.delete(e.pointerId);
     if (this.pts.size < 2) this.twoPointerPrev = null;
     if (this.pts.size > 0) return; // sequence continues (other finger still down)
 
-    if (this.sequenceDragged && !this.hadPinch && p) {
+    if (allowFling && this.sequenceDragged && !this.hadPinch && p) {
       const hist = p.history.filter((h) => e.t - h.t <= FLING_WINDOW_MS);
       if (hist.length >= 2) {
         const first = hist[0];
@@ -110,10 +125,6 @@ export class GestureController {
     this.tapConsumable = this.sequenceDragged;
     this.sequenceDragged = false;
     this.hadPinch = false;
-  }
-
-  cancel(e: PointerEvt) {
-    this.up(e);
   }
 
   wheel(e: WheelEvt) {

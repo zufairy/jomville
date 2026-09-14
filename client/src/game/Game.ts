@@ -279,7 +279,9 @@ export class Game {
     };
     this.app.stage.on('pointerup', onPointerUp);
     this.app.stage.on('pointerupoutside', onPointerUp);
-    this.app.stage.on('pointercancel', onPointerUp);
+    this.app.stage.on('pointercancel', (e) => {
+      this.gestures.cancel({ pointerId: e.pointerId, x: e.global.x, y: e.global.y, t: performance.now() });
+    });
     // keep the browser menu away so right-click reaches Pixi
     this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     // the browser must not scroll/zoom the page on touch — the game owns it
