@@ -177,6 +177,8 @@ export class FriendCallService {
   private sigLimit = new RateLimiter(VOICE_RTC_RATE.count, VOICE_RTC_RATE.windowMs);
   private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
   private lastPeer = new Map<string, { peer: string; at: number }>();
+  /** caller -> token for an in-flight invite() still awaiting its gating checks */
+  private pendingInvite = new Map<string, symbol>();
 
   constructor(
     readonly book: FriendCallBook,
@@ -214,11 +216,30 @@ export class FriendCallService {
     const to = userIdOf(toRaw);
     if (!to) return 'bad_request';
     if (to === me.id) return 'self';
-    if (!(await this.d.areFriends(me.id, to))) return 'not_friends';
-    if ((await this.d.blockPairs(me.id)).includes(to)) return 'blocked_pair';
-    if (!this.d.isOnline(to)) return 'friend_offline';
+    // A caller can hangup/cancel while areFriends/blockPairs are still resolving; only the
+    // latest invite() from this caller may go ahead once its awaits settle.
+    const token = Symbol();
+    this.pendingInvite.set(me.id, token);
+    const stillPending = () => this.pendingInvite.get(me.id) === token;
+    const isFriend = await this.d.areFriends(me.id, to);
+    if (!stillPending()) return 'busy_self';
+    if (!isFriend) {
+      this.pendingInvite.delete(me.id);
+      return 'not_friends';
+    }
+    const blocked = (await this.d.blockPairs(me.id)).includes(to);
+    if (!stillPending()) return 'busy_self';
+    if (blocked) {
+      this.pendingInvite.delete(me.id);
+      return 'blocked_pair';
+    }
+    if (!this.d.isOnline(to)) {
+      this.pendingInvite.delete(me.id);
+      return 'friend_offline';
+    }
     const video = videoRaw === true;
     const err = this.book.invite(me.id, to, video);
+    this.pendingInvite.delete(me.id);
     if (err) return err;
     this.callSession.set(me.id, sessionId);
     this.callSession.delete(to);
@@ -261,11 +282,13 @@ export class FriendCallService {
   }
 
   hangup(meId: string) {
+    this.pendingInvite.delete(meId);
     this.finish(meId, 'ended');
   }
 
   /** unfriend or block: end a call between exactly these two */
   endBetween(a: string, b: string) {
+    this.pendingInvite.delete(a);
     const s = this.book.get(a);
     if (s.kind !== 'idle' && s.peer === b) this.finish(a, 'ended');
   }
@@ -290,12 +313,23 @@ export class FriendCallService {
   sessionLost(userId: string) {
     const r = this.book.sessionLost(userId);
     if (!r) return;
-    if (r.held) this.d.notify(r.peer, 'fcall_hold', { peer: userId });
-    else this.d.notify(r.peer, 'fcall_end', { reason: 'left' });
+    if (r.held) {
+      this.d.notify(r.peer, 'fcall_hold', { peer: userId });
+    } else {
+      this.callSession.delete(userId);
+      this.callSession.delete(r.peer);
+      this.d.notify(r.peer, 'fcall_end', { reason: 'left' });
+    }
   }
 
   sweep() {
+    const t = this.now();
+    for (const [id, entry] of [...this.lastPeer]) {
+      if (t - entry.at > REPORT_AFTER_CALL_MS) this.lastPeer.delete(id);
+    }
     for (const e of this.book.sweep()) {
+      this.callSession.delete(e.a);
+      this.callSession.delete(e.b);
       this.d.notify(e.a, 'fcall_end', { reason: e.reason });
       this.d.notify(e.b, 'fcall_end', { reason: e.reason });
     }
@@ -304,11 +338,11 @@ export class FriendCallService {
   /** Report the current (or just-ended) call's peer; reporting ends the call. */
   async report(meId: string, reasonRaw: unknown, noteRaw: unknown, roomId: string | null): Promise<FriendCallError | null> {
     if (!isReportReason(reasonRaw)) return 'bad_request';
-    if (!this.reportLimit.allow(meId, this.now())) return 'rate_limited';
     const s = this.book.get(meId);
     const recent = this.lastPeer.get(meId);
     const target = s.kind !== 'idle' ? s.peer : recent && this.now() - recent.at <= REPORT_AFTER_CALL_MS ? recent.peer : '';
     if (!target) return 'no_call';
+    if (!this.reportLimit.allow(meId, this.now())) return 'rate_limited';
     const note = typeof noteRaw === 'string' ? noteRaw.slice(0, REPORT_NOTE_MAX).trim() : '';
     await this.d.report(meId, target, roomId, reasonRaw, note ? `friend call: ${note}` : 'friend call');
     if (s.kind !== 'idle') this.hangup(meId);

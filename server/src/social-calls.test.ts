@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REPORT_RATE } from '@dovey/shared';
 import { FRIEND_REJOIN_GRACE_MS, FRIEND_RING_TTL_MS, FriendCallBook, FriendCallDeps, FriendCallService } from './social-calls';
 
 const clock = (start = 1_000_000) => {
@@ -282,5 +283,89 @@ describe('FriendCallService', () => {
     expect(reports[1]).toEqual(['b', 'a', null, 'spam', 'friend call']);
     c.t += 300_001;
     expect(await s.report('b', 'spam', undefined, null)).toBe('no_call');
+  });
+
+  it('a hangup during the invite awaits cancels the ring (no stale ring after the race)', async () => {
+    const c = clock();
+    const { deps, sent } = fakeDeps({ friends: [['a', 'b']], online: ['b'] });
+    let resolveFriends!: (v: boolean) => void;
+    deps.areFriends = (_a, _b) => new Promise((resolve) => { resolveFriends = resolve; });
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    const pending = s.invite(A, 'a-s1', 'b', false);
+    s.hangup('a'); // races the still-pending invite
+    resolveFriends(true);
+    expect(await pending).toBe('busy_self');
+    expect(sent).toEqual([]);
+    expect(s.book.isBusy('a') || s.book.isBusy('b')).toBe(false);
+  });
+
+  it('a second invite from the same caller while one is pending wins; the stale one is dropped', async () => {
+    const c = clock();
+    const { deps, sent } = fakeDeps({ friends: [['a', 'b'], ['a', 'c']], online: ['b', 'c'] });
+    const resolvers: Array<(v: boolean) => void> = [];
+    deps.areFriends = (_a, _b) => new Promise((resolve) => resolvers.push(resolve));
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    const first = s.invite(A, 'a-s1', 'b', false);
+    const second = s.invite(A, 'a-s1', 'c', false);
+    resolvers[0]?.(true);
+    resolvers[1]?.(true);
+    expect(await first).toBe('busy_self');
+    expect(await second).toBeNull();
+    expect(s.book.get('a')).toMatchObject({ peer: 'c' });
+    expect(sent).toEqual([
+      ['c', 'fcall_incoming', { from: A, video: false }],
+      ['a', 'fcall_ringing', { to: 'c' }],
+    ]);
+  });
+
+  it('sweep and a lost ring clear the stale call-tab routing for both sides', () => {
+    const c = clock();
+    const { deps } = fakeDeps({ friends: [['a', 'b']], online: ['b'] });
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    const callSession = (s as unknown as { callSession: Map<string, string> }).callSession;
+    return (async () => {
+      // ring timeout swept away
+      await s.invite(A, 'a-s1', 'b', false);
+      expect(callSession.has('a')).toBe(true);
+      c.t += FRIEND_RING_TTL_MS + 1;
+      s.sweep();
+      expect(callSession.has('a')).toBe(false);
+      expect(callSession.has('b')).toBe(false);
+
+      // a ring's last session is lost before it is accepted (held: false path)
+      c.t += 60_000;
+      await s.invite(A, 'a-s1', 'b', false);
+      expect(callSession.has('a')).toBe(true);
+      s.sessionLost('a');
+      expect(callSession.has('a')).toBe(false);
+      expect(callSession.has('b')).toBe(false);
+    })();
+  });
+
+  it('rings only the inviting tab, not the caller\'s other tabs', async () => {
+    const c = clock();
+    const { deps } = fakeDeps({ friends: [['a', 'b']], online: ['b'], tabs: { a: ['a-s1', 'a-s2'] } });
+    const calls: Array<[string, string]> = [];
+    const orig = deps.notifySession;
+    deps.notifySession = (id, sid, type, payload) => {
+      calls.push([id, sid]);
+      return orig(id, sid, type, payload);
+    };
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    await s.invite(A, 'a-s1', 'b', true);
+    expect(calls).toEqual([['a', 'a-s1']]);
+  });
+
+  it('report checks eligibility before spending a rate-limit token', async () => {
+    const c = clock();
+    const { deps } = fakeDeps({ friends: [['a', 'b']], online: ['b'] });
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    // no call and nothing recent: rejected as no_call, must not consume a report token
+    for (let i = 0; i < REPORT_RATE.count + 2; i++) {
+      expect(await s.report('a', 'spam', undefined, null)).toBe('no_call');
+    }
+    await s.invite(A, 'a-s1', 'b', false);
+    s.accept('b', 'b-s1');
+    expect(await s.report('a', 'spam', undefined, null)).toBeNull();
   });
 });
