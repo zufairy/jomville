@@ -1,5 +1,5 @@
 import { tileDistance, voiceGain, voiceInitiator, wantsVoiceLink } from '@dovey/shared';
-import { ICE, unlockAudio } from './call';
+import { currentIce, unlockAudio } from './call';
 import { useAppStore } from './store';
 
 /**
@@ -213,7 +213,7 @@ export class ProximityVoice {
   }
 
   private createLink(id: string): Link {
-    const pc = new RTCPeerConnection(ICE);
+    const pc = new RTCPeerConnection(currentIce());
     const el = new Audio();
     el.autoplay = true;
     el.muted = true;

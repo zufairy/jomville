@@ -41,7 +41,7 @@ import { UndoStack, newPlacementId } from '../editor';
 import { routeFromPath } from '../router';
 import { fetchMe } from '../api';
 import type { Me } from '../api';
-import { CallManager, unlockAudio } from '../call';
+import { CallManager, loadIce, unlockAudio } from '../call';
 import { ProximityVoice, VoiceSignal } from '../voice';
 import { resolveTap } from './tapTarget';
 import { arrivalReady } from './useArrival';
@@ -207,6 +207,7 @@ export class Game {
     bindTableSender((type, data) => this.net.send(type, data));
     bindTradeSender((type, data) => this.net.send(type, data));
     bindFriendSender((type, data) => this.net.send(type, data));
+    void loadIce();
     this.calls.onVibe = (v) => {
       if (this.theme === 'love') love.vibe(v);
     };

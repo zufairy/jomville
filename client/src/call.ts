@@ -1,4 +1,5 @@
 import { useAppStore } from './store';
+import { fetchIceServers } from './api';
 
 /**
  * Peer-to-peer WebRTC call between two players in the same room. Signaling
@@ -40,14 +41,50 @@ export function unlockAudio(): AudioContext {
   return audio;
 }
 
+/** STUN-only fallback, used until (or if never) the server's /api/ice answers */
 export const ICE: RTCConfiguration = {
   iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
 };
 
+let iceConfig: RTCConfiguration = ICE;
+let iceLoad: Promise<RTCConfiguration> | null = null;
+
+/** the best ICE config known right now (sync, for proximity voice links) */
+export function currentIce(): RTCConfiguration {
+  return iceConfig;
+}
+
+/** Fetch STUN + TURN from the server once; any failure keeps STUN-only. */
+export function loadIce(fetcher: () => Promise<RTCIceServer[] | null> = fetchIceServers): Promise<RTCConfiguration> {
+  iceLoad ??= fetcher().then(
+    (servers) => {
+      if (servers?.length) iceConfig = { iceServers: servers };
+      return iceConfig;
+    },
+    () => iceConfig,
+  );
+  return iceLoad;
+}
+
+export function resetIceForTests() {
+  iceConfig = ICE;
+  iceLoad = null;
+}
+
+let otherCallBusy: () => boolean = () => false;
+/** friend calls register here so a same-room call can't start while one is on */
+export function setOtherCallBusy(fn: () => boolean) {
+  otherCallBusy = fn;
+}
+export function isOtherCallBusy(): boolean {
+  return otherCallBusy();
+}
+
 /**
- * SAFETY TODO (Phase 2 age gate): calls must be disabled by default for under-18
- * accounts and only enabled between mutual follows. Wire the gate in `invite()`
- * and in the server's call_invite handler once age_bracket exists.
+ * Safety gate: calling someone who is not your friend needs a one-time
+ * "Saya 18 tahun ke atas" confirmation (users.adult_confirmed_at), enforced by
+ * the server's call_invite handler (sys code adult_required, see adultGate.ts).
+ * Friend calls (friendCall.ts) need no confirmation.
  */
 export class CallManager {
   private pc: RTCPeerConnection | null = null;
@@ -79,6 +116,7 @@ export class CallManager {
   // ---- user intents
   invite(peer: string, handle: string, video: boolean) {
     if (useAppStore.getState().call.phase !== 'idle') return;
+    if (isOtherCallBusy()) return useAppStore.getState().flash('you are already on a call');
     this.sig.invite(peer, video);
     this.set({ phase: 'ringing_out', peer, handle, video, remoteHasVideo: false });
   }
@@ -117,7 +155,7 @@ export class CallManager {
 
   // ---- signaling events
   onIncoming(from: string, handle: string, video: boolean) {
-    if (useAppStore.getState().call.phase !== 'idle') {
+    if (useAppStore.getState().call.phase !== 'idle' || isOtherCallBusy()) {
       this.sig.decline();
       return;
     }
@@ -145,7 +183,7 @@ export class CallManager {
       return;
     }
     this.localEl.srcObject = this.local;
-    const pc = new RTCPeerConnection(ICE);
+    const pc = new RTCPeerConnection(await loadIce());
     this.pc = pc;
     for (const t of this.local.getTracks()) pc.addTrack(t, this.local);
     pc.ontrack = (ev) => {
