@@ -21,6 +21,8 @@ export interface Duel {
   stake: DuelStake;
   /** both stakes are in escrow (never true for a free duel) */
   paid: boolean;
+  /** duel_start went out (after escrow for a staked duel); picks are refused until then */
+  started: boolean;
   /** account ids for a and b, filled in by the room at accept */
   users: [string, string];
   score: [number, number];
@@ -108,6 +110,7 @@ export class DuelBook {
       b: to,
       stake: inv.stake,
       paid: false,
+      started: false,
       users: ['', ''],
       score: [0, 0],
       picks: [null, null],
@@ -117,6 +120,17 @@ export class DuelBook {
     this.duels.set(d.a, d);
     this.duels.set(d.b, d);
     return d;
+  }
+
+  /** Withdraw every challenge `from` has out; returns who was being challenged. */
+  cancel(from: string): string[] {
+    const out: string[] = [];
+    for (const [to, inv] of this.invites) {
+      if (inv.from !== from) continue;
+      this.invites.delete(to);
+      out.push(to);
+    }
+    return out;
   }
 
   decline(to: string): string | null {

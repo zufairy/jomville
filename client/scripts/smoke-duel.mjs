@@ -112,6 +112,21 @@ const netB2 = await netSince('B', tokenB, sB);
 check(`stayer nets +25 (got ${netA2})`, netA2 === 25);
 check(`quitter nets -25 (got ${netB2})`, netB2 === -25);
 
+// ---- 2b. A withdraws a staked challenge: B's late accept finds nothing, nobody is charged
+sA = await snap('A', tokenA);
+sB = await snap('B', tokenB);
+const endsB0 = log.B.ends.length;
+const sysB0 = log.B.sys.length;
+A.send('duel_invite', { to: B.sessionId, stake: 100 });
+check('B is challenged for 100', await until(() => log.B.incoming.some((m) => m.stake === 100)));
+A.send('duel_end'); // "cancel" on the ringing popup
+check('B hears the challenge was cancelled', await until(() => log.B.ends.slice(endsB0).some((e) => e.reason === 'cancelled')));
+B.send('duel_accept');
+check('a late accept gets no_invite', await until(() => log.B.sys.slice(sysB0).includes('no_invite')));
+check('no duel started after the cancel', log.A.start.length === 2 && log.B.start.length === 2);
+await wait(300);
+check('nobody was charged for the withdrawn challenge', (await netSince('A', tokenA, sA)) === 0 && (await netSince('B', tokenB, sB)) === 0);
+
 // ---- 3. a stake B cannot cover: cancelled, nobody charged
 await post('/api/shop/buy', { token: tokenB, def: 'hottub', qty: 1 });
 for (let i = 0; i < 10 && (await coinsOf(tokenB)) >= 500; i++) await post('/api/shop/buy', { token: tokenB, def: 'chair', qty: 5 });

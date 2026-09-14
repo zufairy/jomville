@@ -71,6 +71,25 @@ describe('staked duels', () => {
     expect(b.pending('e')).toBeNull();
   });
 
+  it('cancel withdraws every challenge a player has out, so a late accept finds nothing', () => {
+    const b = new DuelBook(() => 0);
+    b.invite('a', 'b', 50);
+    b.invite('a', 'c');
+    b.invite('x', 'd');
+    expect(b.cancel('a').sort()).toEqual(['b', 'c']);
+    expect(b.pending('b')).toBeNull();
+    expect(b.accept('b')).toBeNull();
+    expect(b.get('a')).toBeUndefined();
+    expect(b.pending('d')).toEqual({ from: 'x', stake: 0 });
+    expect(b.cancel('a')).toEqual([]);
+  });
+
+  it('a duel is not started until the room says so', () => {
+    const b = new DuelBook(() => 0);
+    b.invite('a', 'b', 25);
+    expect(b.accept('b')).toMatchObject({ started: false, paid: false });
+  });
+
   it('endless draws end at the round cap on the pick path', () => {
     const b = new DuelBook(() => 0);
     b.invite('a', 'b', 25);

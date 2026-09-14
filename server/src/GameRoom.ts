@@ -46,6 +46,7 @@ import { MovementSim } from './movement';
 import { Repo, User } from './repo';
 import { CallBook } from './calls';
 import { Duel, DuelBook, Pick, RoundResult, Settlement, duelSettlement } from './duel';
+import { settleOrLog } from './duelSettle';
 import { isDuelStake } from '@dovey/shared';
 import { GAME_TABLE_KIND, TABLE_BOT_REWARD, TABLE_GAME_KINDS, TABLE_REWARD, TableGameKind, tableChairs } from '@dovey/shared';
 import { Match, TableBook, TableEvent, isBot } from './tableGames';
@@ -445,8 +446,11 @@ export class GameRoom extends Room<WorldState> {
       if (bot) {
         // locals never say no to a free duel
         this.clock.setTimeout(() => {
+          // the challenge may have been withdrawn (or replaced) while the local "thought"
+          if (this.duels.pending(to)?.from !== client.sessionId) return;
           const d = this.duels.accept(to);
           if (!d) return;
+          d.started = true;
           d.users = [u.id, this.state.players.get(to)?.userId ?? ''];
           client.send('duel_start', { peer: to, handle: this.state.players.get(to)?.handle ?? '', you: 'a', stake: 0 });
           this.botPick(to);
@@ -471,21 +475,19 @@ export class GameRoom extends Room<WorldState> {
         if (this.duels.get(d.a) !== d) {
           // someone left while the stakes were moving: hand them straight back
           if (r?.ok) {
-            void GameRoom.repo
-              .settleDuel({
-                aId: d.users[0],
-                bId: d.users[1],
-                stake: d.stake,
-                credits: [
-                  { userId: d.users[0], amount: d.stake },
-                  { userId: d.users[1], amount: d.stake },
-                ],
-                winnerId: null,
-                outcome: 'left',
-                roomId: this.state.slug,
-                log: false,
-              })
-              .catch((e) => console.error('[duel] refund', e));
+            void settleOrLog((s) => GameRoom.repo.settleDuel(s), {
+              aId: d.users[0],
+              bId: d.users[1],
+              stake: d.stake,
+              credits: [
+                { userId: d.users[0], amount: d.stake },
+                { userId: d.users[1], amount: d.stake },
+              ],
+              winnerId: null,
+              outcome: 'left' as const,
+              roomId: this.state.slug,
+              log: false,
+            });
           }
           return;
         }
@@ -499,6 +501,7 @@ export class GameRoom extends Room<WorldState> {
         sendTo(d.a, 'coins', { coins: r.coins[0], earned: 0 });
         sendTo(d.b, 'coins', { coins: r.coins[1], earned: 0 });
       }
+      d.started = true;
       const pa = this.state.players.get(d.a);
       const pb = this.state.players.get(d.b);
       sendTo(d.a, 'duel_start', { peer: d.b, handle: pb?.handle ?? '', you: 'a', stake: d.stake });
@@ -513,7 +516,8 @@ export class GameRoom extends Room<WorldState> {
       const p = Number(msg?.pick);
       if (![0, 1, 2].includes(p)) return;
       const d = this.duels.get(client.sessionId);
-      if (!d) return this.reject(client, 'no_duel');
+      // no picks while the stakes are still moving: a round must never beat duel_start to the client
+      if (!d || !d.started) return this.reject(client, 'no_duel');
       const r = this.duels.pick(client.sessionId, p as Pick);
       if (r === 'waiting') return sendTo(client.sessionId, 'duel_wait', {});
       if (r) this.sendRound(d, r);
@@ -955,25 +959,25 @@ export class GameRoom extends Room<WorldState> {
       .filter((c) => c.userId && !this.bots?.has(c.sessionId));
     if (!credits.length && !s.log) return;
     const winnerId = s.winner === 'a' ? d.users[0] : s.winner === 'b' ? d.users[1] : null;
-    void GameRoom.repo
-      .settleDuel({
-        aId: d.users[0],
-        bId: d.users[1],
-        stake: d.stake,
-        credits: credits.map(({ userId, amount }) => ({ userId, amount })),
-        winnerId: winnerId || null,
-        outcome: s.outcome,
-        roomId: this.state.slug,
-        log: s.log,
-      })
-      .then((coins) => {
-        for (const c of credits) this.clientOf(c.sessionId)?.send('coins', { coins: coins[c.userId], earned: c.amount });
-      })
-      .catch((e) => console.error('[duel] settle', e));
+    void settleOrLog((input) => GameRoom.repo.settleDuel(input), {
+      aId: d.users[0],
+      bId: d.users[1],
+      stake: d.stake,
+      credits: credits.map(({ userId, amount }) => ({ userId, amount })),
+      winnerId: winnerId || null,
+      outcome: s.outcome,
+      roomId: this.state.slug,
+      log: s.log,
+    }).then((coins) => {
+      if (!coins) return;
+      for (const c of credits) this.clientOf(c.sessionId)?.send('coins', { coins: coins[c.userId], earned: c.amount });
+    });
   }
 
   /** Someone walks out of a duel (or a pending invite): the other side hears it and, in a staked duel, takes the pot. */
   private quitDuel(id: string, kind: 'forfeit' | 'left') {
+    // withdraw any challenge still waiting on someone, so a late accept can never charge this player
+    for (const to of this.duels.cancel(id)) this.clientOf(to)?.send('duel_end', { reason: 'cancelled', pot: 0 });
     const d = this.duels.get(id);
     const side = this.duels.sideOf(id);
     const peer = this.duels.end(id);
