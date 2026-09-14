@@ -46,6 +46,7 @@ import { MovementSim } from './movement';
 import { Repo, User } from './repo';
 import { CallBook } from './calls';
 import { DUEL_REWARD, DuelBook, Pick } from './duel';
+import { TRADE_CLIENT_MESSAGES, TradeController } from './trade/controller';
 import { GAME_TABLE_KIND, TABLE_BOT_REWARD, TABLE_GAME_KINDS, TABLE_REWARD, TableGameKind, tableChairs } from '@dovey/shared';
 import { Match, TableBook, TableEvent, isBot } from './tableGames';
 import { BotCrew, PERSONAS, scatterSpawns } from './bots';
@@ -107,6 +108,10 @@ export class GameRoom extends Room<WorldState> {
   /** userId -> last maze payout */
   private mazeAt = new Map<string, number>();
   private duelLimit = new RateLimiter(20, 5000);
+  /** player-to-player trades (server/src/trade) */
+  private trade!: TradeController;
+  /** rooms.trade_enabled, cached on create */
+  private tradeEnabled = true;
   private love: LoveMeter | null = null;
   /** lane tile each queued person was last sent to, so re-syncs don't re-path them */
   private loveSpots = new Map<string, string>();
@@ -126,6 +131,7 @@ export class GameRoom extends Room<WorldState> {
     this.state.style = JSON.stringify(row.style);
     this.state.mask = row.mask ? row.mask.join('|') : '';
     this.state.ownerId = row.owner_id;
+    this.tradeEnabled = row.trade_enabled !== false;
     this.size = row.size;
     this.mask = row.mask;
     if (repo.isSystemRoom(row.id)) this.furnitureCap = MAX_FURNITURE_SYSTEM_ROOM;
@@ -212,6 +218,7 @@ export class GameRoom extends Room<WorldState> {
       for (const c of this.clients) {
         const u = c.auth as User | undefined;
         if (!u) continue;
+        void GameRoom.repo.addPlayMinute(u.id).catch((e) => console.error('[trade] play minute', e));
         void GameRoom.repo.creditCoins(u.id, COINS_PER_MINUTE).then((coins) => c.send('coins', { coins, earned: COINS_PER_MINUTE }));
       }
     }, 60_000);
@@ -420,6 +427,7 @@ export class GameRoom extends Room<WorldState> {
         this.clients.find((c) => c.sessionId === callee)?.send('call_end', { reason: 'expired' });
       }
       for (const { duel, result } of this.duels.sweep()) this.sendRound(duel.a, duel.b, result);
+      this.trade.sweep();
     }, 5000);
 
     // ---- duels: rock-paper-scissors, best of three, winner earns coins
@@ -471,6 +479,25 @@ export class GameRoom extends Room<WorldState> {
       const peer = this.duels.end(client.sessionId);
       if (peer) sendTo(peer, 'duel_end', { reason: 'left' });
     });
+
+    // ---- trading: items + coins between two people here. Rules live in server/src/trade.
+    this.trade = new TradeController({
+      repo,
+      roomId: () => this.state.slug,
+      tradeEnabled: () => this.tradeEnabled,
+      userOf: (id) => {
+        const u = this.clientOf(id)?.auth as User | undefined;
+        const p = this.state.players.get(id);
+        return u && p ? { id: u.id, handle: p.handle } : null;
+      },
+      isHidden: (a, b) => this.blocks.isHidden(a, b),
+      send: (id, type, data) => this.clientOf(id)?.send(type, data),
+    });
+    for (const type of TRADE_CLIENT_MESSAGES) {
+      this.onMessage(type, (client, msg: unknown) => {
+        this.trade.handle(client.sessionId, type, msg).catch((e) => console.error('[trade]', type, e));
+      });
+    }
 
     // ---- table games: sit opposite someone at a game table, quick match, or play the house bot
     this.state.furniture.forEach((f) => {
@@ -1061,6 +1088,7 @@ export class GameRoom extends Room<WorldState> {
     this.loveLeave(client.sessionId);
     const duelPeer = this.duels.end(client.sessionId);
     if (duelPeer) this.clients.find((c) => c.sessionId === duelPeer)?.send('duel_end', { reason: 'left' });
+    this.trade.leave(client.sessionId);
     this.dispatchTables(this.tables.leave(client.sessionId));
     this.tableLimit.forget(client.sessionId);
     this.love?.forget(client.sessionId);
