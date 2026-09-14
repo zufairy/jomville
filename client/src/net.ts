@@ -229,14 +229,15 @@ export class Net {
 
     room.onMessage('coins', (m: { coins: number; earned: number }) => events.onCoins(m.coins, m.earned));
     room.onMessage('inventory_delta', (m: { def: string; delta: number }) => store.addInventory(m.def, m.delta));
-    room.onMessage('inventory_refresh', () => {
+    const refreshInventory = () => {
       void fetchInventory().then((inv) => {
         if (!inv) return;
         store.setCoins(inv.coins);
         store.setInventory(inv.items);
         store.setInstances(inv.instances);
       });
-    });
+    };
+    room.onMessage('inventory_refresh', refreshInventory);
     room.onMessage('chat', (m: { id: string; text: string }) => events.onChat(m.id, m.text));
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
@@ -265,6 +266,9 @@ export class Net {
         sold_out: 'sold out. only trades now',
       };
       store.flash(msgs[m.code] ?? 'nope');
+      // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray
+      const rollback = new Set(['not_owned', 'bad_request', 'overlap', 'out_of_bounds', 'room_full', 'bad_rot', 'bad_coords', 'unknown_def']);
+      if (rollback.has(m.code)) refreshInventory();
     });
 
     room.onLeave((code) => {
