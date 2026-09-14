@@ -3,6 +3,7 @@
  * Keyed by userId (sessions change when someone changes rooms). In-process,
  * like presence; the server only relays signaling, never media.
  */
+import { REPORT_NOTE_MAX, REPORT_RATE, RateLimiter, VOICE_RTC_RATE, isReportReason } from '@dovey/shared';
 export type FriendCallState =
   | { kind: 'idle' }
   | { kind: 'ringing'; peer: string; video: boolean; since: number; initiator: boolean }
@@ -144,4 +145,181 @@ export class FriendCallBook {
     }
     return out;
   }
+}
+
+export interface FriendCallDeps {
+  areFriends(a: string, b: string): Promise<boolean>;
+  blockPairs(userId: string): Promise<string[]>;
+  isOnline(userId: string): boolean;
+  notify(userId: string, type: string, payload: unknown): void;
+  /** presence.notifySession: one tab only; false when that session is gone */
+  notifySession(userId: string, sessionId: string, type: string, payload: unknown): boolean;
+  /** presence.sessions: every tab of the user, most recent last */
+  sessions(userId: string): ReadonlyArray<{ sessionId: string }>;
+  report(reporterId: string, targetId: string, roomId: string | null, reason: string, context: string | null): Promise<boolean>;
+}
+
+export interface CallerInfo {
+  id: string;
+  handle: string;
+  avatar: string;
+}
+
+export type FriendCallError = BookInviteError | 'bad_request' | 'not_friends' | 'blocked_pair' | 'friend_offline' | 'no_invite' | 'no_call';
+
+/** a report can still name the last call's peer for this long after hanging up */
+export const REPORT_AFTER_CALL_MS = 300_000;
+
+const userIdOf = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : '');
+
+export class FriendCallService {
+  private deps: FriendCallDeps | null;
+  private sigLimit = new RateLimiter(VOICE_RTC_RATE.count, VOICE_RTC_RATE.windowMs);
+  private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
+  private lastPeer = new Map<string, { peer: string; at: number }>();
+
+  constructor(
+    readonly book: FriendCallBook,
+    deps?: FriendCallDeps,
+    private now: () => number = Date.now,
+  ) {
+    this.deps = deps ?? null;
+  }
+
+  bind(deps: FriendCallDeps) {
+    this.deps = deps;
+  }
+
+  private get d(): FriendCallDeps {
+    if (!this.deps) throw new Error('friend calls not bound');
+    return this.deps;
+  }
+
+  private remember(a: string, b: string) {
+    const at = this.now();
+    this.lastPeer.set(a, { peer: b, at });
+    this.lastPeer.set(b, { peer: a, at });
+  }
+
+  /** userId -> the tab carrying the call (inviting tab, accepting tab, or the tab that resumed) */
+  private callSession = new Map<string, string>();
+
+  /** to the call's tab when known and still there, else every tab of the user */
+  private toTab(userId: string, type: string, payload: unknown) {
+    const sid = this.callSession.get(userId);
+    if (!sid || !this.d.notifySession(userId, sid, type, payload)) this.d.notify(userId, type, payload);
+  }
+
+  async invite(me: CallerInfo, sessionId: string, toRaw: unknown, videoRaw: unknown): Promise<FriendCallError | null> {
+    const to = userIdOf(toRaw);
+    if (!to) return 'bad_request';
+    if (to === me.id) return 'self';
+    if (!(await this.d.areFriends(me.id, to))) return 'not_friends';
+    if ((await this.d.blockPairs(me.id)).includes(to)) return 'blocked_pair';
+    if (!this.d.isOnline(to)) return 'friend_offline';
+    const video = videoRaw === true;
+    const err = this.book.invite(me.id, to, video);
+    if (err) return err;
+    this.callSession.set(me.id, sessionId);
+    this.callSession.delete(to);
+    // every tab of the friend rings; the first to accept takes the call
+    this.d.notify(to, 'fcall_incoming', { from: me, video });
+    this.toTab(me.id, 'fcall_ringing', { to });
+    return null;
+  }
+
+  accept(meId: string, sessionId: string): FriendCallError | null {
+    const r = this.book.accept(meId);
+    if (!r) return 'no_invite';
+    this.remember(meId, r.caller);
+    this.callSession.set(meId, sessionId);
+    this.toTab(r.caller, 'fcall_start', { peer: meId, video: r.video, initiator: true });
+    this.d.notifySession(meId, sessionId, 'fcall_start', { peer: r.caller, video: r.video, initiator: false });
+    // the callee's other tabs stop ringing quietly
+    for (const s of this.d.sessions(meId)) {
+      if (s.sessionId !== sessionId) this.d.notifySession(meId, s.sessionId, 'fcall_end', { reason: 'elsewhere' });
+    }
+    return null;
+  }
+
+  /** Both users hear the end, so every tab of each stops ringing or tears down. */
+  private finish(meId: string, reason: string) {
+    const s = this.book.get(meId);
+    const peer = this.book.end(meId);
+    if (!peer) return;
+    if (s.kind !== 'ringing') this.remember(meId, peer);
+    this.callSession.delete(meId);
+    this.callSession.delete(peer);
+    this.d.notify(peer, 'fcall_end', { reason });
+    this.d.notify(meId, 'fcall_end', { reason });
+  }
+
+  decline(meId: string, busy: boolean) {
+    const s = this.book.get(meId);
+    if (s.kind !== 'ringing') return this.hangup(meId);
+    this.finish(meId, s.initiator ? 'cancelled' : busy ? 'busy' : 'declined');
+  }
+
+  hangup(meId: string) {
+    this.finish(meId, 'ended');
+  }
+
+  /** unfriend or block: end a call between exactly these two */
+  endBetween(a: string, b: string) {
+    const s = this.book.get(a);
+    if (s.kind !== 'idle' && s.peer === b) this.finish(a, 'ended');
+  }
+
+  signal(meId: string, toRaw: unknown, data: unknown): boolean {
+    const to = userIdOf(toRaw);
+    if (!to || !this.book.canRelay(meId, to)) return false;
+    if (!this.sigLimit.allow(meId, this.now())) return false;
+    this.toTab(to, 'fsig', { from: meId, data });
+    return true;
+  }
+
+  /** a tab (re)joined a room with this call: it becomes the call's tab, both sides renegotiate */
+  resume(meId: string, sessionId: string) {
+    const r = this.book.resume(meId);
+    if (!r) return;
+    this.callSession.set(meId, sessionId);
+    this.d.notifySession(meId, sessionId, 'fcall_rejoin', { peer: r.peer, video: r.video, initiator: r.initiator });
+    this.toTab(r.peer, 'fcall_rejoin', { peer: meId, video: r.video, initiator: !r.initiator });
+  }
+
+  sessionLost(userId: string) {
+    const r = this.book.sessionLost(userId);
+    if (!r) return;
+    if (r.held) this.d.notify(r.peer, 'fcall_hold', { peer: userId });
+    else this.d.notify(r.peer, 'fcall_end', { reason: 'left' });
+  }
+
+  sweep() {
+    for (const e of this.book.sweep()) {
+      this.d.notify(e.a, 'fcall_end', { reason: e.reason });
+      this.d.notify(e.b, 'fcall_end', { reason: e.reason });
+    }
+  }
+
+  /** Report the current (or just-ended) call's peer; reporting ends the call. */
+  async report(meId: string, reasonRaw: unknown, noteRaw: unknown, roomId: string | null): Promise<FriendCallError | null> {
+    if (!isReportReason(reasonRaw)) return 'bad_request';
+    if (!this.reportLimit.allow(meId, this.now())) return 'rate_limited';
+    const s = this.book.get(meId);
+    const recent = this.lastPeer.get(meId);
+    const target = s.kind !== 'idle' ? s.peer : recent && this.now() - recent.at <= REPORT_AFTER_CALL_MS ? recent.peer : '';
+    if (!target) return 'no_call';
+    const note = typeof noteRaw === 'string' ? noteRaw.slice(0, REPORT_NOTE_MAX).trim() : '';
+    await this.d.report(meId, target, roomId, reasonRaw, note ? `friend call: ${note}` : 'friend call');
+    if (s.kind !== 'idle') this.hangup(meId);
+    return null;
+  }
+}
+
+export const friendCalls = new FriendCallService(new FriendCallBook());
+
+export function startFriendCallSweep(service: FriendCallService, everyMs = 1000): () => void {
+  const t = setInterval(() => service.sweep(), everyMs);
+  t.unref?.();
+  return () => clearInterval(t);
 }
