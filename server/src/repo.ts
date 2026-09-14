@@ -7,6 +7,7 @@ import {
   RoomMask,
   RoomStyle,
   normalizeStyle,
+  LEGACY_SYSTEM_HANDLES,
   SYSTEM_HANDLE,
   SYSTEM_ROOMS,
   furnitureDef,
@@ -180,6 +181,8 @@ export class Repo {
 
   async setHandle(userId: string, handle: string): Promise<boolean> {
     if (!HANDLE.test(handle)) return false;
+    // the app's own account names are not up for grabs
+    if (handle === SYSTEM_HANDLE || LEGACY_SYSTEM_HANDLES.includes(handle)) return false;
     const prev = await this.userById(userId);
     if (!prev) return false;
     try {
@@ -209,7 +212,17 @@ export class Repo {
    * design changes ship without a migration.
    */
   async ensureSystemRooms(): Promise<void> {
-    let sys = await this.db.query<{ id: string }>('select id from users where handle = $1', [SYSTEM_HANDLE]);
+    // a database seeded before the rebrand: the system user is the lobby's owner under an old handle.
+    // Rename that same row (same id, rooms keep their owner) instead of creating a second system user.
+    const legacy = await this.db.query<{ id: string }>(
+      'select u.id from rooms r join users u on u.id = r.owner_id where r.id = $1 and u.handle = any($2::text[])',
+      [SYSTEM_ROOMS[0].slug, [...LEGACY_SYSTEM_HANDLES]],
+    );
+    if (legacy.length) {
+      const taken = await this.db.query('select 1 from users where handle = $1 and id <> $2', [SYSTEM_HANDLE, legacy[0].id]);
+      if (!taken.length) await this.db.query('update users set handle = $2 where id = $1', [legacy[0].id, SYSTEM_HANDLE]);
+    }
+    let sys = legacy.length ? legacy : await this.db.query<{ id: string }>('select id from users where handle = $1', [SYSTEM_HANDLE]);
     if (!sys.length) {
       const id = newId();
       // nobody holds this token; the hash is of random bytes so it can never be presented

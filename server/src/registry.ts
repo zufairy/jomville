@@ -20,3 +20,14 @@ class Registry {
 }
 
 export const registry = new Registry();
+
+/**
+ * How many of the ids in a room are real people. The park's AI locals live in
+ * the same player map, so without this the public "online" count would count
+ * them as visitors.
+ */
+export function humanCount(ids: Iterable<string>, isBot: (id: string) => boolean): number {
+  let n = 0;
+  for (const id of ids) if (!isBot(id)) n++;
+  return n;
+}
