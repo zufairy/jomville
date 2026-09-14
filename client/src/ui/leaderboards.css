@@ -52,7 +52,7 @@
   padding: 8px 18px; font-size: 16px;
   display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
 }
-.lb-span { padding: 4px 14px; font-size: 14px; min-height: 40px; }
+.lb-span { padding: 4px 14px; font-size: 14px; min-height: 44px; }
 .lb-tab--on, .lb-span--on { background: linear-gradient(180deg, var(--lb-gold-1), var(--lb-gold-2)); color: var(--lb-plum); border-color: var(--lb-gold-3); }
 .lb-tab:focus-visible, .lb-span:focus-visible, .lb-retry:focus-visible, .lb-play:focus-visible, .lb-cta:focus-visible, .lb-brand:focus-visible { outline: 3px solid var(--lb-gold-1); outline-offset: 2px; }
 

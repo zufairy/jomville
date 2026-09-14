@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseAvatar } from '@dovey/shared';
 import { AvatarPreview } from './AvatarPreview';
 import { CoinIcon } from './Icon';
+import { storedToken } from '../identity';
+import { footerState } from './leaderboardFooter';
 import {
   BoardKey,
   Boards,
@@ -86,6 +88,7 @@ export function Leaderboards() {
   const rest = rows.slice(3);
   const hidden = me !== null && me.hidden === true;
   const myRank = me !== null && !me.hidden ? me[key].rank : null;
+  const footer = footerState(storedToken(), me, meChecked);
 
   const toggleHide = async () => {
     setSaving(true);
@@ -197,7 +200,7 @@ export function Leaderboards() {
           </>
         )}
 
-        {meChecked && me === null && (
+        {footer === 'cta' && (
           <section className="lb-me lb-me--cta">
             <span className="lb-me__rank">Play Leypark to get ranked!</span>
             <a className="lb-cta" href="/play">
@@ -206,7 +209,7 @@ export function Leaderboards() {
           </section>
         )}
 
-        {me !== null && hidden && (
+        {footer === 'hidden' && (
           <section className="lb-me" aria-live="polite">
             <span className="lb-me__rank">You're hidden from the boards</span>
             <label className="lb-me__hide">
@@ -217,7 +220,7 @@ export function Leaderboards() {
           </section>
         )}
 
-        {me !== null && !hidden && (
+        {footer === 'ranked' && (
           <section className="lb-me" aria-live="polite">
             <span className="lb-me__rank">{rankLabel(me, key)}</span>
             <label className="lb-me__hide">
