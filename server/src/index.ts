@@ -58,6 +58,8 @@ async function main() {
   GameRoom.repo = repo;
   await repo.ensureSystemRooms();
   await repo.ensureLtdStock();
+  const orphans = await repo.releaseOrphanPlacements();
+  if (orphans > 0) console.log(`[casino] released ${orphans} placed item(s) missing from their room layout`);
   await repo.pruneRolls();
   setInterval(() => void repo.pruneRolls(), 24 * 60 * 60 * 1000).unref();
 

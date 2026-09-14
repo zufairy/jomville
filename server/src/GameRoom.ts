@@ -31,6 +31,7 @@ import {
   parseAvatar,
   GEAR_USE_RATE,
   sanitizeChat,
+  isSystemRollText,
   serializeAvatar,
   validatePlacement,
   CLOSED,
@@ -122,7 +123,15 @@ export class GameRoom extends Room<WorldState> {
     if (repo.isSystemRoom(row.id)) this.furnitureCap = MAX_FURNITURE_SYSTEM_ROOM;
     const owner = await repo.userById(row.owner_id);
     this.state.ownerHandle = owner?.handle ?? '';
+    // instances only load where the items table agrees they stand (a crash inside the
+    // save debounce can leave a ghost copy in the layout while the item is elsewhere)
+    const placed = row.layout.some((p) => p.itemId) ? await repo.placedItems(row.id) : new Map<string, string>();
+    let dropped = false;
     for (const p of row.layout) {
+      if (p.itemId && placed.get(p.itemId) !== p.def) {
+        dropped = true;
+        continue;
+      }
       const f = new Furniture();
       f.def = p.def;
       f.x = p.x;
@@ -135,6 +144,7 @@ export class GameRoom extends Room<WorldState> {
       this.state.furniture.set(p.id, f);
     }
     this.rebuildGrid();
+    if (dropped) this.markDirty();
     if (row.id === LOVE_ROOM.slug) this.setupLove();
     if (row.id === MAIN_LOBBY.slug) this.spawnBots();
 
@@ -167,10 +177,11 @@ export class GameRoom extends Room<WorldState> {
         const n = finishRoll(f, kind, (max) => randomInt(max));
         if (n === null) return;
         this.markDirty();
-        void GameRoom.repo.recordRoll(this.state.slug, id, userId, kind, n);
+        void GameRoom.repo.recordRoll(this.state.slug, id, userId, kind, n).catch((e) => console.error('[casino]', e));
         const tag = f.serial ? ` · #${f.serial}` : '';
         const text = kind === 'wheel' ? `🎡 spun ${n}${tag}` : kind === 'dice100' ? `🎲 rolled ${n} on the holodice${tag}` : `🎲 rolled ${n}${tag}`;
-        if (this.state.players.has(roller)) this.sayTo(roller, text);
+        // a dedicated message, so a typed look-alike in chat can never pass for a real roll
+        if (this.state.players.has(roller)) this.sayTo(roller, text, 'roll');
       }, INTERACTIONS[kind].rollMs);
     });
 
@@ -224,6 +235,7 @@ export class GameRoom extends Room<WorldState> {
       if (!this.state.players.has(client.sessionId)) return;
       const text = sanitizeChat(msg?.text);
       if (!text) return;
+      if (isSystemRollText(text)) return this.reject(client, 'bad_request');
       if (!this.chatLimit.allow(client.sessionId)) {
         client.send('sys', { code: 'rate_limited' });
         return;
@@ -510,10 +522,11 @@ export class GameRoom extends Room<WorldState> {
       const f = new Furniture();
       if (isInstanceDef(d)) {
         const itemId = typeof msg.itemId === 'string' ? msg.itemId : '';
-        const claim = itemId ? await GameRoom.repo.claimPlacement(itemId, u.id, p.def, this.state.slug) : null;
+        const slug = this.state.slug;
+        const claim = itemId ? await GameRoom.repo.claimPlacement(itemId, u.id, p.def, slug) : null;
         if (!claim) return this.reject(client, 'not_owned');
         if (this.state.furniture.has(p.id)) {
-          await GameRoom.repo.releasePlacement(itemId);
+          await GameRoom.repo.releasePlacement(itemId, slug);
           return this.reject(client, 'bad_request');
         }
         f.itemId = itemId;
@@ -563,9 +576,13 @@ export class GameRoom extends Room<WorldState> {
       this.markDirty();
       if (f.itemId) {
         // instances go back to whoever owns the item, not whoever edits the room
-        void GameRoom.repo.releasePlacement(f.itemId).then((ownerId) => {
-          for (const c of this.clients) if ((c.auth as User | undefined)?.id === ownerId) c.send('inventory_refresh', {});
-        });
+        void GameRoom.repo
+          .releasePlacement(f.itemId, this.state.slug)
+          .then((ownerId) => {
+            if (!ownerId) return;
+            for (const c of this.clients) if ((c.auth as User | undefined)?.id === ownerId) c.send('inventory_refresh', {});
+          })
+          .catch((e) => console.error('[casino]', e));
         return;
       }
       const u = client.auth as User;
@@ -615,11 +632,11 @@ export class GameRoom extends Room<WorldState> {
     this.blocks.reload(sessionId, await GameRoom.repo.blockPairs(userId));
   }
 
-  /** Deliver a chat line to everyone who has not blocked the speaker. */
-  private sayTo(fromSession: string, text: string) {
+  /** Deliver a chat (or roll result) line to everyone who has not blocked the speaker. */
+  private sayTo(fromSession: string, text: string, type: 'chat' | 'roll' = 'chat') {
     for (const c of this.clients) {
       if (this.blocks.isHidden(fromSession, c.sessionId)) continue;
-      c.send('chat', { id: fromSession, text });
+      c.send(type, { id: fromSession, text });
     }
   }
 
@@ -994,6 +1011,8 @@ export class GameRoom extends Room<WorldState> {
     this.avatarLimit.forget(client.sessionId);
     this.voiceLimit.forget(client.sessionId);
     this.gearUseLimit.forget(client.sessionId);
+    this.useLimit.forget(client.sessionId);
+    this.chanceLimit.forget(client.sessionId);
     this.state.players.delete(client.sessionId);
     registry.set(this.state.slug, this.state.players.size);
     if (process.env.DOVEY_DEBUG) console.log('[leave]', this.state.slug, 'now', this.state.players.size);

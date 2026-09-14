@@ -69,8 +69,38 @@ describe('casino items', () => {
     expect(await repo.claimPlacement(r.item.id, rich, 'dicemaster', 'room1')).toBeNull();
     expect(await repo.claimPlacement(r.item.id, rich, 'holodice', 'room1')).toEqual({ serial: null });
     expect(await repo.claimPlacement(r.item.id, rich, 'holodice', 'room2')).toBeNull();
-    expect(await repo.releasePlacement(r.item.id)).toBe(rich);
+    expect(await repo.releasePlacement(r.item.id, 'room2')).toBeNull();
+    expect((await repo.instances(rich)).find((i) => i.id === r.item.id)?.placed).toBe('room1');
+    expect(await repo.releasePlacement(r.item.id, 'room1')).toBe(rich);
     expect((await repo.instances(rich)).find((i) => i.id === r.item.id)?.placed).toBeNull();
+  });
+
+  it('sweeps placements missing from their saved layout and lists placed ids per room', async () => {
+    const buy = async () => {
+      const r = await repo.buyInstance(rich, 'dicemaster');
+      if (!r.ok) throw new Error('buy failed');
+      return r.item.id;
+    };
+    for (const id of ['sweepA', 'sweepB']) {
+      await db.query("insert into rooms (id, owner_id, name, layout) values ($1, $2, 'sweep', '[]') on conflict (id) do nothing", [id, rich]);
+    }
+    const kept = await buy();
+    const stranded = await buy();
+    const noRoom = await buy();
+    await repo.claimPlacement(kept, rich, 'dicemaster', 'sweepA');
+    await repo.claimPlacement(stranded, rich, 'dicemaster', 'sweepB');
+    await repo.claimPlacement(noRoom, rich, 'dicemaster', 'no_such_room');
+    await repo.saveLayout('sweepA', [{ id: 'd1', def: 'dicemaster', x: 1, y: 1, rot: 0, itemId: kept }]);
+
+    expect(await repo.placedItemIds('sweepA')).toEqual(new Set([kept]));
+    expect(await repo.placedItemIds('sweepB')).toEqual(new Set([stranded]));
+
+    expect(await repo.releaseOrphanPlacements()).toBe(2);
+    const placed = new Map((await repo.instances(rich)).map((i) => [i.id, i.placed]));
+    expect(placed.get(kept)).toBe('sweepA');
+    expect(placed.get(stranded)).toBeNull();
+    expect(placed.get(noRoom)).toBeNull();
+    expect(await repo.placedItemIds('sweepB')).toEqual(new Set());
   });
 
   it('records and prunes rolls', async () => {

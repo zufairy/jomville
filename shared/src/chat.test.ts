@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RateLimiter, sanitizeChat, CHAT_MAX_LEN } from './chat';
+import { RateLimiter, sanitizeChat, isSystemRollText, CHAT_MAX_LEN } from './chat';
 import { censor, containsProfanity } from './profanity';
 
 describe('RateLimiter', () => {
@@ -32,5 +32,18 @@ describe('profanity', () => {
   });
   it('censors tokens', () => {
     expect(censor('oh shit hi')).toBe('oh **** hi');
+  });
+});
+
+describe('isSystemRollText', () => {
+  it('flags text that imitates a dice or wheel result', () => {
+    expect(isSystemRollText('🎲 rolled 97 on the holodice')).toBe(true);
+    expect(isSystemRollText('   🎡 spun 12')).toBe(true);
+    expect(isSystemRollText('🎲')).toBe(true);
+  });
+  it('lets ordinary chat through', () => {
+    expect(isSystemRollText('i rolled 🎲 97')).toBe(false);
+    expect(isSystemRollText('hello')).toBe(false);
+    expect(isSystemRollText('')).toBe(false);
   });
 });

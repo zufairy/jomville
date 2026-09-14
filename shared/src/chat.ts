@@ -35,6 +35,12 @@ const CONTROL_CHARS = new RegExp(
   'g',
 );
 
+/** Dice and wheel results are server-only lines; players may not type look-alikes. */
+export function isSystemRollText(text: string): boolean {
+  const s = text.trim();
+  return s.startsWith('🎲') || s.startsWith('🎡');
+}
+
 /** Collapse whitespace, strip control chars, clamp length. Returns null if empty. */
 export function sanitizeChat(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;

@@ -408,10 +408,46 @@ export class Repo {
     return r.length ? { serial: r[0].serial } : null;
   }
 
-  /** Back to the owner's inventory. Returns the owner id, or null for an unknown item. */
-  async releasePlacement(itemId: string): Promise<string | null> {
-    const r = await this.db.query<{ owner_id: string }>('update items set placed_room = null where id = $1 returning owner_id', [itemId]);
+  /**
+   * Back to the owner's inventory, but only if it stands in `roomId` (a stale
+   * copy in another room's layout must not free the real one). Returns the
+   * owner id, or null when the item is unknown or placed elsewhere.
+   */
+  async releasePlacement(itemId: string, roomId: string): Promise<string | null> {
+    const r = await this.db.query<{ owner_id: string }>(
+      'update items set placed_room = null where id = $1 and placed_room = $2 returning owner_id',
+      [itemId, roomId],
+    );
     return r[0]?.owner_id ?? null;
+  }
+
+  /** Instances the items table says stand in `roomId`, id -> def. */
+  async placedItems(roomId: string): Promise<Map<string, string>> {
+    const rows = await this.db.query<{ id: string; def: string }>('select id, def from items where placed_room = $1', [roomId]);
+    return new Map(rows.map((r) => [r.id, r.def]));
+  }
+
+  async placedItemIds(roomId: string): Promise<Set<string>> {
+    return new Set((await this.placedItems(roomId)).keys());
+  }
+
+  /**
+   * Boot sweep: an instance claimed into a room whose saved layout never got it
+   * (crash inside the save debounce) goes back to its owner's inventory.
+   * Returns how many were released.
+   */
+  async releaseOrphanPlacements(): Promise<number> {
+    const r = await this.db.query<{ id: string }>(
+      `update items i set placed_room = null
+       where i.placed_room is not null
+         and not exists (
+           select 1 from rooms r
+           cross join lateral jsonb_array_elements(case when jsonb_typeof(r.layout) = 'array' then r.layout else '[]'::jsonb end) e
+           where r.id = i.placed_room and e->>'itemId' = i.id
+         )
+       returning i.id`,
+    );
+    return r.length;
   }
 
   async recordRoll(roomId: string, furniId: string, userId: string, kind: string, result: number) {
