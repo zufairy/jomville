@@ -11,14 +11,20 @@ const CUFF_EDGE = '#e8c26a';
  * Vector rock / paper / scissors hands, drawn upright (fingers up) so the arena
  * can rotate them toward the centre. Gradient ids are per instance.
  */
-export function HandIcon({ pick, cracked = false, className }: { pick: HandPick; cracked?: boolean; className?: string }) {
+export function HandIcon({ pick, cracked = false, className, decorative = false }: { pick: HandPick; cracked?: boolean; className?: string; decorative?: boolean }) {
   const uid = useId().replace(/:/g, '');
   const skin = `dhd-skin-${uid}`;
   const shine = `dhd-shine-${uid}`;
   const part = { fill: `url(#${skin})`, stroke: OUTLINE, strokeWidth: 4, strokeLinejoin: 'round' as const };
 
   return (
-    <svg className={className} viewBox="0 0 120 120" role="img" aria-label={HAND_NAMES[pick]} data-pick={HAND_NAMES[pick]}>
+    <svg
+      className={className}
+      viewBox="0 0 120 120"
+      // inside a labelled button (or next to text) the art is decorative; standalone it names the hand
+      {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': HAND_NAMES[pick] })}
+      data-pick={HAND_NAMES[pick]}
+    >
       <defs>
         <linearGradient id={skin} x1="0" y1="0" x2="0.35" y2="1">
           <stop offset="0" stopColor="#ffe3c7" />

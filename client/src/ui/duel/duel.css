@@ -277,4 +277,6 @@
   .dhd *, .dhd *::before, .dhd *::after { animation: none !important; transition: none !important; }
   .dhd .dhd-timer__bar { animation: dhd-ring var(--ring-ms, 20000ms) linear forwards !important; }
   .dhd .dhd-fist.is-broken { opacity: 0.35; }
+  /* the stake picker lives in the profile sheet, outside .dhd */
+  .dhd-chip { transition: none !important; }
 }

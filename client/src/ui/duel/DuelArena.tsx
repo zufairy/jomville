@@ -146,12 +146,12 @@ function RevealHands({ frame, mine, theirs, outcome, handle }: { frame: RevealFr
     <>
       <div className={fist('left')}>
         <div className="dhd-fist__hand">
-          <HandIcon pick={counting ? 0 : mine} cracked={resolved && outcome === 'right'} className="dhd-fist__icon" />
+          <HandIcon pick={counting ? 0 : mine} cracked={resolved && outcome === 'right'} className="dhd-fist__icon" decorative />
         </div>
       </div>
       <div className={fist('right')}>
         <div className="dhd-fist__hand">
-          <HandIcon pick={counting ? 0 : theirs} cracked={resolved && outcome === 'left'} className="dhd-fist__icon" />
+          <HandIcon pick={counting ? 0 : theirs} cracked={resolved && outcome === 'left'} className="dhd-fist__icon" decorative />
         </div>
       </div>
       {frame.phase === 'clash' && <div className="dhd-flash" aria-hidden />}
@@ -188,7 +188,9 @@ export function DuelArena() {
   const me = duel.you === 'a' ? 0 : 1;
   const them = 1 - me;
   const playing = duel.phase === 'pick' || duel.phase === 'reveal' || duel.phase === 'over';
-  const live = duel.phase === 'pick' || duel.phase === 'reveal';
+  const inArena = duel.phase === 'pick' || duel.phase === 'reveal';
+  // the deciding round's reveal plays after the duel is settled: leaving then is not a forfeit
+  const live = duel.phase === 'pick' || (duel.phase === 'reveal' && !duel.done);
   const outcome: Outcome | null = duel.last ? (duel.last.winner === 'draw' ? 'draw' : duel.last.winner === duel.you ? 'left' : 'right') : null;
 
   // the particle layer lives while the arena is on screen
@@ -272,13 +274,14 @@ export function DuelArena() {
     actions?.duelPick(i);
   };
 
-  // keys 1/2/3 or R/P/S throw a hand
+  // keys 1/2/3 throw a hand (letters would clash with WASD movement)
   useEffect(() => {
     if (duel.phase !== 'pick' || duel.myPick !== null) return;
-    const keys: Record<string, HandPick> = { '1': 0, '2': 1, '3': 2, r: 0, p: 1, s: 2 };
+    const keys: Record<string, HandPick> = { '1': 0, '2': 1, '3': 2 };
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const i = keys[e.key.toLowerCase()];
+      const t = e.target;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable)) return;
+      const i = keys[e.key];
       if (i === undefined) return;
       e.preventDefault();
       throwHand(i);
@@ -298,7 +301,9 @@ export function DuelArena() {
   const exit = () => (duel.phase === 'incoming' ? actions?.duelDecline() : actions?.duelEnd());
   const title = duel.phase === 'ringing' ? 'challenging…' : duel.phase === 'incoming' ? 'duel challenge' : duel.phase === 'over' ? 'duel over' : 'rock paper scissors';
   const exitLabel = live ? 'forfeit & exit' : duel.phase === 'incoming' ? 'pass' : duel.phase === 'ringing' ? 'cancel' : 'exit game';
-  const canAccept = canCover(coins, duel.stake);
+  // while my balance is still loading, let the server's escrow decide (it answers `insufficient`)
+  const checkingBalance = coins === null && duel.stake > 0;
+  const canAccept = checkingBalance || canCover(coins, duel.stake);
   const stakeLine = duel.stake > 0 ? `stake ${duel.stake} · pot ${duel.stake * 2}` : `free duel · winner earns ${DUEL_REWARD}`;
 
   return (
@@ -330,7 +335,7 @@ export function DuelArena() {
               )}
               {duel.phase === 'pick' && duel.myPick !== null && (
                 <div className="dhd-locked">
-                  <HandIcon pick={duel.myPick} className="dhd-locked__icon" />
+                  <HandIcon pick={duel.myPick} className="dhd-locked__icon" decorative />
                   <span>locked in</span>
                 </div>
               )}
@@ -371,13 +376,14 @@ export function DuelArena() {
                 <button className="vip__btn vip__btn--pink dhd-invite__accept" disabled={!canAccept} onClick={() => actions?.duelAccept()}>
                   accept
                 </button>
+                {checkingBalance && <p className="dhd-invite__sub">checking balance…</p>}
                 {!canAccept && <p className="dhd-invite__warn">not enough coins</p>}
               </>
             )}
           </div>
         )}
 
-        {live && (
+        {inArena && (
           <div className="dhd-pick">
             <div className="dhd-pick__row">
               <PickTimer round={duel.round} ms={pickRingMs(duel.round)} resting={duel.phase !== 'pick'} />
@@ -398,14 +404,14 @@ export function DuelArena() {
                     aria-label={name}
                     onClick={() => throwHand(i as HandPick)}
                   >
-                    <HandIcon pick={i as HandPick} className="dhd-hand__icon" />
+                    <HandIcon pick={i as HandPick} className="dhd-hand__icon" decorative />
                     <span className="dhd-hand__label">{name}</span>
                   </button>
                 );
               })}
             </div>
             <p className="dhd-keys" aria-hidden>
-              keys 1 2 3 or R P S
+              keys 1 2 3
             </p>
           </div>
         )}
