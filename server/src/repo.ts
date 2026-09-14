@@ -30,6 +30,17 @@ import {
   serializeAvatar,
 } from '@dovey/shared';
 import { Db } from './db';
+import {
+  BOARD_KEYS,
+  BOARD_SIZE,
+  BoardKey,
+  BoardRow,
+  BoardSet,
+  LTD_ASSET_MULTIPLIER,
+  MyRank,
+  MyRanks,
+  priceTable,
+} from './leaderboards';
 import { TradeAbort, giveCoins, giveStack, takeCoins, takeStack, transferInstance } from './trade/ledger';
 
 export interface User {
@@ -145,6 +156,41 @@ export function sanitizeRoomName(raw: unknown): string | null {
   const s = raw.replace(/\s+/g, ' ').trim().slice(0, ROOM_NAME_MAX);
   return s.length ? s : null;
 }
+
+/** SQL column per board, from the scores CTE below. Whitelisted: interpolated into SQL. */
+const BOARD_COLUMN: Record<BoardKey, string> = { coins: 'coins', assets: 'assets', timeWeek: 'time_week', timeAll: 'time_all' };
+
+/**
+ * One row per rankable user. Params: $1 price table JSON, $2 system handle, $3 current KL Monday.
+ * Hidden users and the system user are left out, so they neither show nor push others down.
+ */
+const SCORES_SQL = `
+with price as (
+  select key as def, value::int as price from jsonb_each_text($1::jsonb)
+),
+inv as (
+  select i.user_id, sum(i.qty::bigint * p.price) as v
+  from inventory i join price p on p.def = i.def
+  where i.qty > 0
+  group by i.user_id
+),
+inst as (
+  select it.owner_id as user_id,
+         sum(p.price::bigint * case when it.serial is not null then ${LTD_ASSET_MULTIPLIER} else 1 end) as v
+  from items it join price p on p.def = it.def
+  group by it.owner_id
+),
+scores as (
+  select u.id, u.handle, u.avatar,
+         u.coins::float8 as coins,
+         (coalesce(inv.v, 0) + coalesce(inst.v, 0))::float8 as assets,
+         (case when u.play_week_start >= $3::date then u.play_week else 0 end)::float8 as time_week,
+         u.play_minutes::float8 as time_all
+  from users u
+  left join inv on inv.user_id = u.id
+  left join inst on inst.user_id = u.id
+  where not u.hide_rank and u.handle <> $2
+)`;
 
 export class Repo {
   constructor(private db: Db) {}
@@ -640,6 +686,86 @@ export class Repo {
     await this.db.query('delete from rolls where at < now() - make_interval(days => $1::int)', [days]);
   }
 
+  // ---- leaderboards
+
+  /**
+   * One online minute for each user. The weekly counter resets lazily: a
+   * play_week_start before this Monday starts the week over at 1.
+   */
+  async addPlayMinutes(userIds: string[], monday: string): Promise<void> {
+    if (!userIds.length) return;
+    await this.db.query(
+      `update users set
+         play_minutes = play_minutes + 1,
+         play_week = case when play_week_start >= $2::date then play_week + 1 else 1 end,
+         play_week_start = greatest(coalesce(play_week_start, $2::date), $2::date)
+       where id in (select jsonb_array_elements_text($1::jsonb))`,
+      [JSON.stringify(userIds), monday],
+    );
+  }
+
+  /** Returns whether the flag actually changed (no-op toggles skip the leaderboard cache invalidation). */
+  async setHideRank(userId: string, hide: boolean): Promise<boolean> {
+    const rows = await this.db.query(
+      'update users set hide_rank = $2 where id = $1 and hide_rank <> $2 returning id',
+      [userId, hide],
+    );
+    return rows.length > 0;
+  }
+
+  /** Top `limit` per board, value > 0 only, ties share a rank. */
+  async leaderboards(monday: string, limit = BOARD_SIZE): Promise<BoardSet> {
+    const params = [priceTable(), SYSTEM_HANDLE, monday, limit];
+    const out = {} as BoardSet;
+    for (const key of BOARD_KEYS) {
+      const col = BOARD_COLUMN[key];
+      const rows = await this.db.query<{ rank: number; handle: string; avatar: unknown; value: number }>(
+        `${SCORES_SQL}
+         select rank() over (order by ${col} desc)::int as rank, handle, avatar, ${col} as value
+         from scores
+         where ${col} > 0
+         order by ${col} desc, handle
+         limit $4`,
+        params,
+      );
+      out[key] = rows.map(
+        (r): BoardRow => ({ rank: r.rank, handle: r.handle, avatar: serializeAvatar(normalizeAvatar(r.avatar)), value: Number(r.value) }),
+      );
+    }
+    return out;
+  }
+
+  /** The user's own rank on every board: 1 + visible users with a strictly greater value. */
+  async leaderboardRanks(userId: string, monday: string): Promise<MyRanks | null> {
+    const flag = await this.db.query<{ hide_rank: boolean }>('select hide_rank from users where id = $1', [userId]);
+    if (!flag.length) return null;
+    if (flag[0].hide_rank) return { hidden: true };
+    const select = BOARD_KEYS.map((key) => {
+      const col = BOARD_COLUMN[key];
+      return `m.${col} as ${col}, (select count(*) from scores s where s.${col} > m.${col})::int as ${col}_above`;
+    }).join(',\n       ');
+    const rows = await this.db.query<Record<string, number | string>>(
+      `${SCORES_SQL}
+       select m.handle, ${select}
+       from scores m where m.id = $4`,
+      [priceTable(), SYSTEM_HANDLE, monday, userId],
+    );
+    const row = rows[0];
+    if (!row) return { hidden: true }; // only the system user lands here
+    const mine = (key: BoardKey): MyRank => {
+      const value = Number(row[BOARD_COLUMN[key]]);
+      return { rank: value > 0 ? Number(row[`${BOARD_COLUMN[key]}_above`]) + 1 : null, value };
+    };
+    return {
+      hidden: false,
+      handle: String(row.handle),
+      coins: mine('coins'),
+      assets: mine('assets'),
+      timeWeek: mine('timeWeek'),
+      timeAll: mine('timeAll'),
+    };
+  }
+
   // ---- duels
 
   /**
@@ -692,11 +818,6 @@ export class Repo {
   async tradeStanding(userId: string): Promise<{ createdAt: Date; playMinutes: number } | null> {
     const r = await this.db.query<{ created_at: Date | string; play_minutes: number }>('select created_at, play_minutes from users where id = $1', [userId]);
     return r[0] ? { createdAt: new Date(r[0].created_at), playMinutes: r[0].play_minutes } : null;
-  }
-
-  /** Called once a minute per connected user by the coin trickle. */
-  async addPlayMinute(userId: string) {
-    await this.db.query('update users set play_minutes = play_minutes + 1 where id = $1', [userId]);
   }
 
   /**

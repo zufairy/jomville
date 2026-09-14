@@ -185,6 +185,7 @@ export function Landing() {
                 {n.label}
               </a>
             ))}
+            <a href="/leaderboards">Ranking</a>
           </nav>
           <button className="lk-btn lk-btn--sm" onClick={goPlay}>
             Play free
@@ -198,6 +199,7 @@ export function Landing() {
                 {n.label}
               </a>
             ))}
+            <a href="/leaderboards">Ranking</a>
           </div>
         </nav>
       </header>
@@ -452,6 +454,7 @@ export function Landing() {
               </a>
             ))}
             <a href="/play">Play</a>
+            <a href="/leaderboards">Ranking</a>
           </nav>
           <span className="lk-foot__fine">© Leypark</span>
         </div>
