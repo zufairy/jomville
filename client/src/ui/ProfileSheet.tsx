@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { REPORT_NOTE_MAX, REPORT_REASONS, ReportReason } from '@dovey/shared';
 import { useAppStore } from '../store';
+import { useRoster } from '../roster';
+import { friends, useFriends } from '../friends';
 import { trade, useTrade } from '../trade';
 
 /** Tap-on-avatar popover: who they are, what you can do with them, and how to get away from them. */
@@ -16,6 +18,11 @@ export function ProfileSheet() {
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [note, setNote] = useState('');
+  const mySession = useAppStore((s) => s.sessionId);
+  const userId = useRoster((s) => (profile ? s.players[profile.sessionId]?.userId : undefined));
+  const friendState = useFriends((s) =>
+    !userId ? 'none' : s.friends.some((f) => f.id === userId) ? 'friends' : s.outgoing.some((r) => r.id === userId) ? 'sent' : s.incoming.some((r) => r.id === userId) ? 'incoming' : 'none',
+  );
 
   if (!profile) return null;
   const { sessionId, handle } = profile;
@@ -97,6 +104,27 @@ export function ProfileSheet() {
         <p className="profile__blocked">blocked. they cannot see your messages or call you.</p>
       ) : (
         <>
+          {userId && !userId.startsWith('bot:') && sessionId !== mySession && (
+            <div className="profile__actions">
+              {friendState === 'friends' ? (
+                <button className="btn" disabled>
+                  👥 friends ✓
+                </button>
+              ) : friendState === 'sent' ? (
+                <button className="btn" disabled>
+                  👥 requested…
+                </button>
+              ) : friendState === 'incoming' ? (
+                <button className="btn btn--primary" onClick={() => void friends.respond(userId, true)}>
+                  👥 accept friend request
+                </button>
+              ) : (
+                <button className="btn btn--primary" onClick={() => void friends.request(userId)}>
+                  👥 add friend
+                </button>
+              )}
+            </div>
+          )}
           <div className="profile__actions">
             <button className="btn btn--primary" disabled={busy} onClick={() => start(false)}>
               🎙 voice call

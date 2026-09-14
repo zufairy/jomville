@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_AVATAR } from '@dovey/shared';
+import { DEFAULT_AVATAR, FRIEND_PENDING_LIMIT, SYSTEM_HANDLE } from '@dovey/shared';
 import { Db, openTestDb } from './db';
 import { Repo } from './repo';
 
@@ -66,10 +66,35 @@ describe('system rooms', () => {
     expect(r?.theme).toBe('park');
     expect(r!.layout.length).toBeGreaterThan(100);
     const owner = await repo.userById(r!.owner_id);
-    expect(owner?.handle).toBe('dovey');
-    const sys = await db.query('select count(*)::int as n from users where handle = $1', ['dovey']);
+    expect(owner?.handle).toBe(SYSTEM_HANDLE);
+    const sys = await db.query('select count(*)::int as n from users where handle = $1', [SYSTEM_HANDLE]);
     expect((sys[0] as { n: number }).n).toBe(1);
     expect(repo.isSystemRoom('mainlobby')).toBe(true);
+  });
+
+  it('renames the pre-rebrand system user in place instead of seeding a second one', async () => {
+    const old = await openTestDb();
+    try {
+      const oldRepo = new Repo(old);
+      await oldRepo.ensureSystemRooms();
+      const before = await oldRepo.room('mainlobby');
+      // simulate a database from before the rebrand
+      await old.query('update users set handle = $1 where id = $2', ['dovey', before!.owner_id]);
+      await oldRepo.ensureSystemRooms();
+      const after = await oldRepo.room('mainlobby');
+      expect(after!.owner_id).toBe(before!.owner_id);
+      expect((await oldRepo.userById(after!.owner_id))?.handle).toBe(SYSTEM_HANDLE);
+      const n = await old.query('select count(*)::int as n from users where handle = any($1::text[])', [[SYSTEM_HANDLE, 'dovey']]);
+      expect((n[0] as { n: number }).n).toBe(1);
+    } finally {
+      await old.close();
+    }
+  });
+
+  it('keeps the system handles out of reach of players', async () => {
+    const u = (await repo.userByToken(TOKEN))!;
+    expect(await repo.setHandle(u.id, SYSTEM_HANDLE)).toBe(false);
+    expect(await repo.setHandle(u.id, 'dovey')).toBe(false);
   });
 });
 
@@ -187,4 +212,40 @@ describe('friends', () => {
     expect(await repo.requestFriend(a.id, b.id)).toBe('blocked');
     expect(await repo.requestFriend(b.id, a.id)).toBe('blocked');
   });
+
+  it('cancel/remove are no-ops when nothing exists, true when something is deleted', async () => {
+    const a = await mk('m');
+    const b = await mk('n');
+    expect(await repo.cancelFriendRequest(a.id, b.id)).toBe(false);
+    expect(await repo.removeFriend(a.id, b.id)).toBe(false);
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.cancelFriendRequest(a.id, b.id)).toBe(true);
+    expect(await repo.cancelFriendRequest(a.id, b.id)).toBe(false);
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.respondFriend(b.id, a.id, true)).toBe('accepted');
+    expect(await repo.removeFriend(a.id, b.id)).toBe(true);
+    expect(await repo.removeFriend(a.id, b.id)).toBe(false);
+  });
+
+  it('blocking deletes pending requests both ways', async () => {
+    const a = await mk('o');
+    const b = await mk('p');
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    await repo.block(b.id, a.id);
+    expect((await repo.pendingOf(a.id)).outgoing).toEqual([]);
+    expect((await repo.pendingOf(b.id)).incoming).toEqual([]);
+  });
+
+  it('enforces the pending outgoing-request limit', async () => {
+    const from = await mk('q');
+    const targets = [];
+    for (let i = 0; i < FRIEND_PENDING_LIMIT; i++) {
+      targets.push(await repo.createUser(`p${i}`.padEnd(32, 'x'), DEFAULT_AVATAR));
+    }
+    for (const t of targets) {
+      expect(await repo.requestFriend(from.id, t.id)).toBe('sent');
+    }
+    const oneMore = await repo.createUser('pOverflow'.padEnd(32, 'x'), DEFAULT_AVATAR);
+    expect(await repo.requestFriend(from.id, oneMore.id)).toBe('limit');
+  }, 20_000);
 });
