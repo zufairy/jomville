@@ -72,7 +72,21 @@ export interface GameActions {
   undo: () => void;
   /** shop */
   previewOf: (def: string) => string;
+  /** camera */
+  recenter: () => void;
 }
+
+export interface ChatLine {
+  key: number;
+  id: string;
+  name: string;
+  text: string;
+  roll: boolean;
+  at: number;
+}
+
+const CHAT_LOG_CAP = 30;
+let chatKeySeq = 0;
 
 export interface RoomInfo {
   slug: string;
@@ -148,6 +162,15 @@ interface AppState {
   setPlayerCount: (n: number) => void;
   setActions: (a: GameActions | null) => void;
   flash: (msg: string) => void;
+  /** ring buffer of the last CHAT_LOG_CAP chat/roll lines, oldest first */
+  chatLog: ChatLine[];
+  pushChat: (entry: Omit<ChatLine, 'key'>) => void;
+  /** true while the chat input has focus: shows full scrollable history */
+  chatHistoryOpen: boolean;
+  setChatHistoryOpen: (v: boolean) => void;
+  /** true while the camera has left follow mode (user panned/zoomed) */
+  cameraFree: boolean;
+  setCameraFree: (v: boolean) => void;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -261,4 +284,16 @@ export const useAppStore = create<AppState>((set) => ({
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => set({ toast: null }), 1500);
   },
+  chatLog: [],
+  pushChat: (entry) =>
+    set((s) => {
+      const line: ChatLine = { ...entry, key: ++chatKeySeq };
+      const chatLog = [...s.chatLog, line];
+      if (chatLog.length > CHAT_LOG_CAP) chatLog.splice(0, chatLog.length - CHAT_LOG_CAP);
+      return { chatLog };
+    }),
+  chatHistoryOpen: false,
+  setChatHistoryOpen: (chatHistoryOpen) => set({ chatHistoryOpen }),
+  cameraFree: false,
+  setCameraFree: (cameraFree) => set({ cameraFree }),
 }));
