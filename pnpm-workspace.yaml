@@ -1,0 +1,9 @@
+packages:
+  - shared
+  - client
+  - server
+# colyseus pulls uWebSockets.js from git; pnpm 11 reads this setting here, not from .npmrc
+blockExoticSubdeps: false
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: true

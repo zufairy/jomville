@@ -1,0 +1,16 @@
+export const TILE_W = 64;
+export const TILE_H = 32;
+export const ROOM_SIZE = 10;
+export const MAX_ROOM_SIZE = 40;
+export const ROOM_THEMES = ['indoor', 'park', 'harbor', 'love', 'lab', 'beach', 'dream', 'funpark', 'gameroom'] as const;
+export type RoomTheme = (typeof ROOM_THEMES)[number];
+export const WALK_SPEED = 4; // tiles per second
+export const TICK_RATE = 10; // server sim ticks per second
+export const TICK_MS = 1000 / TICK_RATE;
+export const TILES_PER_TICK = WALK_SPEED / TICK_RATE;
+export const MAX_PLAYERS = 50;
+export const ROOM_SLUG = /^[a-z0-9]{6,12}$/;
+export const HANDLE = /^[a-z0-9_]{3,16}$/;
+export const ROOM_NAME_MAX = 24;
+export const ROOM_CATEGORIES = ['hangout', 'shop', 'showcase', 'games', 'chill'] as const;
+export type RoomCategory = (typeof ROOM_CATEGORIES)[number];

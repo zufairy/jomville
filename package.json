@@ -1,0 +1,18 @@
+{
+  "name": "dovey",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm --filter @dovey/client build",
+    "start": "pnpm --filter @dovey/server start",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@dovey/server",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "NODE_ENV=production tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^3.0.0",
+    "@colyseus/ws-transport": "^0.16.0",
+    "@dovey/shared": "workspace:*",
+    "@electric-sql/pglite": "^0.5.8",
+    "colyseus": "^0.16.0",
+    "express": "^5.2.1",
+    "google-auth-library": "^11.0.2",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

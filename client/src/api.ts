@@ -1,0 +1,105 @@
+import type { Placement, RoomStyle } from '@dovey/shared';
+import { deviceToken } from './identity';
+import { useAppStore } from './store';
+
+export interface RoomListing {
+  slug: string;
+  name: string;
+  owner: string;
+  category: string;
+  theme: string;
+  /** one of the app's own rooms (lobby, harbor, Wonder Dome...) rather than a player's house */
+  system: boolean;
+  live: number;
+  visitors24h: number;
+  /** showcase system room, listed first with a badge */
+  featured?: boolean;
+}
+
+export type RoomTab = 'busy' | 'new' | 'top' | 'personal';
+
+/** What a room looks like, enough to draw its thumbnail. */
+export interface RoomPreview {
+  size: number;
+  theme: string;
+  mask: string[] | null;
+  style: RoomStyle;
+  layout: Placement[];
+}
+
+const base = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
+
+export interface Me {
+  handle: string;
+  home: string;
+  lobby: string;
+  onboarded: boolean;
+  linked: boolean;
+  googleEnabled: boolean;
+}
+
+const json = (body: unknown) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+export async function fetchMe(): Promise<Me> {
+  const r = await fetch(`${base}/api/me`, json({ token: deviceToken(), avatar: useAppStore.getState().avatar }));
+  if (!r.ok) throw new Error('me failed');
+  return r.json();
+}
+
+export async function patchMe(patch: { handle?: string; onboarded?: boolean }): Promise<Me | { error: string }> {
+  const r = await fetch(`${base}/api/me`, { ...json({ token: deviceToken(), ...patch }), method: 'PATCH' });
+  return r.json();
+}
+
+export async function googleSignIn(credential: string): Promise<Me> {
+  const r = await fetch(`${base}/api/auth/google`, json({ token: deviceToken(), credential, avatar: useAppStore.getState().avatar }));
+  if (!r.ok) throw new Error((await r.json()).error ?? 'sign-in failed');
+  return r.json();
+}
+
+export async function fetchRooms(tab: RoomTab): Promise<RoomListing[]> {
+  const query = tab === 'personal' ? 'sort=busy&kind=personal' : `sort=${tab}`;
+  const r = await fetch(`${base}/api/rooms?${query}`);
+  if (!r.ok) return [];
+  return r.json();
+}
+
+export async function fetchRoomPreview(slug: string): Promise<RoomPreview | null> {
+  const r = await fetch(`${base}/api/rooms/${encodeURIComponent(slug)}/preview`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function fetchRandomRoom(not: string): Promise<string | null> {
+  const r = await fetch(`${base}/api/rooms/random?not=${encodeURIComponent(not)}`);
+  if (!r.ok) return null;
+  return (await r.json()).slug;
+}
+
+export interface Inventory {
+  coins: number;
+  items: Record<string, number>;
+}
+
+export async function fetchInventory(): Promise<Inventory | null> {
+  const r = await fetch(`${base}/api/inventory`, json({ token: deviceToken() }));
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function buyItem(def: string, qty = 1): Promise<Inventory | { error: string }> {
+  const r = await fetch(`${base}/api/shop/buy`, json({ token: deviceToken(), def, qty }));
+  return r.json();
+}
+
+export async function fetchWardrobe(): Promise<{ owned: string[]; credits: number } | null> {
+  const r = await fetch(`${base}/api/wardrobe`, json({ token: deviceToken() }));
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function claimDaily(): Promise<{ granted: boolean; coins: number } | null> {
+  const r = await fetch(`${base}/api/daily`, json({ token: deviceToken() }));
+  if (!r.ok) return null;
+  return r.json();
+}
