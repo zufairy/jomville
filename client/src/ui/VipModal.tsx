@@ -12,11 +12,13 @@ interface VipModalProps {
   exitLabel?: string;
   headerExtra?: ReactNode;
   wide?: boolean;
+  /** extra class on the card, e.g. a game that needs a bigger stage */
+  cardClassName?: string;
   children: ReactNode;
 }
 
 /** Premium neon-arcade shell shared by every game popup: ✕ in the header, Exit Game in the footer. */
-export function VipModal({ title, label, live = false, onExit, exitLabel = 'exit game', headerExtra, wide, children }: VipModalProps) {
+export function VipModal({ title, label, live = false, onExit, exitLabel = 'exit game', headerExtra, wide, cardClassName, children }: VipModalProps) {
   const [confirming, setConfirming] = useState(false);
   const [depth, setDepth] = useState(0);
   const id = useRef<symbol>(Symbol('vip'));
@@ -61,7 +63,7 @@ export function VipModal({ title, label, live = false, onExit, exitLabel = 'exit
 
   return (
     <div className="vip" style={{ zIndex: 30 + depth }} onPointerDown={(e) => e.target === e.currentTarget && act('backdrop')}>
-      <div ref={card} tabIndex={-1} className={`vip__card ${wide ? 'vip__card--wide' : ''}`} role="dialog" aria-modal="true" aria-label={label}>
+      <div ref={card} tabIndex={-1} className={`vip__card ${wide ? 'vip__card--wide' : ''} ${cardClassName ?? ''}`} role="dialog" aria-modal="true" aria-label={label}>
         <div className="vip__trim" aria-hidden />
         <header className="vip__head">
           <h2 className="vip__title">{title}</h2>
