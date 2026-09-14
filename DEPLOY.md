@@ -60,6 +60,14 @@ DOVEY_API=https://YOUR-DOMAIN node client/scripts/smoke-tables.mjs gameden
 The smoke script joins Game Den with two test players, plays a match, a rematch, a bot
 game and a table seating, and prints PASS.
 
+## Casino guardrail
+
+Dicemasters, Holodice and the Wheel of Fortune let players bet coins and items
+with each other. Coins and items must never be purchasable with, or cashable
+for, real money while chance furni and trading are live (Habbo removed betting
+in 2014 after regulator action). If real-money purchases are ever added,
+disable chance furni in trade-enabled rooms first.
+
 ## Local production run
 
 ```sh

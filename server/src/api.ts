@@ -1,6 +1,6 @@
 import express from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { SYSTEM_ROOMS } from '@dovey/shared';
+import { SYSTEM_ROOMS, furnitureDef, isInstanceDef } from '@dovey/shared';
 import { Repo } from './repo';
 import { registry } from './registry';
 import { wardrobe } from './vending';
@@ -90,10 +90,22 @@ export function buildApi(repo: Repo) {
     const user = token ? await repo.userByToken(token) : null;
     if (!user) return res.status(401).json({ error: 'unknown' });
     const def = typeof req.body?.def === 'string' ? req.body.def : '';
+    const d = furnitureDef(def);
+    if (d && isInstanceDef(d)) {
+      const r = await repo.buyInstance(user.id, def);
+      if (!r.ok) return res.status(400).json({ error: r.reason });
+      return res.json(await repo.inventory(user.id));
+    }
     const qty = Number(req.body?.qty ?? 1);
     const r = await repo.buy(user.id, def, qty);
     if (!r.ok) return res.status(400).json({ error: r.reason });
     res.json(await repo.inventory(user.id));
+  });
+
+  /** LTD stock for the shop: { def: { sold, cap } } */
+  app.get('/api/shop/stock', async (_req, res) => {
+    res.set('cache-control', 'no-cache');
+    res.json(await repo.ltdStock());
   });
 
   /** Owned cosmetic ids + credits. */

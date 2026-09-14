@@ -57,6 +57,9 @@ async function main() {
   const repo = new Repo(db);
   GameRoom.repo = repo;
   await repo.ensureSystemRooms();
+  await repo.ensureLtdStock();
+  await repo.pruneRolls();
+  setInterval(() => void repo.pruneRolls(), 24 * 60 * 60 * 1000).unref();
 
   const app = buildApi(repo);
   app.disable('x-powered-by');
