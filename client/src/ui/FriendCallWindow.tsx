@@ -6,14 +6,17 @@ import './friend-call.css';
 
 const POS_KEY = 'leypark.fcall.pos';
 
+const FALLBACK_SIZE = { w: 220, h: 160 };
+
 function loadPos(): { x: number; y: number } {
+  let p = { x: window.innerWidth - 240, y: 90 };
   try {
-    const p = JSON.parse(localStorage.getItem(POS_KEY) ?? '');
-    if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
+    const saved = JSON.parse(localStorage.getItem(POS_KEY) ?? '');
+    if (typeof saved?.x === 'number' && typeof saved?.y === 'number') p = saved;
   } catch {
-    /* default below */
+    /* default above */
   }
-  return { x: window.innerWidth - 240, y: 90 };
+  return clampPos(p, FALLBACK_SIZE, { w: window.innerWidth, h: window.innerHeight });
 }
 
 function savePos(p: { x: number; y: number }) {
@@ -52,15 +55,30 @@ export function FriendCallWindow() {
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number; id: number; moved: boolean } | null>(null);
   const cfg = useMemo(() => (peer ? parseAvatar(peer.avatar) : null), [peer]);
+  const visible = !(phase === 'idle' || phase === 'ringing_in' || !peer || !cfg);
 
   useEffect(() => {
     const onResize = () => {
       const r = box.current?.getBoundingClientRect();
-      if (r) setPos((p) => clampPos(p, { w: r.width, h: r.height }, { w: window.innerWidth, h: window.innerHeight }));
+      const size = r ? { w: r.width, h: r.height } : FALLBACK_SIZE;
+      setPos((p) => clampPos(p, size, { w: window.innerWidth, h: window.innerHeight }));
     };
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
   }, []);
+
+  // re-clamp once with the real rendered size when the window (re)appears, in case it differs
+  // from the fallback size used to clamp the initial/saved position before mount
+  useEffect(() => {
+    if (!visible) return;
+    const r = box.current?.getBoundingClientRect();
+    if (!r) return;
+    setPos((p) => clampPos(p, { w: r.width, h: r.height }, { w: window.innerWidth, h: window.innerHeight }));
+  }, [visible]);
 
   useEffect(() => {
     if (phase === 'idle' || phase === 'ringing_in') return;
@@ -73,7 +91,7 @@ export function FriendCallWindow() {
     return () => window.removeEventListener('keydown', onKey);
   }, [phase, reporting, collapsed]);
 
-  if (phase === 'idle' || phase === 'ringing_in' || !peer || !cfg) return null;
+  if (!visible || !peer || !cfg) return null;
 
   const onDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;

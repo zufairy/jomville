@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseAvatar } from '@dovey/shared';
 import { friendCall, useFriendCall } from '../friendCall';
 import { AvatarPreview } from './AvatarPreview';
@@ -14,6 +14,8 @@ export function FriendCallPopup() {
   const since = useFriendCall((s) => s.ringingSince);
   const [now, setNow] = useState(() => Date.now());
   const cfg = useMemo(() => (peer ? parseAvatar(peer.avatar) : null), [peer]);
+  const answerRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (phase !== 'ringing_in') return;
@@ -31,6 +33,17 @@ export function FriendCallPopup() {
     return () => window.removeEventListener('keydown', onKey);
   }, [phase]);
 
+  // focus the primary action on open, restore whatever had focus before on close
+  useEffect(() => {
+    if (phase !== 'ringing_in') return;
+    restoreFocus.current = document.activeElement as HTMLElement | null;
+    answerRef.current?.focus();
+    return () => {
+      restoreFocus.current?.focus?.();
+      restoreFocus.current = null;
+    };
+  }, [phase]);
+
   if (phase !== 'ringing_in' || !peer || !cfg) return null;
   const left = Math.max(0, Math.ceil((RING_MS - (now - since)) / 1000));
 
@@ -44,7 +57,7 @@ export function FriendCallPopup() {
         <span className="fcall-ring__left">{left}s</span>
       </div>
       <div className="fcall-ring__btns">
-        <button className="btn btn--go" onClick={() => friendCall.accept()}>
+        <button ref={answerRef} className="btn btn--go" onClick={() => friendCall.accept()}>
           Answer
         </button>
         <button className="btn btn--danger" onClick={() => friendCall.decline()}>
