@@ -161,3 +161,23 @@ export async function friendAction(path: 'request' | 'respond' | 'cancel' | 'rem
     return 'error';
   }
 }
+
+// ---- calls
+export async function fetchIceServers(): Promise<RTCIceServer[] | null> {
+  try {
+    const r = await fetch(`${base}/api/ice`, json({ token: deviceToken() }));
+    if (!r.ok) return null;
+    return ((await r.json()) as { iceServers?: RTCIceServer[] }).iceServers ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function confirmAdult(): Promise<boolean> {
+  try {
+    const r = await fetch(`${base}/api/me/adult`, json({ token: deviceToken() }));
+    return r.ok;
+  } catch {
+    return false;
+  }
+}

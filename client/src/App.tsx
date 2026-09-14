@@ -11,6 +11,9 @@ import { RoomBar } from './ui/RoomBar';
 import { RoomBrowser } from './ui/RoomBrowser';
 import { ProfileSheet } from './ui/ProfileSheet';
 import { CallUI } from './ui/CallUI';
+import { FriendCallWindow } from './ui/FriendCallWindow';
+import { FriendCallPopup } from './ui/FriendCallPopup';
+import { AdultGate } from './ui/AdultGate';
 import { LoveMeterUI } from './ui/LoveMeterUI';
 import { ShopSheet } from './ui/ShopSheet';
 import { StyleSheet } from './ui/StyleSheet';
@@ -143,6 +146,9 @@ function Play() {
       )}
       <LoveMeterUI />
       <CallUI />
+      <FriendCallWindow />
+      <FriendCallPopup />
+      <AdultGate />
       <DuelUI />
       <TradeWindow />
       <TableGameUI />

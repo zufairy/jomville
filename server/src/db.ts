@@ -158,6 +158,7 @@ const COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: 'rooms', column: 'style', ddl: 'alter table rooms add column style jsonb' },
   { table: 'users', column: 'play_minutes', ddl: 'alter table users add column play_minutes int not null default 0' },
   { table: 'rooms', column: 'trade_enabled', ddl: 'alter table rooms add column trade_enabled boolean not null default true' },
+  { table: 'users', column: 'adult_confirmed_at', ddl: 'alter table users add column adult_confirmed_at timestamptz' },
 ];
 
 async function migrate(pg: PGlite) {

@@ -6,6 +6,8 @@ import { useLove } from './love';
 import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, onFriendUpdate } from './friends';
+import { onFriendCallEnd, onFriendCallFail, onFriendCallHold, onFriendCallIncoming, onFriendCallRejoin, onFriendCallStart, onFriendSignal } from './friendCall';
+import { onAdultRequired } from './adultGate';
 import { fetchInventory } from './api';
 import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
@@ -262,6 +264,15 @@ export class Net {
     room.onMessage('friend_presence', onFriendPresence);
     room.onMessage('friend_invite', onFriendInvite);
     room.onMessage('friend_invite_sent', onFriendInviteSent);
+    // friend calls (cross-room)
+    room.onMessage('fcall_incoming', onFriendCallIncoming);
+    room.onMessage('fcall_ringing', () => {});
+    room.onMessage('fcall_start', onFriendCallStart);
+    room.onMessage('fcall_end', onFriendCallEnd);
+    room.onMessage('fcall_hold', onFriendCallHold);
+    room.onMessage('fcall_rejoin', onFriendCallRejoin);
+    room.onMessage('fcall_fail', onFriendCallFail);
+    room.onMessage('fsig', onFriendSignal);
     room.onMessage('k_crew', (m: { crew: CrewInfo | null }) => useKitchen.getState().setCrew(m.crew));
     room.onMessage('k_go', (m: { roomId: string }) => useKitchen.getState().go(m.roomId));
     room.onMessage('t_incoming', onTradeIncoming);
@@ -285,6 +296,7 @@ export class Net {
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
     room.onMessage('sys', (m: { code: string }) => {
+      if (m.code === 'adult_required') return onAdultRequired();
       const msgs: Record<string, string> = {
         rate_limited: 'slow down',
         overlap: 'something is in the way',

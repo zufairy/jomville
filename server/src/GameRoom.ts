@@ -62,6 +62,7 @@ import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
 import { humanCount, registry } from './registry';
 import { inviteLimit, presence } from './social';
+import { friendCalls } from './social-calls';
 
 export interface JoinOptions {
   slug?: string;
@@ -305,6 +306,7 @@ export class GameRoom extends Room<WorldState> {
       if (!this.blockLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
       await GameRoom.repo.block(me.id, target);
       this.blocks.add(me.id, target);
+      friendCalls.endBetween(me.id, target);
       // blocking also ends the friendship; refresh both friend lists
       presence.notify(target, 'friend_update', {});
       presence.notify(me.id, 'friend_update', {});
@@ -351,17 +353,31 @@ export class GameRoom extends Room<WorldState> {
 
     // ---- calls: consent-gated 1-to-1 voice/video between two people in this room.
     // The server never sees media; it relays SDP/ICE only after both accepted.
-    this.onMessage('call_invite', (client, msg: { to?: unknown; video?: unknown }) => {
-      const to = typeof msg?.to === 'string' ? msg.to : '';
-      const target = this.clients.find((c) => c.sessionId === to);
-      if (!target || !this.state.players.has(to)) return this.reject(client, 'no_such_player');
-      if (this.blocks.isHidden(client.sessionId, to)) return this.reject(client, 'blocked_pair');
-      const err = this.calls.invite(client.sessionId, to, Boolean(msg?.video));
-      if (process.env.DOVEY_DEBUG) console.log('[call] invite', client.sessionId, '->', to, err ?? 'ok');
-      if (err) return this.reject(client, err);
-      const me = this.state.players.get(client.sessionId)!;
-      target.send('call_incoming', { from: client.sessionId, handle: me.handle, video: Boolean(msg?.video) });
-      client.send('call_ringing', { to });
+    this.onMessage('call_invite', async (client, msg: { to?: unknown; video?: unknown }) => {
+      try {
+        const to = typeof msg?.to === 'string' ? msg.to : '';
+        const target = this.clients.find((c) => c.sessionId === to);
+        if (!target || !this.state.players.has(to)) return this.reject(client, 'no_such_player');
+        if (this.blocks.isHidden(client.sessionId, to)) return this.reject(client, 'blocked_pair');
+        const caller = client.auth as User | undefined;
+        const calleeId = this.state.players.get(to)?.userId ?? '';
+        // a friend call anywhere makes you busy here too
+        if (caller && friendCalls.book.isBusy(caller.id)) return this.reject(client, 'busy_self');
+        if (calleeId && friendCalls.book.isBusy(calleeId)) return this.reject(client, 'busy_peer');
+        // calling a non-friend needs the one-time 18+ confirmation (friends don't)
+        if (caller && calleeId && !(await GameRoom.repo.areFriends(caller.id, calleeId)) && !(await GameRoom.repo.isAdultConfirmed(caller.id))) {
+          return this.reject(client, 'adult_required');
+        }
+        if (!this.clients.includes(target)) return this.reject(client, 'no_such_player');
+        const err = this.calls.invite(client.sessionId, to, Boolean(msg?.video));
+        if (process.env.DOVEY_DEBUG) console.log('[call] invite', client.sessionId, '->', to, err ?? 'ok');
+        if (err) return this.reject(client, err);
+        const me = this.state.players.get(client.sessionId)!;
+        target.send('call_incoming', { from: client.sessionId, handle: me.handle, video: Boolean(msg?.video) });
+        client.send('call_ringing', { to });
+      } catch (e) {
+        console.error('[call] invite failed', e);
+      }
     });
 
     this.onMessage('call_accept', (client) => {
@@ -395,6 +411,63 @@ export class GameRoom extends Room<WorldState> {
       const to = typeof msg?.to === 'string' ? msg.to : '';
       if (!this.calls.canRelay(client.sessionId, to)) return;
       this.clients.find((c) => c.sessionId === to)?.send('rtc', { from: client.sessionId, data: msg.data });
+    });
+
+    // ---- friend calls (cross-room): consent-gated 1-to-1 calls between friends in any room.
+    // Routed by userId through presence; state and gates live in social-calls.ts.
+    this.onMessage('fcall_invite', async (client, msg: { toUserId?: unknown; video?: unknown }) => {
+      const me = client.auth as User | undefined;
+      if (!me) return;
+      // fcall_invite/fcall_report errors go over their own fcall_fail channel, not sys: sys
+      // codes like rate_limited/bad_request are shared with chat/duel/edit limits, and a tab
+      // ringing out must not tear down its call because an unrelated sys message arrived.
+      if (this.calls.get(client.sessionId).kind !== 'idle') return client.send('fcall_fail', { action: 'invite', code: 'busy_self' });
+      try {
+        const avatar = this.state.players.get(client.sessionId)?.avatar ?? serializeAvatar(me.avatar);
+        const err = await friendCalls.invite({ id: me.id, handle: me.handle, avatar }, client.sessionId, msg?.toUserId, msg?.video);
+        if (err) client.send('fcall_fail', { action: 'invite', code: err });
+      } catch (e) {
+        console.error('[fcall] invite failed', e);
+      }
+    });
+
+    this.onMessage('fcall_accept', (client) => {
+      const me = client.auth as User | undefined;
+      if (!me) return;
+      const err = friendCalls.accept(me.id, client.sessionId);
+      if (err) this.reject(client, err);
+    });
+
+    this.onMessage('fcall_decline', (client, msg: { busy?: unknown }) => {
+      const me = client.auth as User | undefined;
+      if (me) friendCalls.decline(me.id, msg?.busy === true);
+    });
+
+    this.onMessage('fcall_end', (client) => {
+      const me = client.auth as User | undefined;
+      if (me) friendCalls.hangup(me.id);
+    });
+
+    this.onMessage('fcall_resume', (client) => {
+      const me = client.auth as User | undefined;
+      if (me) friendCalls.resume(me.id, client.sessionId);
+    });
+
+    this.onMessage('fsig', (client, msg: { toUserId?: unknown; data?: unknown }) => {
+      const me = client.auth as User | undefined;
+      if (me) friendCalls.signal(me.id, msg?.toUserId, msg?.data);
+    });
+
+    this.onMessage('fcall_report', async (client, msg: { reason?: unknown; note?: unknown }) => {
+      const me = client.auth as User | undefined;
+      if (!me) return;
+      try {
+        const err = await friendCalls.report(me.id, msg?.reason, msg?.note, this.state.slug);
+        if (err) return client.send('fcall_fail', { action: 'report', code: err });
+        client.send('sys', { code: 'reported' });
+      } catch (e) {
+        console.error('[fcall] report failed', e);
+      }
     });
 
     // ---- proximity voice: an open mic heard by people nearby. Audio is P2P; the server
@@ -1194,10 +1267,14 @@ export class GameRoom extends Room<WorldState> {
       if (wasActive) this.broadcast('call_state', { a: client.sessionId, b: peer, on: false });
     }
     const leaver = client.auth as User | undefined;
+    const leftCallTab = !!leaver && friendCalls.isCallSession(leaver.id, client.sessionId);
     if (leaver) {
       presence.leave(leaver.id, client.sessionId);
       void this.announcePresence(leaver.id);
     }
+    // friend calls: the tab carrying the call left, or the user's last session is gone ->
+    // hold the call for the rejoin grace (once, even when both are true)
+    if (leaver && (leftCallTab || !presence.isOnline(leaver.id))) friendCalls.sessionLost(leaver.id);
     this.sim.remove(client.sessionId);
     this.blocks.leave(client.sessionId);
     this.reportLimit.forget(client.sessionId);
