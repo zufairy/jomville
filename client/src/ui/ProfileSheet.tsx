@@ -144,16 +144,18 @@ export function ProfileSheet() {
             >
               ⚔️ challenge to a duel
             </button>
-            <button
-              className="btn btn--duel"
-              disabled={tradePhase !== 'idle'}
-              onClick={() => {
-                trade.invite(sessionId, handle);
-                close();
-              }}
-            >
-              🤝 trade
-            </button>
+            {userId && !userId.startsWith('bot:') && (
+              <button
+                className="btn btn--duel"
+                disabled={tradePhase !== 'idle'}
+                onClick={() => {
+                  trade.invite(sessionId, handle);
+                  close();
+                }}
+              >
+                🤝 trade
+              </button>
+            )}
           </div>
         </>
       )}
