@@ -6,6 +6,7 @@ import { useLove } from './love';
 import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { fetchInventory } from './api';
+import { CrewInfo, useKitchen } from './kitchen/store';
 
 export interface RemotePlayer {
   handle: string;
@@ -79,13 +80,20 @@ const toPlacement = (id: string, f: FurnitureState): Placement => ({
 /** backoff between rejoin attempts: 1s, 2s, 4s ... capped */
 const RETRY_MAX_MS = 10_000;
 
-function endpoint(): string {
+export function endpoint(): string {
   const env = import.meta.env.VITE_SERVER_URL as string | undefined;
   if (env) return env;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   // dev: Vite on :5173 talks to the game server on :2567. Production: the server hosts the
   // client, so the socket is same-origin (wss behind Railway's HTTPS).
   return import.meta.env.DEV ? `${proto}://${location.hostname}:2567` : `${proto}://${location.host}`;
+}
+
+/** the joined world connection, for UI outside the game (kitchen lobby) */
+let active: Net | null = null;
+
+export function sendToWorld(type: string, data?: unknown) {
+  active?.send(type, data);
 }
 
 export class Net {
@@ -148,6 +156,7 @@ export class Net {
       return;
     }
     this.room = room;
+    active = this;
     const $ = getStateCallbacks(room);
 
     const syncRoom = () => {
@@ -234,6 +243,8 @@ export class Net {
     room.onMessage('tg_state', onTableState);
     room.onMessage('tg_status', onTableStatus);
     room.onMessage('tg_end', onTableEnd);
+    room.onMessage('k_crew', (m: { crew: CrewInfo | null }) => useKitchen.getState().setCrew(m.crew));
+    room.onMessage('k_go', (m: { roomId: string }) => useKitchen.getState().go(m.roomId));
 
     room.onMessage('coins', (m: { coins: number; earned: number }) => events.onCoins(m.coins, m.earned));
     room.onMessage('inventory_delta', (m: { def: string; delta: number }) => store.addInventory(m.def, m.delta));
@@ -270,6 +281,10 @@ export class Net {
         too_far: 'walk closer to use it',
         busy: 'you are already in a duel',
         no_duel: 'no duel going on',
+        not_in_crew: 'stand on a crew rug first',
+        already_cooking: 'your crew is already cooking',
+        bad_code: 'no crew with that code',
+        kitchen_failed: 'the kitchen could not open, try again',
         love_full: 'that line is full, try again soon',
         love_busy: 'you are already on the loveseat',
         sold_out: 'sold out. only trades now',
@@ -295,6 +310,7 @@ export class Net {
   }
 
   leave() {
+    if (active === this) active = null;
     this.closed = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;

@@ -39,6 +39,10 @@ export function detachGame() {
   pendingDestroy = setTimeout(teardown, GRACE_MS);
 }
 
+export function setGamePaused(paused: boolean) {
+  game?.setPaused(paused);
+}
+
 // When the game code (this module or anything it imports) changes, reload the page once instead of
 // swapping in place. A second Pixi app in the same page after the first has rendered breaks Pixi's
 // shared textures (every frame throws and the stage stays black). Accepting here stops the update

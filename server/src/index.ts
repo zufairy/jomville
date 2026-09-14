@@ -6,6 +6,7 @@ import { Encoder } from '@colyseus/schema';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { createServer } from 'http';
 import { GameRoom } from './GameRoom';
+import { KitchenRoom } from './kitchen/KitchenRoom';
 import { openDb } from './db';
 import { Repo } from './repo';
 import { buildApi } from './api';
@@ -56,6 +57,7 @@ async function main() {
   const db = await openDb();
   const repo = new Repo(db);
   GameRoom.repo = repo;
+  KitchenRoom.repo = repo;
   await repo.ensureSystemRooms();
   await repo.ensureLtdStock();
   const orphans = await repo.releaseOrphanPlacements();
@@ -75,6 +77,9 @@ async function main() {
 
   // one Colyseus room instance per room slug
   gameServer.define('room', GameRoom).filterBy(['slug']);
+
+  // one private room per cooking round, created by the Kitchen world lobby
+  gameServer.define('kitchen', KitchenRoom);
 
   await gameServer.listen(port);
   console.log(`[dovey] listening on http://localhost:${port} (ws + api)`);
