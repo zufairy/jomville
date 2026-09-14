@@ -48,7 +48,7 @@ import { CallBook } from './calls';
 import { DUEL_REWARD, DuelBook, Pick } from './duel';
 import { GAME_TABLE_KIND, TABLE_BOT_REWARD, TABLE_GAME_KINDS, TABLE_REWARD, TableGameKind, tableChairs } from '@dovey/shared';
 import { Match, TableBook, TableEvent, isBot } from './tableGames';
-import { BotCrew, PERSONAS } from './bots';
+import { BotCrew, PERSONAS, scatterSpawns } from './bots';
 import { LOBBY_MAZE_PRIZE, MAIN_LOBBY, MAZE_COOLDOWN_MS, MAZE_REWARD } from '@dovey/shared';
 import { LOVE_ROOM, LOVE_SEATS, LoveSide, LoveSnapshot, laneSpot, normalizeVibe } from '@dovey/shared';
 import { LoveEvent, LoveMeter } from './loveMeter';
@@ -993,24 +993,27 @@ export class GameRoom extends Room<WorldState> {
       emote: (id, i) => this.broadcast('emote', { id, i }),
     });
     this.bots = crew;
-    for (const persona of PERSONAS) {
+    // start the locals already spread around the park, like regulars who were here before you,
+    // instead of all appearing on the arrival tile and walking out
+    const avoid = new Set<string>();
+    for (const pl of this.placements()) {
+      if (!furnitureDef(pl.def)?.sit) continue;
+      for (const [x, y] of tilesOf(pl) ?? []) avoid.add(`${x},${y}`);
+    }
+    this.state.players.forEach((q) => avoid.add(`${Math.round(q.x)},${Math.round(q.y)}`));
+    const c = Math.floor(this.size / 2);
+    const starts = scatterSpawns(this.grid, PERSONAS.length, { center: { x: c, y: c }, clearRadius: 4, avoid, minGap: 5 });
+    PERSONAS.forEach((persona, i) => {
       const info = BotCrew.spawnInfo(persona);
       const p = new Player();
       p.handle = info.handle;
       p.userId = persona.id;
       p.avatar = info.avatar;
-      const spawn = this.freeSpawnTile();
+      const spawn = starts[i] ?? this.freeSpawnTile();
       p.x = spawn.x;
       p.y = spawn.y;
       this.state.players.set(persona.id, p);
-      // scatter: first stroll somewhere random
-      const g = this.grid;
-      for (let i = 0; i < 20; i++) {
-        const x = Math.floor(Math.random() * g.width);
-        const y = Math.floor(Math.random() * g.height);
-        if (g.walkable[y][x] && this.sim.requestMove(persona.id, p, { x, y })) break;
-      }
-    }
+    });
     this.clock.setInterval(() => crew.tick(), 1000);
   }
 

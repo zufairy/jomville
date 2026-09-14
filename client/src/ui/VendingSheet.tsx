@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { RARITY_LABEL, VEND_COST, VendRarity, isGearSlot, itemDef, vendingPool } from '@dovey/shared';
 import { useAppStore } from '../store';
+import { wearPatch } from '../wear';
 import { sfx } from '../audio';
 import { FRAME, composite, dirRow, findPart, loadManifest, sheetFor } from '../game/lpc';
 import { GEAR_FRAMES, GEAR_FRAME_MS, paintGear } from '../game/gearArt';
@@ -224,8 +225,13 @@ export function VendingSheet() {
               <button
                 className="btn btn--primary"
                 onClick={() => {
+                  const st = useAppStore.getState();
+                  const def = itemDef(result.itemId);
+                  // put it on straight away, then open the wardrobe on that item
+                  if (def) st.setAvatar(wearPatch(st.avatar, def));
+                  st.setCustomizeFocus(result.itemId);
                   setVending(false);
-                  useAppStore.getState().setCustomizing(true);
+                  st.setCustomizing(true);
                 }}
               >
                 wear it
