@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { loadIce, setOtherCallBusy } from './call';
 import { useAppStore } from './store';
+import { useRoster } from './roster';
 
 /**
  * Friend calls: 1-to-1 voice/video with a friend in any room. Signaling goes
@@ -57,6 +58,8 @@ export interface SavedCall {
   video: boolean;
   initiator: boolean;
   savedAt: number;
+  /** the signed-in user this call was parked for; a resume on a different account is dropped */
+  userId: string;
 }
 
 type KV = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -76,12 +79,23 @@ export function saveCall(s: SavedCall, storage: KV | null = session()) {
   }
 }
 
-export function loadCall(now = Date.now(), storage: KV | null = session()): SavedCall | null {
+/**
+ * `expectUserId`, when given, must match the saved call's owner: a call parked by one
+ * account must never be handed to whoever is signed in when the page comes back (a
+ * shared device, a re-login, a stale tab). A mismatch is treated the same as a broken
+ * or expired entry: dropped and cleared.
+ */
+export function loadCall(now = Date.now(), storage: KV | null = session(), expectUserId?: string): SavedCall | null {
   try {
     const raw = storage?.getItem(STORAGE_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as SavedCall;
-    if (!s?.peer?.id || typeof s.savedAt !== 'number' || now - s.savedAt > RESUME_MAX_AGE_MS) {
+    if (
+      !s?.peer?.id ||
+      typeof s.savedAt !== 'number' ||
+      now - s.savedAt > RESUME_MAX_AGE_MS ||
+      (expectUserId !== undefined && s.userId !== expectUserId)
+    ) {
       storage?.removeItem(STORAGE_KEY);
       return null;
     }
@@ -122,8 +136,24 @@ const END_TEXT: Record<string, string> = {
   lost: 'Talian terputus',
 };
 
-/** codes from the server that mean our outgoing ring never started */
-const REJECT_CODES = new Set(['bad_request', 'self', 'not_friends', 'blocked_pair', 'friend_offline', 'busy_self', 'busy_peer', 'rate_limited', 'no_invite']);
+/**
+ * Text for fcall_invite/fcall_report failures, delivered over their own `fcall_fail`
+ * channel rather than the shared `sys` one: `sys` codes like rate_limited and
+ * bad_request are also sent by chat, duel and edit limits, so reacting to them here
+ * would tear a call down because of something unrelated happening elsewhere.
+ */
+const FAIL_TEXT: Record<string, string> = {
+  bad_request: 'nope',
+  self: "that's you",
+  not_friends: 'you can only invite friends',
+  blocked_pair: 'you cannot call someone you blocked',
+  friend_offline: 'they went offline',
+  busy_self: 'you are already on a call',
+  busy_peer: 'they are already on a call',
+  rate_limited: 'slow down',
+  no_invite: 'call expired',
+  no_call: 'no call to report',
+};
 
 const LIVE: FriendCallPhase[] = ['connecting', 'active', 'rejoining'];
 
@@ -157,10 +187,16 @@ export class FriendCallManager {
     window.addEventListener('pagehide', () => this.park());
   }
 
+  /** the signed-in user's own id, as tracked by the room roster (own player entry) */
+  private ownUserId(): string {
+    const sid = useAppStore.getState().sessionId;
+    return (sid && useRoster.getState().players[sid]?.userId) || '';
+  }
+
   private park() {
     const s = this.s;
     if (!s.peer || !LIVE.includes(s.phase)) return;
-    saveCall({ peer: s.peer, video: s.video, initiator: s.initiator, savedAt: Date.now() }, this.storage);
+    saveCall({ peer: s.peer, video: s.video, initiator: s.initiator, savedAt: Date.now(), userId: this.ownUserId() }, this.storage);
   }
 
   els() {
@@ -219,10 +255,10 @@ export class FriendCallManager {
     this.patch({ collapsed });
   }
 
+  /** the call stays up until the server's fcall_end confirms the report (it hangs up both sides) */
   report(reason: string, note?: string) {
     if (this.s.phase === 'idle') return;
     send?.('fcall_report', { reason, note });
-    this.teardown();
   }
 
   /** every room (re)join: continue a parked or live call */
@@ -232,7 +268,7 @@ export class FriendCallManager {
       if (LIVE.includes(s.phase)) send?.('fcall_resume');
       return;
     }
-    const saved = loadCall(Date.now(), this.storage);
+    const saved = loadCall(Date.now(), this.storage, this.ownUserId());
     if (!saved) return;
     this.patch({ ...IDLE_FRIEND_CALL, phase: 'rejoining', peer: saved.peer, video: saved.video, initiator: saved.initiator });
     this.startTimer(REJOIN_GRACE_MS, 'Talian terputus');
@@ -313,9 +349,14 @@ export class FriendCallManager {
     this.teardown();
   }
 
-  /** a sys rejection while our ring is going out */
-  onSys(code: string) {
-    if (this.s.phase === 'ringing_out' && REJECT_CODES.has(code)) this.teardown();
+  /**
+   * fcall_invite/fcall_report failure, on its own `fcall_fail` channel (never `sys`, whose
+   * codes are shared with unrelated systems). Only an invite failure while our ring is still
+   * going out tears the call down; a report failure just shows the message and the call stays up.
+   */
+  onFail(m: { action: 'invite' | 'report'; code: string }) {
+    useAppStore.getState().flash(FAIL_TEXT[m.code] ?? 'nope');
+    if (m.action === 'invite' && this.s.phase === 'ringing_out') this.teardown();
   }
 
   // ---- media
@@ -440,4 +481,4 @@ export const onFriendCallEnd = (m: { reason: string }) => friendCall.onEnd(m);
 export const onFriendCallHold = (m: { peer: string }) => friendCall.onHold(m);
 export const onFriendCallRejoin = (m: { peer: string; video: boolean; initiator: boolean }) => void friendCall.onRejoin(m);
 export const onFriendSignal = (m: { from: string; data: { sdp?: RTCSessionDescriptionInit; ice?: RTCIceCandidateInit } }) => void friendCall.onSignal(m);
-export const onFriendCallSys = (code: string) => friendCall.onSys(code);
+export const onFriendCallFail = (m: { action: 'invite' | 'report'; code: string }) => friendCall.onFail(m);

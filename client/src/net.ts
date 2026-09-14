@@ -6,7 +6,7 @@ import { useLove } from './love';
 import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, onFriendUpdate } from './friends';
-import { onFriendCallEnd, onFriendCallHold, onFriendCallIncoming, onFriendCallRejoin, onFriendCallStart, onFriendCallSys, onFriendSignal } from './friendCall';
+import { onFriendCallEnd, onFriendCallFail, onFriendCallHold, onFriendCallIncoming, onFriendCallRejoin, onFriendCallStart, onFriendSignal } from './friendCall';
 import { onAdultRequired } from './adultGate';
 import { fetchInventory } from './api';
 import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
@@ -271,6 +271,7 @@ export class Net {
     room.onMessage('fcall_end', onFriendCallEnd);
     room.onMessage('fcall_hold', onFriendCallHold);
     room.onMessage('fcall_rejoin', onFriendCallRejoin);
+    room.onMessage('fcall_fail', onFriendCallFail);
     room.onMessage('fsig', onFriendSignal);
     room.onMessage('k_crew', (m: { crew: CrewInfo | null }) => useKitchen.getState().setCrew(m.crew));
     room.onMessage('k_go', (m: { roomId: string }) => useKitchen.getState().go(m.roomId));
@@ -295,7 +296,6 @@ export class Net {
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
     room.onMessage('sys', (m: { code: string }) => {
-      onFriendCallSys(m.code);
       if (m.code === 'adult_required') return onAdultRequired();
       const msgs: Record<string, string> = {
         rate_limited: 'slow down',
@@ -337,8 +337,6 @@ export class Net {
         trade_locked: 'the trade is already going through',
         not_friends: 'you can only invite friends',
         friend_offline: 'they went offline',
-        self: "that's you",
-        no_call: 'no call to report',
       };
       store.flash(tradeSysText(m.code) ?? msgs[m.code] ?? 'nope');
       onTradeSys(m.code);

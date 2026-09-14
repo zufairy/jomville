@@ -414,10 +414,13 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage('fcall_invite', async (client, msg: { toUserId?: unknown; video?: unknown }) => {
       const me = client.auth as User | undefined;
       if (!me) return;
-      if (this.calls.get(client.sessionId).kind !== 'idle') return this.reject(client, 'busy_self');
+      // fcall_invite/fcall_report errors go over their own fcall_fail channel, not sys: sys
+      // codes like rate_limited/bad_request are shared with chat/duel/edit limits, and a tab
+      // ringing out must not tear down its call because an unrelated sys message arrived.
+      if (this.calls.get(client.sessionId).kind !== 'idle') return client.send('fcall_fail', { action: 'invite', code: 'busy_self' });
       const avatar = this.state.players.get(client.sessionId)?.avatar ?? serializeAvatar(me.avatar);
       const err = await friendCalls.invite({ id: me.id, handle: me.handle, avatar }, client.sessionId, msg?.toUserId, msg?.video);
-      if (err) this.reject(client, err);
+      if (err) client.send('fcall_fail', { action: 'invite', code: err });
     });
 
     this.onMessage('fcall_accept', (client) => {
@@ -451,7 +454,7 @@ export class GameRoom extends Room<WorldState> {
       const me = client.auth as User | undefined;
       if (!me) return;
       const err = await friendCalls.report(me.id, msg?.reason, msg?.note, this.state.slug);
-      if (err) return this.reject(client, err);
+      if (err) return client.send('fcall_fail', { action: 'report', code: err });
       client.send('sys', { code: 'reported' });
     });
 
