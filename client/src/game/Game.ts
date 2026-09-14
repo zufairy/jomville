@@ -28,6 +28,7 @@ import {
 import { atlas } from './atlas';
 import { Backdrop } from './backdrop';
 import { IDLE_DUEL } from '../store';
+import { afterReveal, applyEnd, applyRound } from '../ui/duel/duelFlow';
 import { fetchInventory } from '../api';
 import { AVATAR_SCALE, Avatar } from './avatar';
 import { Camera } from './camera';
@@ -58,6 +59,7 @@ import { RIDE_SEAT_Z, seatPose } from './seats';
 import { BEACH_CRITTERS, DREAM_CRITTERS, WONDER_CRITTERS } from '@dovey/shared';
 import { bindLoveSender, love } from '../love';
 import { bindTableSender, useTables } from '../tableGames';
+import { bindTradeSender, useTrade } from '../trade';
 import { bindFriendSender, useFriends } from '../friends';
 import { useAppStore } from '../store';
 
@@ -208,6 +210,7 @@ export class Game {
     this.emotes = new EmotePool(this.fxLayer);
     bindLoveSender((type, data) => this.net.send(type, data));
     bindTableSender((type, data) => this.net.send(type, data));
+    bindTradeSender((type, data) => this.net.send(type, data));
     bindFriendSender((type, data) => this.net.send(type, data));
     this.calls.onVibe = (v) => {
       if (this.theme === 'love') love.vibe(v);
@@ -234,10 +237,11 @@ export class Game {
       callToggleCam: () => this.calls.toggleCam(),
       callVideoEls: () => ({ local: this.calls.localEl, remote: this.calls.remoteEl }),
       toggleVoice: () => void this.voice.setMic(!this.voice.micOn),
-      duelInvite: (peer, handle) => {
-        this.net.send('duel_invite', { to: peer });
-        useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'ringing', peer, handle });
+      duelInvite: (peer, handle, stake) => {
+        this.net.send('duel_invite', { to: peer, stake });
+        useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'ringing', peer, handle, stake });
       },
+      duelRevealDone: () => useAppStore.getState().setDuel(afterReveal),
       duelAccept: () => this.net.send('duel_accept'),
       duelDecline: () => {
         this.net.send('duel_decline');
@@ -387,20 +391,21 @@ export class Game {
           for (const id of [a, b]) on ? this.inCall.add(id) : this.inCall.delete(id);
         },
         onVendResult: (r) => this.onVendResult(r as { ok: boolean; reason?: string; credits?: number; itemId?: string }),
-        onDuelIncoming: (from, handle) => useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'incoming', peer: from, handle }),
-        onDuelStart: (peer, handle, you) => useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'pick', peer, handle, you }),
+        onDuelIncoming: (from, handle, stake) => useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'incoming', peer: from, handle, stake }),
+        onDuelStart: (peer, handle, you, stake) => useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'pick', peer, handle, you, stake }),
         onDuelRound: (r) => {
           const st = useAppStore.getState();
           const you = st.duel.you;
-          const won = r.done ? (you === 'a' ? r.score[0] > r.score[1] : r.score[1] > r.score[0]) : null;
-          st.setDuel((d) => ({ ...d, phase: r.done ? 'over' : 'reveal', score: r.score, last: { picks: r.picks, winner: r.winner }, won, myPick: null }));
-          if (!r.done) setTimeout(() => st.setDuel((d) => (d.phase === 'reveal' ? { ...d, phase: 'pick', round: d.round + 1, last: null } : d)), 1600);
+          // the arena's reveal timeline calls duelRevealDone when it finishes; no fixed timer here
+          st.setDuel((d) => applyRound(d, r));
           const me = this.net.sessionId;
-          if (me) this.emotes.pop(me, r.winner === 'draw' ? 3 : (r.winner === you) ? 0 : 2);
+          if (me) this.emotes.pop(me, r.winner === 'draw' ? 3 : r.winner === you ? 0 : 2);
         },
-        onDuelEnd: (reason) => {
-          useAppStore.getState().setDuel(IDLE_DUEL);
-          useAppStore.getState().flash(reason === 'declined' ? 'they passed on the duel' : 'duel ended');
+        onDuelEnd: (reason, pot) => {
+          const st = useAppStore.getState();
+          const { duel, toast } = applyEnd(st.duel, reason, pot);
+          st.setDuel(duel);
+          if (toast) st.flash(toast);
         },
         onMazeWin: (id, handle, reward) => {
           const a = this.actors.get(id);
@@ -1340,6 +1345,7 @@ export class Game {
     st.setDuel(IDLE_DUEL);
     // a rejoin is a new session: the old seat and match are gone server-side
     useTables.getState().reset();
+    useTrade.getState().reset();
     st.setSessionId(null);
     st.setPlayerCount(0);
   }

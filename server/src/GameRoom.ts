@@ -45,7 +45,10 @@ import { Furniture, Player, WorldState } from './schema';
 import { MovementSim } from './movement';
 import { Repo, User } from './repo';
 import { CallBook } from './calls';
-import { DUEL_REWARD, DuelBook, Pick } from './duel';
+import { Duel, DuelBook, Pick, RoundResult, Settlement, duelSettlement } from './duel';
+import { settleOrLog } from './duelSettle';
+import { isDuelStake } from '@dovey/shared';
+import { TRADE_CLIENT_MESSAGES, TradeController } from './trade/controller';
 import { GAME_TABLE_KIND, TABLE_BOT_REWARD, TABLE_GAME_KINDS, TABLE_REWARD, TableGameKind, tableChairs } from '@dovey/shared';
 import { Match, TableBook, TableEvent, isBot } from './tableGames';
 import { BotCrew, PERSONAS, scatterSpawns } from './bots';
@@ -105,6 +108,10 @@ export class GameRoom extends Room<WorldState> {
   /** userId -> last maze payout */
   private mazeAt = new Map<string, number>();
   private duelLimit = new RateLimiter(20, 5000);
+  /** player-to-player trades (server/src/trade) */
+  private trade!: TradeController;
+  /** rooms.trade_enabled, cached on create */
+  private tradeEnabled = true;
   private love: LoveMeter | null = null;
   /** lane tile each queued person was last sent to, so re-syncs don't re-path them */
   private loveSpots = new Map<string, string>();
@@ -124,6 +131,7 @@ export class GameRoom extends Room<WorldState> {
     this.state.style = JSON.stringify(row.style);
     this.state.mask = row.mask ? row.mask.join('|') : '';
     this.state.ownerId = row.owner_id;
+    this.tradeEnabled = row.trade_enabled !== false;
     this.size = row.size;
     this.mask = row.mask;
     if (repo.isSystemRoom(row.id)) this.furnitureCap = MAX_FURNITURE_SYSTEM_ROOM;
@@ -210,6 +218,7 @@ export class GameRoom extends Room<WorldState> {
       for (const c of this.clients) {
         const u = c.auth as User | undefined;
         if (!u) continue;
+        void GameRoom.repo.addPlayMinute(u.id).catch((e) => console.error('[trade] play minute', e));
         void GameRoom.repo.creditCoins(u.id, COINS_PER_MINUTE).then((coins) => c.send('coins', { coins, earned: COINS_PER_MINUTE }));
       }
     }, 60_000);
@@ -418,58 +427,128 @@ export class GameRoom extends Room<WorldState> {
         this.clients.find((c) => c.sessionId === caller)?.send('call_end', { reason: 'no_answer' });
         this.clients.find((c) => c.sessionId === callee)?.send('call_end', { reason: 'expired' });
       }
-      for (const { duel, result } of this.duels.sweep()) this.sendRound(duel.a, duel.b, result);
+      for (const { duel, result } of this.duels.sweep()) this.sendRound(duel, result);
+      this.trade.sweep();
     }, 5000);
 
-    // ---- duels: rock-paper-scissors, best of three, winner earns coins
+    // ---- duels: rock-paper-scissors, best of three, for a coin stake (or the free 25-coin reward)
     const sendTo = (id: string, type: string, data: unknown) => this.clients.find((c) => c.sessionId === id)?.send(type, data);
-    this.onMessage('duel_invite', (client, msg: { to?: unknown }) => {
+    this.onMessage('duel_invite', async (client, msg: { to?: unknown; stake?: unknown }) => {
       const to = typeof msg?.to === 'string' ? msg.to : '';
+      const stake = msg?.stake === undefined ? 0 : msg.stake;
       const me = this.state.players.get(client.sessionId);
-      if (!me || !this.state.players.has(to)) return this.reject(client, 'no_such_player');
+      const u = client.auth as User | undefined;
+      if (!me || !u || !this.state.players.has(to)) return this.reject(client, 'no_such_player');
+      if (!isDuelStake(stake)) return this.reject(client, 'bad_request');
       if (!this.duelLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
-      const err = this.duels.invite(client.sessionId, to);
+      const bot = !!this.bots?.has(to);
+      // locals play for fun only
+      if (bot && stake > 0) return this.reject(client, 'bot_no_stake');
+      if (stake > 0 && (await GameRoom.repo.coins(u.id)) < stake) return this.reject(client, 'not_enough_coins');
+      // either side may have left while the balance was read
+      if (!this.state.players.has(client.sessionId)) return;
+      if (!this.state.players.has(to)) return this.reject(client, 'no_such_player');
+      const err = this.duels.invite(client.sessionId, to, stake);
       if (err) return this.reject(client, err);
-      if (this.bots?.has(to)) {
-        // locals never say no to a duel
+      if (bot) {
+        // locals never say no to a free duel
         this.clock.setTimeout(() => {
+          // the challenge may have been withdrawn (or replaced) while the local "thought"
+          if (this.duels.pending(to)?.from !== client.sessionId) return;
           const d = this.duels.accept(to);
           if (!d) return;
-          client.send('duel_start', { peer: to, handle: this.state.players.get(to)?.handle ?? '', you: 'a' });
+          d.started = true;
+          d.users = [u.id, this.state.players.get(to)?.userId ?? ''];
+          client.send('duel_start', { peer: to, handle: this.state.players.get(to)?.handle ?? '', you: 'a', stake: 0 });
           this.botPick(to);
         }, 1500);
-        client.send('duel_ringing', { to });
+        client.send('duel_ringing', { to, stake });
         return;
       }
-      sendTo(to, 'duel_incoming', { from: client.sessionId, handle: me.handle });
-      client.send('duel_ringing', { to });
+      sendTo(to, 'duel_incoming', { from: client.sessionId, handle: me.handle, stake });
+      client.send('duel_ringing', { to, stake });
     });
-    this.onMessage('duel_accept', (client) => {
+    this.onMessage('duel_accept', async (client) => {
       const d = this.duels.accept(client.sessionId);
       if (!d) return this.reject(client, 'no_invite');
+      d.users = [this.state.players.get(d.a)?.userId ?? '', this.state.players.get(d.b)?.userId ?? ''];
+      if (d.stake > 0) {
+        let r: Awaited<ReturnType<Repo['escrowDuel']>> | null = null;
+        try {
+          r = await GameRoom.repo.escrowDuel(d.users[0], d.users[1], d.stake);
+        } catch (e) {
+          console.error('[duel] escrow', e);
+        }
+        if (this.duels.get(d.a) !== d) {
+          // someone left while the stakes were moving: hand them straight back
+          if (r?.ok) {
+            void settleOrLog((s) => GameRoom.repo.settleDuel(s), {
+              aId: d.users[0],
+              bId: d.users[1],
+              stake: d.stake,
+              credits: [
+                { userId: d.users[0], amount: d.stake },
+                { userId: d.users[1], amount: d.stake },
+              ],
+              winnerId: null,
+              outcome: 'left' as const,
+              roomId: this.state.slug,
+              log: false,
+            });
+          }
+          return;
+        }
+        if (!r?.ok) {
+          this.duels.end(d.a);
+          const reason = r ? 'insufficient' : 'failed';
+          for (const id of [d.a, d.b]) sendTo(id, 'duel_end', { reason, pot: 0 });
+          return;
+        }
+        d.paid = true;
+        sendTo(d.a, 'coins', { coins: r.coins[0], earned: 0 });
+        sendTo(d.b, 'coins', { coins: r.coins[1], earned: 0 });
+      }
+      d.started = true;
       const pa = this.state.players.get(d.a);
       const pb = this.state.players.get(d.b);
-      sendTo(d.a, 'duel_start', { peer: d.b, handle: pb?.handle ?? '', you: 'a' });
-      sendTo(d.b, 'duel_start', { peer: d.a, handle: pa?.handle ?? '', you: 'b' });
+      sendTo(d.a, 'duel_start', { peer: d.b, handle: pb?.handle ?? '', you: 'a', stake: d.stake });
+      sendTo(d.b, 'duel_start', { peer: d.a, handle: pa?.handle ?? '', you: 'b', stake: d.stake });
       this.broadcast('emote', { id: d.a, i: 0 });
     });
     this.onMessage('duel_decline', (client) => {
       const from = this.duels.decline(client.sessionId);
-      if (from) sendTo(from, 'duel_end', { reason: 'declined' });
+      if (from) sendTo(from, 'duel_end', { reason: 'declined', pot: 0 });
     });
     this.onMessage('duel_pick', (client, msg: { pick?: unknown }) => {
       const p = Number(msg?.pick);
       if (![0, 1, 2].includes(p)) return;
       const d = this.duels.get(client.sessionId);
-      if (!d) return this.reject(client, 'no_duel');
+      // no picks while the stakes are still moving: a round must never beat duel_start to the client
+      if (!d || !d.started) return this.reject(client, 'no_duel');
       const r = this.duels.pick(client.sessionId, p as Pick);
       if (r === 'waiting') return sendTo(client.sessionId, 'duel_wait', {});
-      if (r) this.sendRound(d.a, d.b, r);
+      if (r) this.sendRound(d, r);
     });
-    this.onMessage('duel_end', (client) => {
-      const peer = this.duels.end(client.sessionId);
-      if (peer) sendTo(peer, 'duel_end', { reason: 'left' });
+    this.onMessage('duel_end', (client) => this.quitDuel(client.sessionId, 'forfeit'));
+
+    // ---- trading: items + coins between two people here. Rules live in server/src/trade.
+    this.trade = new TradeController({
+      repo,
+      roomId: () => this.state.slug,
+      tradeEnabled: () => this.tradeEnabled,
+      userOf: (id) => {
+        const u = this.clientOf(id)?.auth as User | undefined;
+        const p = this.state.players.get(id);
+        return u && p ? { id: u.id, handle: p.handle } : null;
+      },
+      isHidden: (a, b) => this.blocks.isHidden(a, b),
+      send: (id, type, data) => this.clientOf(id)?.send(type, data),
     });
+    for (const type of TRADE_CLIENT_MESSAGES) {
+      this.onMessage(type, (client, msg: unknown) => {
+        this.trade.handle(client.sessionId, type, msg).catch((e) => console.error('[trade]', type, e));
+      });
+    }
 
     // ---- table games: sit opposite someone at a game table, quick match, or play the house bot
     this.state.furniture.forEach((f) => {
@@ -881,9 +960,10 @@ export class GameRoom extends Room<WorldState> {
     };
   }
 
-  /** Push a resolved round to both sides; pays the winner when the duel is over. */
-  private sendRound(a: string, b: string, r: { winner: 'a' | 'b' | 'draw'; picks: [number, number]; score: [number, number]; done: boolean }) {
-    const payload = { winner: r.winner, picks: r.picks, score: r.score, done: r.done };
+  /** Push a resolved round to both sides; settles the coins when the duel is over. */
+  private sendRound(d: Duel, r: RoundResult) {
+    const { a, b } = d;
+    const payload = { winner: r.winner, picks: r.picks, score: r.score, done: r.done, stake: d.stake, pot: d.stake * 2 };
     for (const id of [a, b]) this.clients.find((c) => c.sessionId === id)?.send('duel_round', payload);
     if (!r.done) {
       for (const id of [a, b]) if (this.bots?.has(id)) this.botPick(id);
@@ -894,11 +974,49 @@ export class GameRoom extends Room<WorldState> {
       const botWon = bot === a ? r.score[0] > r.score[1] : r.score[1] > r.score[0];
       this.clock.setTimeout(() => this.broadcast('chat', { id: bot, text: botWon ? 'gg ez 😎' : 'gg, rematch later!' }), 1200);
     }
-    const winner = r.score[0] > r.score[1] ? a : r.score[1] > r.score[0] ? b : null;
-    const wc = winner ? this.clients.find((c) => c.sessionId === winner) : undefined;
-    const u = wc?.auth as User | undefined;
-    if (wc && u) void GameRoom.repo.creditCoins(u.id, DUEL_REWARD).then((coins) => wc.send('coins', { coins, earned: DUEL_REWARD }));
+    const s = duelSettlement(d, { kind: 'done', score: r.score });
+    this.payDuel(d, s);
+    const winner = s.winner === 'a' ? a : s.winner === 'b' ? b : null;
     this.broadcast('duel_over', { a, b, winner });
+  }
+
+  /** Move the coins a settlement calls for (never to a local) and tell whoever is still here their balance. */
+  private payDuel(d: Duel, s: Settlement) {
+    const credits = s.credits
+      .map((c) => {
+        const i = c.side === 'a' ? 0 : 1;
+        return { sessionId: i === 0 ? d.a : d.b, userId: d.users[i], amount: c.amount };
+      })
+      .filter((c) => c.userId && !this.bots?.has(c.sessionId));
+    if (!credits.length && !s.log) return;
+    const winnerId = s.winner === 'a' ? d.users[0] : s.winner === 'b' ? d.users[1] : null;
+    void settleOrLog((input) => GameRoom.repo.settleDuel(input), {
+      aId: d.users[0],
+      bId: d.users[1],
+      stake: d.stake,
+      credits: credits.map(({ userId, amount }) => ({ userId, amount })),
+      winnerId: winnerId || null,
+      outcome: s.outcome,
+      roomId: this.state.slug,
+      log: s.log,
+    }).then((coins) => {
+      if (!coins) return;
+      for (const c of credits) this.clientOf(c.sessionId)?.send('coins', { coins: coins[c.userId], earned: c.amount });
+    });
+  }
+
+  /** Someone walks out of a duel (or a pending invite): the other side hears it and, in a staked duel, takes the pot. */
+  private quitDuel(id: string, kind: 'forfeit' | 'left') {
+    // withdraw any challenge still waiting on someone, so a late accept can never charge this player
+    for (const to of this.duels.cancel(id)) this.clientOf(to)?.send('duel_end', { reason: 'cancelled', pot: 0 });
+    const d = this.duels.get(id);
+    const side = this.duels.sideOf(id);
+    const peer = this.duels.end(id);
+    if (!peer) return;
+    const s = d && side ? duelSettlement(d, { kind, quitter: side }) : null;
+    const pot = s?.credits.reduce((sum, c) => (c.side !== side ? sum + c.amount : sum), 0) ?? 0;
+    this.clientOf(peer)?.send('duel_end', { reason: kind, pot });
+    if (d && s) this.payDuel(d, s);
   }
 
   /** Kitchen world: stand on a crew rug, press start, cook in a private kitchen room. */
@@ -1056,15 +1174,16 @@ export class GameRoom extends Room<WorldState> {
       const d = this.duels.get(id);
       if (!d || !this.bots) return;
       const r = this.duels.pick(id, this.bots.duelPick());
-      if (r && r !== 'waiting') this.sendRound(d.a, d.b, r);
+      if (r && r !== 'waiting') this.sendRound(d, r);
     }, 1500 + Math.random() * 2500);
   }
 
   onLeave(client: Client) {
     this.kitchen?.leave(client.sessionId);
     this.loveLeave(client.sessionId);
-    const duelPeer = this.duels.end(client.sessionId);
-    if (duelPeer) this.clients.find((c) => c.sessionId === duelPeer)?.send('duel_end', { reason: 'left' });
+    // before the player is removed from state, so the settlement still knows both accounts
+    this.quitDuel(client.sessionId, 'left');
+    this.trade.leave(client.sessionId);
     this.dispatchTables(this.tables.leave(client.sessionId));
     this.tableLimit.forget(client.sessionId);
     this.love?.forget(client.sessionId);
