@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { IDLE_CALL } from './call';
 import { useAppStore } from './store';
 import { useRoster } from './roster';
+import { deviceToken } from './identity';
 import {
   FriendCallManager,
   IDLE_FRIEND_CALL,
   RESUME_MAX_AGE_MS,
   STORAGE_KEY,
+  accountFingerprint,
   bindFriendCallSender,
   clampPos,
   loadCall,
@@ -15,19 +17,37 @@ import {
 } from './friendCall';
 import { onAdultRequired, useAdultGate } from './adultGate';
 
+// deviceToken() reads/writes localStorage, which this test's vitest environment (node) does
+// not provide. Stub a minimal in-memory version so it returns a stable value across calls,
+// the same way it persists across calls within a real browser tab.
+const memoryLocalStorage = (): Storage => {
+  const m = new Map<string, string>();
+  return {
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => void m.set(k, v),
+    removeItem: (k: string) => void m.delete(k),
+    clear: () => m.clear(),
+    key: (i: number) => Array.from(m.keys())[i] ?? null,
+    get length() {
+      return m.size;
+    },
+  } as Storage;
+};
+(globalThis as unknown as { localStorage: Storage }).localStorage = memoryLocalStorage();
+const ME_ACCOUNT = accountFingerprint(deviceToken());
+
 const memStorage = () => {
   const m = new Map<string, string>();
   return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), m };
 };
 const PEER = { id: 'u2', handle: 'bob', avatar: '{}' };
-const ME_ID = 'me1';
 
 describe('friend call storage and layout', () => {
   it('saves and restores a call within the resume window only', () => {
     const s = memStorage();
-    saveCall({ peer: PEER, video: true, initiator: false, savedAt: 1000, userId: ME_ID }, s);
-    expect(JSON.parse(s.m.get(STORAGE_KEY)!)).toMatchObject({ peer: PEER, userId: ME_ID });
-    expect(loadCall(1000 + RESUME_MAX_AGE_MS, s)).toEqual({ peer: PEER, video: true, initiator: false, savedAt: 1000, userId: ME_ID });
+    saveCall({ peer: PEER, video: true, initiator: false, savedAt: 1000, account: ME_ACCOUNT }, s);
+    expect(JSON.parse(s.m.get(STORAGE_KEY)!)).toMatchObject({ peer: PEER, account: ME_ACCOUNT });
+    expect(loadCall(1000 + RESUME_MAX_AGE_MS, s)).toEqual({ peer: PEER, video: true, initiator: false, savedAt: 1000, account: ME_ACCOUNT });
     expect(loadCall(1001 + RESUME_MAX_AGE_MS, s)).toBeNull();
     expect(s.m.has(STORAGE_KEY)).toBe(false);
     s.setItem(STORAGE_KEY, '{broken');
@@ -36,12 +56,12 @@ describe('friend call storage and layout', () => {
 
   it('drops and clears a saved call parked under a different account', () => {
     const s = memStorage();
-    saveCall({ peer: PEER, video: true, initiator: false, savedAt: 1000, userId: ME_ID }, s);
-    expect(loadCall(1000, s, 'someone-else')).toBeNull();
+    saveCall({ peer: PEER, video: true, initiator: false, savedAt: 1000, account: ME_ACCOUNT }, s);
+    expect(loadCall(1000, s, accountFingerprint('a-totally-different-token'))).toBeNull();
     expect(s.m.has(STORAGE_KEY)).toBe(false);
-    // a matching id still resolves
-    saveCall({ peer: PEER, video: true, initiator: false, savedAt: 1000, userId: ME_ID }, s);
-    expect(loadCall(1000, s, ME_ID)).toMatchObject({ peer: PEER });
+    // a matching fingerprint still resolves
+    saveCall({ peer: PEER, video: true, initiator: false, savedAt: 1000, account: ME_ACCOUNT }, s);
+    expect(loadCall(1000, s, ME_ACCOUNT)).toMatchObject({ peer: PEER });
   });
 
   it('clamps the window inside the viewport', () => {
@@ -59,9 +79,6 @@ describe('FriendCallManager signaling (no media)', () => {
     bindFriendCallSender((type, data) => sent.push([type, data]));
     useFriendCall.getState().reset();
     useAppStore.getState().setCall(IDLE_CALL);
-    useAppStore.getState().setSessionId('s1');
-    useRoster.getState().clear();
-    useRoster.getState().upsert('s1', { handle: 'me', userId: ME_ID, avatar: '{}' });
     m = new FriendCallManager(memStorage());
   });
 
@@ -113,7 +130,7 @@ describe('FriendCallManager signaling (no media)', () => {
 
   it('resume with a saved call asks the server to rejoin', () => {
     const s = memStorage();
-    saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), userId: ME_ID }, s);
+    saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: ME_ACCOUNT }, s);
     const r = new FriendCallManager(s);
     r.resume();
     expect(sent).toEqual([['fcall_resume', undefined]]);
@@ -121,9 +138,20 @@ describe('FriendCallManager signaling (no media)', () => {
     r.teardown();
   });
 
-  it('ignores and clears a saved call parked under a different account', () => {
+  it('resumes even when the room roster is empty, as long as the device token matches (regression: identity must not depend on roster/schema-sync timing)', () => {
+    useRoster.getState().clear();
     const s = memStorage();
-    saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), userId: 'someone-else' }, s);
+    saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: ME_ACCOUNT }, s);
+    const r = new FriendCallManager(s);
+    r.resume();
+    expect(sent).toEqual([['fcall_resume', undefined]]);
+    expect(useFriendCall.getState()).toMatchObject({ phase: 'rejoining', peer: PEER, initiator: true });
+    r.teardown();
+  });
+
+  it('ignores and clears a saved call parked under a different device token', () => {
+    const s = memStorage();
+    saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: accountFingerprint('a-totally-different-token') }, s);
     const r = new FriendCallManager(s);
     r.resume();
     expect(sent).toEqual([]);

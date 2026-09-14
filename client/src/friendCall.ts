@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { loadIce, setOtherCallBusy } from './call';
 import { useAppStore } from './store';
-import { useRoster } from './roster';
+import { deviceToken } from './identity';
 
 /**
  * Friend calls: 1-to-1 voice/video with a friend in any room. Signaling goes
@@ -58,8 +58,29 @@ export interface SavedCall {
   video: boolean;
   initiator: boolean;
   savedAt: number;
-  /** the signed-in user this call was parked for; a resume on a different account is dropped */
-  userId: string;
+  /**
+   * A short, non-reversible fingerprint of the device token this call was parked under
+   * (see `accountFingerprint`); a resume under a different account is dropped. Not the
+   * room roster's userId: that comes from Colyseus schema sync, which may not have
+   * delivered our own player entry yet at resume time (right after onJoined), and the
+   * roster is cleared on every room leave — both would make a legitimate resume look
+   * like an account mismatch.
+   */
+  account: string;
+}
+
+/**
+ * Small, non-reversible 32-bit fingerprint (FNV-1a) of the device token, used only to
+ * tell "same account" from "different account" for a parked call — never meant to be
+ * secret-safe or reversible, just stable and cheap.
+ */
+export function accountFingerprint(token: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < token.length; i++) {
+    h ^= token.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 type KV = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -80,12 +101,13 @@ export function saveCall(s: SavedCall, storage: KV | null = session()) {
 }
 
 /**
- * `expectUserId`, when given, must match the saved call's owner: a call parked by one
- * account must never be handed to whoever is signed in when the page comes back (a
- * shared device, a re-login, a stale tab). A mismatch is treated the same as a broken
- * or expired entry: dropped and cleared.
+ * `expectAccount`, when given, must match the saved call's `account` fingerprint: a call
+ * parked by one account must never be handed to whoever is signed in when the page comes
+ * back (a shared device, a re-login, a stale tab). An entry with no fingerprint is treated
+ * as a mismatch too. A mismatch is treated the same as a broken or expired entry: dropped
+ * and cleared.
  */
-export function loadCall(now = Date.now(), storage: KV | null = session(), expectUserId?: string): SavedCall | null {
+export function loadCall(now = Date.now(), storage: KV | null = session(), expectAccount?: string): SavedCall | null {
   try {
     const raw = storage?.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -94,7 +116,7 @@ export function loadCall(now = Date.now(), storage: KV | null = session(), expec
       !s?.peer?.id ||
       typeof s.savedAt !== 'number' ||
       now - s.savedAt > RESUME_MAX_AGE_MS ||
-      (expectUserId !== undefined && s.userId !== expectUserId)
+      (expectAccount !== undefined && s.account !== expectAccount)
     ) {
       storage?.removeItem(STORAGE_KEY);
       return null;
@@ -187,16 +209,15 @@ export class FriendCallManager {
     window.addEventListener('pagehide', () => this.park());
   }
 
-  /** the signed-in user's own id, as tracked by the room roster (own player entry) */
-  private ownUserId(): string {
-    const sid = useAppStore.getState().sessionId;
-    return (sid && useRoster.getState().players[sid]?.userId) || '';
+  /** fingerprint of this device's token: synchronous and account-scoped, unlike the room roster */
+  private ownAccount(): string {
+    return accountFingerprint(deviceToken());
   }
 
   private park() {
     const s = this.s;
     if (!s.peer || !LIVE.includes(s.phase)) return;
-    saveCall({ peer: s.peer, video: s.video, initiator: s.initiator, savedAt: Date.now(), userId: this.ownUserId() }, this.storage);
+    saveCall({ peer: s.peer, video: s.video, initiator: s.initiator, savedAt: Date.now(), account: this.ownAccount() }, this.storage);
   }
 
   els() {
@@ -268,7 +289,7 @@ export class FriendCallManager {
       if (LIVE.includes(s.phase)) send?.('fcall_resume');
       return;
     }
-    const saved = loadCall(Date.now(), this.storage, this.ownUserId());
+    const saved = loadCall(Date.now(), this.storage, this.ownAccount());
     if (!saved) return;
     this.patch({ ...IDLE_FRIEND_CALL, phase: 'rejoining', peer: saved.peer, video: saved.video, initiator: saved.initiator });
     this.startTimer(REJOIN_GRACE_MS, 'Talian terputus');
