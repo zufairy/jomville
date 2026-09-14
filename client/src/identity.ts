@@ -18,3 +18,13 @@ export function deviceToken(): string {
     return generate(); // private mode: fresh identity per load
   }
 }
+
+/** The stored token without minting one: null in a browser that has never played. */
+export function storedToken(): string | null {
+  try {
+    const t = localStorage.getItem(KEY);
+    return t && t.length >= 16 ? t : null;
+  } catch {
+    return null;
+  }
+}
