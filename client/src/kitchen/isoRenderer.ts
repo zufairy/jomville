@@ -1,4 +1,5 @@
-import { Application, Container, Graphics, Point, Sprite } from 'pixi.js';
+import { Application, Container, Graphics, Point, Sprite, Ticker } from 'pixi.js';
+import { lendGameStage } from '../game/instance';
 import { AvatarConfig, DEFAULT_AVATAR, kitchen, parseAvatar, screenToTile, tileToScreen } from '@dovey/shared';
 import { Camera } from '../game/camera';
 import { PX } from '../game/pixelArt';
@@ -34,8 +35,17 @@ const LOOK_RETRY_MS = 1000;
  * items and LPC chefs, progress rings, tap marker and target glow; the camera
  * follows the local chef (zoom only, no panning).
  */
+const BACKGROUND = 0x2b2233;
+/** a private app (fallback only) is torn down without touching anything shared */
+const SAFE_DESTROY = [{ removeView: true }, { children: true, texture: false, textureSource: false, context: false }] as const;
+
 export class IsoRenderer {
-  private app = new Application();
+  private app!: Application;
+  /** only when no world game is on the page; normally the world app is borrowed */
+  private own: Application | null = null;
+  private release: (() => void) | null = null;
+  private root = new Container();
+  private tick = (t: Ticker) => this.frame(t.deltaMS);
   private world = new Container();
   private room = new Container();
   private floorFx = new Container();
@@ -64,38 +74,62 @@ export class IsoRenderer {
     return this.app.canvas;
   }
 
+  /**
+   * Lifecycle: borrow the world game's Pixi app (world hidden + frozen, canvas
+   * moved into `el`), add our root and ticker callback. destroy() removes the
+   * callback, gives the stage back (world visible again) and destroys only our
+   * own scene graph; shared textures stay. A second Pixi app is only a fallback.
+   */
   async mount(el: HTMLElement): Promise<boolean> {
-    await this.app.init({
-      resizeTo: el,
-      backgroundColor: 0x2b2233,
-      antialias: false,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-      autoDensity: true,
-      preference: 'webgl',
-    });
-    this.ready = true;
-    if (this.destroyed) {
-      this.app.destroy(true, { children: true });
-      return false;
+    const lease = lendGameStage(this.root, el, BACKGROUND);
+    if (lease) {
+      this.app = lease.app;
+      this.release = lease.release;
+    } else {
+      const own = new Application();
+      this.own = own;
+      await own.init({
+        resizeTo: el,
+        backgroundColor: BACKGROUND,
+        antialias: false,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        autoDensity: true,
+        preference: 'webgl',
+      });
+      if (this.destroyed) {
+        own.destroy(...SAFE_DESTROY);
+        return false;
+      }
+      el.appendChild(own.canvas);
+      own.canvas.style.touchAction = 'none';
+      own.stage.addChild(this.root);
+      this.app = own;
     }
-    el.appendChild(this.app.canvas);
-    this.app.canvas.style.touchAction = 'none';
+    this.ready = true;
     this.actors.sortableChildren = true;
     this.floorFx.addChild(this.marker);
     this.marker.visible = false;
     this.fx.addChild(this.glow);
     this.world.addChild(this.room, this.floorFx, this.actors, this.fx);
-    this.app.stage.addChild(this.world);
+    this.root.addChild(this.world);
     this.camera.deadZone = { w: 40, h: 30 };
-    this.app.ticker.add((t) => this.frame(t.deltaMS));
+    this.app.ticker.add(this.tick);
     return true;
   }
 
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    // shared LPC and pixel textures outlive the round; only the scene graph goes
-    if (this.ready) this.app.destroy(true, { children: true });
+    if (!this.ready) return;
+    this.app.ticker.remove(this.tick);
+    // give the world its stage back first, then drop only the kitchen scene graph (textures are shared)
+    this.release?.();
+    this.release = null;
+    this.root.destroy({ children: true });
+    for (const g of this.chefs.values()) if (!g.destroyed) g.destroy();
+    this.chefs.clear();
+    this.own?.destroy(...SAFE_DESTROY);
+    this.own = null;
   }
 
   /** the tile under a client point; station tops win over the floor behind them */

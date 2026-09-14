@@ -1,3 +1,4 @@
+import type { Container } from 'pixi.js';
 import { Game } from './Game';
 
 /**
@@ -41,6 +42,14 @@ export function detachGame() {
 
 export function setGamePaused(paused: boolean) {
   game?.setPaused(paused);
+}
+
+/**
+ * Borrow the page's Pixi app for a full-screen scene (kitchen round) instead of
+ * creating a second one (see the note below). Null when no world game is up.
+ */
+export function lendGameStage(root: Container, el: HTMLElement, background?: number) {
+  return game?.lendStage(root, el, background) ?? null;
 }
 
 // When the game code (this module or anything it imports) changes, reload the page once instead of
