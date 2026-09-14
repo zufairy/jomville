@@ -31,6 +31,7 @@ import { IDLE_DUEL } from '../store';
 import { fetchInventory } from '../api';
 import { AVATAR_SCALE, Avatar } from './avatar';
 import { Camera } from './camera';
+import { GestureController } from './gestures';
 import { LocalMover } from './localMover';
 import { Net, RemotePlayer } from '../net';
 import { BubblePool } from './bubbles';
@@ -64,6 +65,25 @@ function waitForActivation(): Promise<void> {
 }
 
 const MARKER_MS = 600;
+const ZOOM_KEY = 'dovey.zoom';
+
+function loadZoom(): number | null {
+  try {
+    const raw = sessionStorage.getItem(ZOOM_KEY);
+    return raw ? Number(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveZoom(z: number) {
+  try {
+    sessionStorage.setItem(ZOOM_KEY, String(z));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 /** Rocket Lab: deep space behind the room */
 const LAB_BG = 0x0b0a1e;
 /** themed system rooms paint their own background instead of the owner style colour */
@@ -103,6 +123,14 @@ export class Game {
   private rightDown = false;
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
   private camera!: Camera;
+  private wasCameraFree = false;
+  private lastSavedZoom = 1;
+  private gestures = new GestureController({
+    onPan: (dx, dy) => this.camera.pan(dx, dy),
+    onPinch: (factor, cx, cy) => this.camera.zoomAt(factor, cx, cy),
+    onFling: (vx, vy) => this.camera.fling(vx, vy),
+    onWheelZoom: (factor, x, y) => this.camera.zoomAt(factor, x, y),
+  });
   private net = new Net();
 
   private me: Avatar | null = null;
@@ -183,6 +211,7 @@ export class Game {
       removeSelected: () => this.removeSelected(),
       undo: () => this.undoLast(),
       previewOf: (def) => atlas.preview(def),
+      recenter: () => this.camera.follow(),
       callInvite: (peer, handle, video) => this.calls.invite(peer, handle, video),
       callAccept: () => this.calls.accept(),
       callDecline: () => this.calls.decline(),
@@ -230,6 +259,8 @@ export class Game {
     this.camera = new Camera(this.world, this.worldBounds());
     const centre = tileToScreen(this.size / 2, this.size / 2);
     this.camera.snapTo(centre.x, centre.y);
+    const savedZoom = loadZoom();
+    if (savedZoom) this.camera.setZoom(savedZoom);
 
     this.app.stage.eventMode = 'static';
     this.app.stage.hitArea = this.app.screen;
@@ -238,9 +269,32 @@ export class Game {
       this.downAt = performance.now();
       // remember right-button presses: the following tap closes chance furni
       this.rightDown = e.button === 2;
+      this.gestures.down({ pointerId: e.pointerId, x: e.global.x, y: e.global.y, button: e.button, t: performance.now() });
+    });
+    this.app.stage.on('pointermove', (e) => {
+      this.gestures.move({ pointerId: e.pointerId, x: e.global.x, y: e.global.y, t: performance.now() });
+    });
+    const onPointerUp = (e: FederatedPointerEvent) => {
+      this.gestures.up({ pointerId: e.pointerId, x: e.global.x, y: e.global.y, t: performance.now() });
+    };
+    this.app.stage.on('pointerup', onPointerUp);
+    this.app.stage.on('pointerupoutside', onPointerUp);
+    this.app.stage.on('pointercancel', (e) => {
+      this.gestures.cancel({ pointerId: e.pointerId, x: e.global.x, y: e.global.y, t: performance.now() });
     });
     // keep the browser menu away so right-click reaches Pixi
     this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // the browser must not scroll/zoom the page on touch — the game owns it
+    this.app.canvas.style.touchAction = 'none';
+    this.app.canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const rect = this.app.canvas.getBoundingClientRect();
+        this.gestures.wheel({ deltaY: e.deltaY, x: e.clientX - rect.left, y: e.clientY - rect.top });
+      },
+      { passive: false },
+    );
 
     this.app.ticker.add((t) => this.update(t.deltaMS));
     this.voiceTimer = setInterval(() => {
@@ -291,6 +345,8 @@ export class Game {
           const st = useAppStore.getState();
           if (st.muted.includes(id) || st.blocked.includes(id)) return;
           this.bubbles.say(id, text, roll);
+          const name = this.actors.get(id)?.target.handle || (id === this.net.sessionId ? st.me?.handle : undefined) || 'someone';
+          st.pushChat({ id, name, text, roll: !!roll, at: Date.now() });
         },
         onGearUse: (id) => {
           // our own use already played locally when we tapped ourselves
@@ -767,6 +823,8 @@ export class Game {
   }
 
   private onTap(e: FederatedPointerEvent) {
+    // a drag or pinch that ended under the pointer must not also walk/use
+    if (this.gestures.consumeTap()) return;
     // browsers only play nearby voices once the page has had a gesture
     unlockAudio();
     if (!this.mover) return;
@@ -818,6 +876,7 @@ export class Game {
     this.pendingUse = null;
     this.net.sendMove(x, y);
     this.showMarker(x, y);
+    this.camera.follow();
   }
 
   /** Use an item if in reach, else walk next to it and use it on arrival. Long-press / right-click closes dice. */
@@ -1204,6 +1263,14 @@ export class Game {
       : tileToScreen(this.size / 2, this.size / 2);
     this.camera.update(focus.x, focus.y, this.app.screen.width, this.app.screen.height);
     this.backdrop.update(fxDt, this.app.screen.width, this.app.screen.height, this.world.position.x, this.world.position.y);
+    if (this.camera.isFree !== this.wasCameraFree) {
+      this.wasCameraFree = this.camera.isFree;
+      useAppStore.getState().setCameraFree(this.wasCameraFree);
+    }
+    if (this.camera.zoom !== this.lastSavedZoom) {
+      this.lastSavedZoom = this.camera.zoom;
+      saveZoom(this.lastSavedZoom);
+    }
   }
 
   /** Mic badge over anyone with an open mic, and a soft ring under whoever is talking. */

@@ -7,6 +7,7 @@ export function ChatBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const actions = useAppStore((s) => s.actions);
   const status = useAppStore((s) => s.status);
+  const setChatHistoryOpen = useAppStore((s) => s.setChatHistoryOpen);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -14,6 +15,7 @@ export function ChatBar() {
     if (!t || !actions) return;
     actions.say(t);
     setText('');
+    setChatHistoryOpen(false);
     inputRef.current?.focus();
   };
 
@@ -32,6 +34,8 @@ export function ChatBar() {
         disabled={status !== 'connected'}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onFocus={() => setChatHistoryOpen(true)}
+        onBlur={() => setChatHistoryOpen(false)}
         aria-label="chat message"
       />
       <button className="chatbar__send" type="submit" disabled={!text.trim()} aria-label="send">
