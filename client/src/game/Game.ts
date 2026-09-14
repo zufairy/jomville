@@ -9,6 +9,7 @@ import {
   FurnitureDef,
   footprint,
   furnitureDef,
+  inReach,
   maskAllows,
   parseAvatar,
   placementAt,
@@ -97,6 +98,8 @@ export class Game {
   private style: RoomStyle = { ...DEFAULT_STYLE };
   /** walk to this item, then switch it */
   private pendingUse: string | null = null;
+  private pendingClose = false;
+  private downAt = 0;
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
   private camera!: Camera;
   private net = new Net();
@@ -230,6 +233,7 @@ export class Game {
     this.app.stage.eventMode = 'static';
     this.app.stage.hitArea = this.app.screen;
     this.app.stage.on('pointertap', (e) => this.onTap(e));
+    this.app.stage.on('pointerdown', () => (this.downAt = performance.now()));
 
     this.app.ticker.add((t) => this.update(t.deltaMS));
     this.voiceTimer = setInterval(() => {
@@ -254,6 +258,7 @@ export class Game {
       void fetchInventory().then((inv) => {
         if (!inv || this.disposed) return;
         useAppStore.getState().setInventory(inv.items);
+        useAppStore.getState().setInstances(inv.instances);
         useAppStore.getState().setCoins(inv.coins);
       });
     }
@@ -797,7 +802,7 @@ export class Game {
       },
     });
     if (action.kind === 'walk') this.walkTo(action.x, action.y);
-    else if (action.kind === 'use') this.useItem(action.item);
+    else if (action.kind === 'use') this.useItem(action.item, e.button === 2 || performance.now() - this.downAt > 500);
     else if (action.kind === 'seat') this.walkOntoSeat(action.item);
   }
 
@@ -808,17 +813,21 @@ export class Game {
     this.showMarker(x, y);
   }
 
-  /** Switch an item if close, else walk next to it and switch it on arrival. */
-  private useItem(item: Placement) {
+  /** Use an item if in reach, else walk next to it and use it on arrival. Long-press / right-click closes dice. */
+  private useItem(item: Placement, close = false) {
     if (!this.mover) return;
     const here = { x: Math.round(this.mover.x), y: Math.round(this.mover.y) };
-    if (distanceTo(here.x, here.y, item) <= 2) {
-      this.net.sendUse(item.id);
+    const kind = furnitureDef(item.def)?.interaction;
+    const reachable = kind ? inReach(kind, here.x, here.y, item) : distanceTo(here.x, here.y, item) <= 2;
+    if (reachable) {
+      if (close && kind) this.net.sendClose(item.id);
+      else this.net.sendUse(item.id);
       return;
     }
     const near = this.nearestWalkableAround(item, here);
     if (near && this.mover.setTarget(near)) {
       this.pendingUse = item.id;
+      this.pendingClose = close && !!kind;
       this.net.sendMove(near.x, near.y);
       this.showMarker(near.x, near.y);
     }
@@ -849,10 +858,12 @@ export class Game {
 
   /** Closest walkable tile within reach of an item, preferring the one nearest to us. */
   private nearestWalkableAround(item: Placement, from: { x: number; y: number }) {
+    const kind = furnitureDef(item.def)?.interaction;
+    const ok = (x: number, y: number) => (kind ? inReach(kind, x, y, item) : distanceTo(x, y, item) <= 1);
     let best: { x: number; y: number; d: number } | null = null;
     for (let y = item.y - 2; y <= item.y + 3; y++)
       for (let x = item.x - 2; x <= item.x + 3; x++) {
-        if (!isWalkable(this.grid, x, y) || distanceTo(x, y, item) > 1) continue;
+        if (!isWalkable(this.grid, x, y) || !ok(x, y)) continue;
         const d = Math.abs(x - from.x) + Math.abs(y - from.y);
         if (!best || d < best.d) best = { x, y, d };
       }
@@ -913,7 +924,7 @@ export class Game {
     if (!edit.on) return;
 
     if (edit.placing) {
-      const p: Placement = { id: newPlacementId(), def: edit.placing, x, y, rot: 0 };
+      const p: Placement = { id: newPlacementId(), def: edit.placing, x, y, rot: 0, ...(edit.placingItem ? { itemId: edit.placingItem } : {}) };
       const d = furnitureDef(edit.placing);
       if (!d) return;
       // centre multi-tile items on the tapped tile
@@ -928,6 +939,13 @@ export class Game {
       this.net.sendPlace(p);
       this.undo.push({ kind: 'remove', id: p.id });
       store.setUndoCount(this.undo.size);
+      if (edit.placingItem) {
+        // one serial, one placement: hide it from the tray until the server refresh lands
+        const itemId = edit.placingItem;
+        store.setInstances(store.instances.map((i) => (i.id === itemId ? { ...i, placed: 'here' } : i)));
+        store.setEdit({ ...edit, placing: null, placingItem: null, selected: p.id });
+        return;
+      }
       store.setEdit({ ...edit, selected: p.id });
       return;
     }
@@ -1088,7 +1106,9 @@ export class Game {
       if (this.pendingUse && !this.mover.moving) {
         const id = this.pendingUse;
         this.pendingUse = null;
-        this.net.sendUse(id);
+        if (this.pendingClose) this.net.sendClose(id);
+        else this.net.sendUse(id);
+        this.pendingClose = false;
       }
     }
 

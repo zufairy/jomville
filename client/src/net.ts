@@ -4,6 +4,7 @@ import { useAppStore } from './store';
 import { deviceToken } from './identity';
 import { useLove } from './love';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
+import { fetchInventory } from './api';
 
 export interface RemotePlayer {
   handle: string;
@@ -56,9 +57,22 @@ interface FurnitureState {
   y: number;
   rot: number;
   on: boolean;
+  state: string;
+  itemId: string;
+  serial: number;
 }
 
-const toPlacement = (id: string, f: FurnitureState): Placement => ({ id, def: f.def, x: f.x, y: f.y, rot: f.rot as 0 | 1 | 2 | 3, on: f.on });
+const toPlacement = (id: string, f: FurnitureState): Placement => ({
+  id,
+  def: f.def,
+  x: f.x,
+  y: f.y,
+  rot: f.rot as 0 | 1 | 2 | 3,
+  on: f.on,
+  ...(f.state ? { state: f.state } : {}),
+  ...(f.itemId ? { itemId: f.itemId } : {}),
+  ...(f.serial ? { serial: f.serial } : {}),
+});
 
 /** backoff between rejoin attempts: 1s, 2s, 4s ... capped */
 const RETRY_MAX_MS = 10_000;
@@ -215,6 +229,14 @@ export class Net {
 
     room.onMessage('coins', (m: { coins: number; earned: number }) => events.onCoins(m.coins, m.earned));
     room.onMessage('inventory_delta', (m: { def: string; delta: number }) => store.addInventory(m.def, m.delta));
+    room.onMessage('inventory_refresh', () => {
+      void fetchInventory().then((inv) => {
+        if (!inv) return;
+        store.setCoins(inv.coins);
+        store.setInventory(inv.items);
+        store.setInstances(inv.instances);
+      });
+    });
     room.onMessage('chat', (m: { id: string; text: string }) => events.onChat(m.id, m.text));
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
@@ -240,6 +262,7 @@ export class Net {
         no_duel: 'no duel going on',
         love_full: 'that line is full, try again soon',
         love_busy: 'you are already on the loveseat',
+        sold_out: 'sold out. only trades now',
       };
       store.flash(msgs[m.code] ?? 'nope');
     });
@@ -280,6 +303,10 @@ export class Net {
 
   sendUse(id: string) {
     this.room?.send('furn_use', { id });
+  }
+
+  sendClose(id: string) {
+    this.room?.send('furn_close', { id });
   }
 
   send(type: string, data?: unknown) {

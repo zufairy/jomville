@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FURNITURE, furnitureDef } from '@dovey/shared';
+import { FURNITURE, furnitureDef, isInstanceDef } from '@dovey/shared';
 import { useAppStore } from '../store';
 
 function Thumb({ def }: { def: string }) {
@@ -19,11 +19,13 @@ export function BuildBar() {
   const actions = useAppStore((s) => s.actions);
   const undoCount = useAppStore((s) => s.undoCount);
   const inventory = useAppStore((s) => s.inventory);
+  const instances = useAppStore((s) => s.instances);
   const setShopping = useAppStore((s) => s.setShopping);
   const setStyling = useAppStore((s) => s.setStyling);
   if (!edit.on) return null;
 
-  const owned = FURNITURE.filter((f) => (inventory[f.id] ?? 0) > 0);
+  const owned = FURNITURE.filter((f) => !isInstanceDef(f) && (inventory[f.id] ?? 0) > 0);
+  const unplaced = instances.filter((i) => !i.placed);
 
   return (
     <div className="build">
@@ -41,7 +43,7 @@ export function BuildBar() {
             </button>
             <button
               className={`btn ${edit.moving ? 'btn--primary' : ''}`}
-              onClick={() => setEdit({ ...edit, moving: !edit.moving, placing: null })}
+              onClick={() => setEdit({ ...edit, moving: !edit.moving, placing: null, placingItem: null })}
               aria-label="move"
             >
               {edit.moving ? 'tap a tile…' : '✥ move'}
@@ -59,12 +61,26 @@ export function BuildBar() {
         </button>
       </div>
       <div className="build__tray">
-        {owned.length === 0 && <div className="build__empty">nothing in your inventory yet. hit shop to buy furniture.</div>}
+        {owned.length === 0 && unplaced.length === 0 && <div className="build__empty">nothing in your inventory yet. hit shop to buy furniture.</div>}
+        {unplaced.map((i) => {
+          const on = edit.placingItem === i.id;
+          return (
+            <button
+              key={i.id}
+              className={`furn ${on ? 'furn--on' : ''}`}
+              onClick={() => setEdit({ ...edit, placing: on ? null : i.def, placingItem: on ? null : i.id, selected: null, moving: false })}
+            >
+              <Thumb def={i.def} />
+              <span className="furn__name">{furnitureDef(i.def)?.name}</span>
+              <span className="furn__qty">{i.serial !== null ? `#${i.serial}` : '★'}</span>
+            </button>
+          );
+        })}
         {owned.map((f) => (
           <button
             key={f.id}
-            className={`furn ${edit.placing === f.id ? 'furn--on' : ''}`}
-            onClick={() => setEdit({ ...edit, placing: edit.placing === f.id ? null : f.id, selected: null, moving: false })}
+            className={`furn ${edit.placing === f.id && !edit.placingItem ? 'furn--on' : ''}`}
+            onClick={() => setEdit({ ...edit, placing: edit.placing === f.id ? null : f.id, placingItem: null, selected: null, moving: false })}
           >
             <Thumb def={f.id} />
             <span className="furn__name">{f.name}</span>

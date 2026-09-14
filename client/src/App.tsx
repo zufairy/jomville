@@ -100,7 +100,7 @@ function Play() {
               className={`hud__btn ${edit.on ? 'hud__btn--on' : ''}`}
               onClick={() => {
                 setCustomizing(false);
-                setEdit(edit.on ? { on: false } : { on: true, placing: null, selected: null, moving: false });
+                setEdit(edit.on ? { on: false } : { on: true, placing: null, placingItem: null, selected: null, moving: false });
               }}
               aria-label="build"
               title="build"

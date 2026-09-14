@@ -86,7 +86,7 @@ export interface RoomInfo {
   isOwner: boolean;
 }
 
-export type EditMode = { on: false } | { on: true; placing: string | null; selected: string | null; moving: boolean };
+export type EditMode = { on: false } | { on: true; placing: string | null; placingItem: string | null; selected: string | null; moving: boolean };
 
 interface AppState {
   status: ConnStatus;
@@ -107,6 +107,8 @@ interface AppState {
   coins: number | null;
   /** owned, unplaced furniture: def -> qty */
   inventory: Record<string, number>;
+  instances: import('./api').InstanceItem[];
+  setInstances: (instances: import('./api').InstanceItem[]) => void;
   setShopping: (v: boolean) => void;
   setCoins: (n: number) => void;
   setInventory: (inv: Record<string, number>) => void;
@@ -168,6 +170,8 @@ export const useAppStore = create<AppState>((set) => ({
   setStyling: (styling) => set({ styling }),
   coins: null,
   inventory: {},
+  instances: [],
+  setInstances: (instances) => set({ instances }),
   setShopping: (shopping) => set({ shopping }),
   setCoins: (coins) => set({ coins, credits: coins }),
   setInventory: (inventory) => set({ inventory }),

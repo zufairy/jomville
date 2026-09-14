@@ -76,9 +76,17 @@ export async function fetchRandomRoom(not: string): Promise<string | null> {
   return (await r.json()).slug;
 }
 
+export interface InstanceItem {
+  id: string;
+  def: string;
+  serial: number | null;
+  placed: string | null;
+}
+
 export interface Inventory {
   coins: number;
   items: Record<string, number>;
+  instances: InstanceItem[];
 }
 
 export async function fetchInventory(): Promise<Inventory | null> {
@@ -89,6 +97,12 @@ export async function fetchInventory(): Promise<Inventory | null> {
 
 export async function buyItem(def: string, qty = 1): Promise<Inventory | { error: string }> {
   const r = await fetch(`${base}/api/shop/buy`, json({ token: deviceToken(), def, qty }));
+  return r.json();
+}
+
+export async function fetchShopStock(): Promise<Record<string, { sold: number; cap: number }>> {
+  const r = await fetch(`${base}/api/shop/stock`);
+  if (!r.ok) return {};
   return r.json();
 }
 
