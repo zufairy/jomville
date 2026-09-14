@@ -6,6 +6,8 @@ import { registry } from './registry';
 import { presence } from './social';
 import { wardrobe } from './vending';
 import { DAILY_CREDITS } from '@dovey/shared';
+import { iceServersFromEnv } from './ice';
+import { friendCalls } from './social-calls';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const oauth = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
@@ -129,6 +131,7 @@ export function buildApi(repo: Repo) {
     const other = idOf(req.body?.userId);
     if (!other) return res.status(400).json({ error: 'bad request' });
     if (await repo.removeFriend(u.id, other)) presence.notify(other, 'friend_update', {});
+    friendCalls.endBetween(u.id, other);
     res.json({ result: 'ok' });
   });
 
@@ -197,6 +200,24 @@ export function buildApi(repo: Repo) {
     const user = token ? await repo.userByToken(token) : null;
     if (!user) return res.status(401).json({ error: 'unknown' });
     res.json(await repo.claimDaily(user.id, DAILY_CREDITS));
+  });
+
+  /** ICE servers for calls: STUN, plus TURN when configured. Signed-in devices only (TURN costs money). */
+  app.post('/api/ice', async (req, res) => {
+    const token = tokenOf(req.body);
+    const user = token ? await repo.userByToken(token) : null;
+    if (!user) return res.status(401).json({ error: 'unknown' });
+    res.set('cache-control', 'no-store');
+    res.json({ iceServers: iceServersFromEnv() });
+  });
+
+  /** One-time 18+ confirmation, needed before calling someone who is not a friend. */
+  app.post('/api/me/adult', async (req, res) => {
+    const token = tokenOf(req.body);
+    const user = token ? await repo.userByToken(token) : null;
+    if (!user) return res.status(401).json({ error: 'unknown' });
+    await repo.confirmAdult(user.id);
+    res.json({ adultConfirmed: true });
   });
 
   /**

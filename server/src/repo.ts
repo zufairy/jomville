@@ -451,6 +451,18 @@ export class Repo {
     await this.db.query('update reports set status = $2 where id = $1', [id, status]);
   }
 
+  // ---- call safety
+
+  /** Calling someone who is not a friend needs a one-time "I am 18 or older". */
+  async isAdultConfirmed(userId: string): Promise<boolean> {
+    const r = await this.db.query('select 1 from users where id = $1 and adult_confirmed_at is not null', [userId]);
+    return r.length > 0;
+  }
+
+  async confirmAdult(userId: string): Promise<void> {
+    await this.db.query('update users set adult_confirmed_at = coalesce(adult_confirmed_at, now()) where id = $1', [userId]);
+  }
+
   // ---- economy
 
   async inventory(userId: string): Promise<Inventory> {
