@@ -60,26 +60,42 @@ worlds[0].send('k_start');
 check('start sends everyone to the same kitchen room', await until(() => !!roomId));
 
 const kitchens = await Promise.all(tokens.map((token) => client.joinById(roomId, { token })));
-const st = kitchens.map(() => ({ you: null, snaps: 0, chefs: [], stations: [], orders: [], score: 0, events: [], result: null }));
-kitchens.forEach((k, i) => {
+const st = kitchens.map(() => ({ you: null, snaps: 0, chefs: [], stations: [], orders: [], score: 0, events: [], result: null, away: [], full: false }));
+function bindKitchenHandlers(k, i) {
   k.onMessage('k_hello', (m) => (st[i].you = m.you));
   k.onMessage('k_snap', (s) => {
     const v = st[i];
     v.snaps++;
     v.chefs = s.chefs;
     v.score = s.score;
+    if (s.full) v.full = true; // one-way latch: a later delta snap must not clear it before the check runs
     for (const x of s.stations ?? []) v.stations[x.i] = x;
     if (s.orders) v.orders = s.orders;
   });
   k.onMessage('k_event', (e) => st[i].events.push(e));
   k.onMessage('k_result', (r) => (st[i].result = r));
-  for (const t of ['k_roster', 'k_away', 'k_pong']) k.onMessage(t, () => {});
-});
+  k.onMessage('k_away', (m) => st[i].away.push(m));
+  for (const t of ['k_roster', 'k_pong']) k.onMessage(t, () => {});
+}
+kitchens.forEach(bindKitchenHandlers);
 check('every player gets a hello', await until(() => st.every((s) => s.you)));
 const before = st[0].snaps;
 await wait(2000);
 const rate = (st[0].snaps - before) / 2;
 check(`snapshots flow at ~20/s (got ${rate})`, rate >= 14 && rate <= 26);
+
+// ---- reconnect: drop player 4's socket without a consented leave, then reconnect it
+const droppedToken = kitchens[3].reconnectionToken;
+st[3].full = false; // so "gets a full snapshot" below only passes on the post-reconnect snap
+await kitchens[3].leave(false); // non-consented close: does not send LEAVE_ROOM, just drops the socket
+check('the crew is told the dropped player is away', await until(() => st.some((s, i) => i !== 3 && s.away.some((a) => a.id === st[3].you && a.away === true)), 5000));
+
+const reconnected = await client.reconnect(droppedToken);
+check('a dropped player can reconnect', !!reconnected);
+bindKitchenHandlers(reconnected, 3);
+kitchens[3] = reconnected;
+check('the reconnected player gets a full snapshot', await until(() => st[3].full && st[3].chefs.some((c) => c.id === st[3].you), 5000));
+check('the crew sees the player come back', await until(() => st.some((s, i) => i !== 3 && s.away.some((a) => a.id === st[3].you && a.away === false)), 5000));
 
 // ---- bot A cooks
 const A = kitchens[0];
@@ -194,8 +210,13 @@ check('everyone saw the served event', st.every((s) => s.events.some((e) => e.ty
 check('the round ends with a result for everyone', await until(() => st.every((s) => s.result), 90000));
 console.log('  result', st[0].result);
 
-for (const k of kitchens) await k.leave();
-for (const w of worlds) await w.leave();
+async function leaveWithTimeout(room, label) {
+  const timeout = new Promise((r) => setTimeout(() => r('timeout'), 5000));
+  const result = await Promise.race([room.leave().then(() => 'ok'), timeout]);
+  if (result === 'timeout') console.log(`  (leave() for ${label} did not resolve within 5s, moving on)`);
+}
+for (let i = 0; i < kitchens.length; i++) await leaveWithTimeout(kitchens[i], `kitchen[${i}]`);
+for (let i = 0; i < worlds.length; i++) await leaveWithTimeout(worlds[i], `world[${i}]`);
 const pass = checks.every(Boolean);
 console.log(pass ? 'PASS' : 'FAIL');
 process.exit(pass ? 0 : 1);
