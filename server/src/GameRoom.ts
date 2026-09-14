@@ -33,7 +33,13 @@ import {
   sanitizeChat,
   serializeAvatar,
   validatePlacement,
+  CLOSED,
+  INTERACTIONS,
+  inReach,
+  isInstanceDef,
 } from '@dovey/shared';
+import { randomInt } from 'node:crypto';
+import { beginRoll, closeChance, finishRoll, restoredState } from './chance';
 import { Furniture, Player, WorldState } from './schema';
 import { MovementSim } from './movement';
 import { Repo, User } from './repo';
@@ -72,6 +78,7 @@ export class GameRoom extends Room<WorldState> {
   private furnitureCap = MAX_FURNITURE_PER_ROOM;
   private mask: RoomMask = null;
   private useLimit = new RateLimiter(20, 5000);
+  private chanceLimit = new RateLimiter(1, 700);
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
   private sim = new MovementSim(this.grid);
   private chatLimit = new RateLimiter(CHAT_RATE.count, CHAT_RATE.windowMs);
@@ -122,13 +129,16 @@ export class GameRoom extends Room<WorldState> {
       f.y = p.y;
       f.rot = p.rot;
       f.on = p.on ?? true;
+      if (furnitureDef(p.def)?.interaction) f.state = restoredState(p.state);
+      f.itemId = p.itemId ?? '';
+      f.serial = p.serial ?? 0;
       this.state.furniture.set(p.id, f);
     }
     this.rebuildGrid();
     if (row.id === LOVE_ROOM.slug) this.setupLove();
     if (row.id === MAIN_LOBBY.slug) this.spawnBots();
 
-    // ---- usable items: anyone nearby can switch a lamp/tv/jukebox on or off
+    // ---- usable items: lamps toggle; chance furni (dice, wheel) roll server-side
     this.onMessage('furn_use', (client, msg: { id?: unknown }) => {
       const me = this.state.players.get(client.sessionId);
       if (!me) return;
@@ -136,11 +146,44 @@ export class GameRoom extends Room<WorldState> {
       const f = this.state.furniture.get(id);
       const d = f && furnitureDef(f.def);
       if (!f || !d || !d.use) return;
-      if (!this.useLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
       const p: Placement = { id, def: f.def, x: f.x, y: f.y, rot: f.rot as 0 | 1 | 2 | 3 };
-      if (distanceTo(Math.round(me.x), Math.round(me.y), p) > 2) return this.reject(client, 'too_far');
-      f.on = !f.on;
-      this.markDirty();
+      const tx = Math.round(me.x);
+      const ty = Math.round(me.y);
+      const kind = d.interaction;
+      if (!kind) {
+        if (!this.useLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
+        if (distanceTo(tx, ty, p) > 2) return this.reject(client, 'too_far');
+        f.on = !f.on;
+        this.markDirty();
+        return;
+      }
+      if (!this.chanceLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
+      if (!inReach(kind, tx, ty, p)) return this.reject(client, 'too_far');
+      if (!beginRoll(f)) return; // already rolling: ignore, like Habbo
+      const roller = client.sessionId;
+      const userId = (client.auth as User).id;
+      this.clock.setTimeout(() => {
+        if (this.state.furniture.get(id) !== f) return; // picked up mid-roll
+        const n = finishRoll(f, kind, (max) => randomInt(max));
+        if (n === null) return;
+        this.markDirty();
+        void GameRoom.repo.recordRoll(this.state.slug, id, userId, kind, n);
+        const tag = f.serial ? ` · #${f.serial}` : '';
+        const text = kind === 'wheel' ? `🎡 spun ${n}${tag}` : kind === 'dice100' ? `🎲 rolled ${n} on the holodice${tag}` : `🎲 rolled ${n}${tag}`;
+        if (this.state.players.has(roller)) this.sayTo(roller, text);
+      }, INTERACTIONS[kind].rollMs);
+    });
+
+    this.onMessage('furn_close', (client, msg: { id?: unknown }) => {
+      const me = this.state.players.get(client.sessionId);
+      const id = typeof msg?.id === 'string' ? msg.id : '';
+      const f = this.state.furniture.get(id);
+      const kind = f && furnitureDef(f.def)?.interaction;
+      if (!me || !f || !kind) return;
+      if (!this.chanceLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
+      const p: Placement = { id, def: f.def, x: f.x, y: f.y, rot: f.rot as 0 | 1 | 2 | 3 };
+      if (!inReach(kind, Math.round(me.x), Math.round(me.y), p)) return this.reject(client, 'too_far');
+      if (closeChance(f)) this.markDirty();
     });
 
     // ---- coins: everyone online earns a trickle
@@ -462,15 +505,30 @@ export class GameRoom extends Room<WorldState> {
       if (!p || this.state.furniture.has(p.id)) return this.reject(client, 'bad_request');
       const err = validatePlacement(p, this.size, this.placements(), this.mask);
       if (err) return this.reject(client, err);
-      // the item leaves the owner's inventory while it stands in the room
       const u = client.auth as User;
-      if (!(await GameRoom.repo.addItem(u.id, p.def, -1))) return this.reject(client, 'not_owned');
-      if (this.state.furniture.has(p.id)) {
-        await GameRoom.repo.addItem(u.id, p.def, 1);
-        return this.reject(client, 'bad_request');
-      }
-      client.send('inventory_delta', { def: p.def, delta: -1 });
+      const d = furnitureDef(p.def)!;
       const f = new Furniture();
+      if (isInstanceDef(d)) {
+        const itemId = typeof msg.itemId === 'string' ? msg.itemId : '';
+        const claim = itemId ? await GameRoom.repo.claimPlacement(itemId, u.id, p.def, this.state.slug) : null;
+        if (!claim) return this.reject(client, 'not_owned');
+        if (this.state.furniture.has(p.id)) {
+          await GameRoom.repo.releasePlacement(itemId);
+          return this.reject(client, 'bad_request');
+        }
+        f.itemId = itemId;
+        f.serial = claim.serial ?? 0;
+        if (d.interaction) f.state = CLOSED;
+        client.send('inventory_refresh', {});
+      } else {
+        // the item leaves the owner's inventory while it stands in the room
+        if (!(await GameRoom.repo.addItem(u.id, p.def, -1))) return this.reject(client, 'not_owned');
+        if (this.state.furniture.has(p.id)) {
+          await GameRoom.repo.addItem(u.id, p.def, 1);
+          return this.reject(client, 'bad_request');
+        }
+        client.send('inventory_delta', { def: p.def, delta: -1 });
+      }
       f.def = p.def;
       f.x = p.x;
       f.y = p.y;
@@ -503,6 +561,13 @@ export class GameRoom extends Room<WorldState> {
       this.state.furniture.delete(id);
       this.rebuildGrid();
       this.markDirty();
+      if (f.itemId) {
+        // instances go back to whoever owns the item, not whoever edits the room
+        void GameRoom.repo.releasePlacement(f.itemId).then((ownerId) => {
+          for (const c of this.clients) if ((c.auth as User | undefined)?.id === ownerId) c.send('inventory_refresh', {});
+        });
+        return;
+      }
       const u = client.auth as User;
       void GameRoom.repo.addItem(u.id, f.def, 1);
       client.send('inventory_delta', { def: f.def, delta: 1 });
@@ -595,7 +660,13 @@ export class GameRoom extends Room<WorldState> {
 
   private placements(): Placement[] {
     const out: Placement[] = [];
-    this.state.furniture.forEach((f, id) => out.push({ id, def: f.def, x: f.x, y: f.y, rot: f.rot as 0 | 1 | 2 | 3, on: f.on }));
+    this.state.furniture.forEach((f, id) => {
+      const p: Placement = { id, def: f.def, x: f.x, y: f.y, rot: f.rot as 0 | 1 | 2 | 3, on: f.on };
+      if (f.state) p.state = f.state;
+      if (f.itemId) p.itemId = f.itemId;
+      if (f.serial) p.serial = f.serial;
+      out.push(p);
+    });
     return out;
   }
 

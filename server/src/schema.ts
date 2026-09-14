@@ -17,6 +17,9 @@ export class Furniture extends Schema {
   @type('uint8') y = 0;
   @type('uint8') rot = 0;
   @type('boolean') on = true; // for usable items (lamps, tv...)
+  @type('string') state = ''; // chance furni face: '0' closed, '-1' rolling, else result
+  @type('string') itemId = ''; // instance item row; '' for commons and system décor
+  @type('uint16') serial = 0; // LTD serial, 0 = none
 }
 
 export class WorldState extends Schema {
