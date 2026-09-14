@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseAvatar } from '@dovey/shared';
 import { friendCall, useFriendCall } from '../friendCall';
+import { isTypingTarget } from './typingTarget';
 import { AvatarPreview } from './AvatarPreview';
 import './friend-call.css';
 
@@ -14,7 +15,7 @@ export function FriendCallPopup() {
   const since = useFriendCall((s) => s.ringingSince);
   const [now, setNow] = useState(() => Date.now());
   const cfg = useMemo(() => (peer ? parseAvatar(peer.avatar) : null), [peer]);
-  const answerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -23,21 +24,23 @@ export function FriendCallPopup() {
     return () => clearInterval(t);
   }, [phase]);
 
+  // Esc declines; there is deliberately no Enter-to-answer, so someone typing in chat can't
+  // pick up by accident. Keys typed into a field are never ours.
   useEffect(() => {
     if (phase !== 'ringing_in') return;
     const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
       if (e.key === 'Escape') friendCall.decline();
-      else if (e.key === 'Enter') friendCall.accept();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [phase]);
 
-  // focus the primary action on open, restore whatever had focus before on close
+  // focus the dialog itself (never Answer) on open, restore whatever had focus before on close
   useEffect(() => {
     if (phase !== 'ringing_in') return;
     restoreFocus.current = document.activeElement as HTMLElement | null;
-    answerRef.current?.focus();
+    dialogRef.current?.focus();
     return () => {
       restoreFocus.current?.focus?.();
       restoreFocus.current = null;
@@ -48,7 +51,7 @@ export function FriendCallPopup() {
   const left = Math.max(0, Math.ceil((RING_MS - (now - since)) / 1000));
 
   return (
-    <div className="fcall-ring" role="alertdialog" aria-label={`${peer.handle} is calling you`}>
+    <div ref={dialogRef} tabIndex={-1} className="fcall-ring" role="alertdialog" aria-label={`${peer.handle} is calling you`}>
       <span className="fcall-ring__head">
         <AvatarPreview cfg={cfg} focus="head" scale={1.6} animate={false} fx={false} />
       </span>
@@ -57,7 +60,7 @@ export function FriendCallPopup() {
         <span className="fcall-ring__left">{left}s</span>
       </div>
       <div className="fcall-ring__btns">
-        <button ref={answerRef} className="btn btn--go" onClick={() => friendCall.accept()}>
+        <button className="btn btn--go" onClick={() => friendCall.accept()}>
           Answer
         </button>
         <button className="btn btn--danger" onClick={() => friendCall.decline()}>

@@ -226,11 +226,15 @@ describe('FriendCallService', () => {
     expect(sent).toEqual([['a', 'fcall_hold', { peer: 'b' }]]);
     sent.length = 0;
     c.t += 5_000;
-    s.resume('b', 'b-s2');
+    s.resume('b', 'b-s2', true);
     expect(sent).toEqual([
-      ['b', 'fcall_rejoin', { peer: 'a', video: true, initiator: false }],
-      ['a', 'fcall_rejoin', { peer: 'b', video: true, initiator: true }],
+      ['b', 'fcall_rejoin', { peer: 'a', video: true, initiator: false, fresh: true }],
+      ['a', 'fcall_rejoin', { peer: 'b', video: true, initiator: true, fresh: true }],
     ]);
+    sent.length = 0;
+    // a websocket blip on a live connection: both sides may ICE-restart
+    s.resume('b', 'b-s2', false);
+    expect(sent.map((e) => (e[2] as { fresh: boolean }).fresh)).toEqual([false, false]);
     sent.length = 0;
     s.sessionLost('a');
     c.t += 10_001;
@@ -294,7 +298,8 @@ describe('FriendCallService', () => {
     const pending = s.invite(A, 'a-s1', 'b', false);
     s.hangup('a'); // races the still-pending invite
     resolveFriends(true);
-    expect(await pending).toBe('busy_self');
+    expect(await pending).toBeNull(); // superseded: silent, no fcall_fail for the client
+    
     expect(sent).toEqual([]);
     expect(s.book.isBusy('a') || s.book.isBusy('b')).toBe(false);
   });
@@ -309,7 +314,7 @@ describe('FriendCallService', () => {
     const second = s.invite(A, 'a-s1', 'c', false);
     resolvers[0]?.(true);
     resolvers[1]?.(true);
-    expect(await first).toBe('busy_self');
+    expect(await first).toBeNull(); // superseded silently, so it cannot tear down the newer ring
     expect(await second).toBeNull();
     expect(s.book.get('a')).toMatchObject({ peer: 'c' });
     expect(sent).toEqual([
@@ -367,5 +372,67 @@ describe('FriendCallService', () => {
     await s.invite(A, 'a-s1', 'b', false);
     s.accept('b', 'b-s1');
     expect(await s.report('a', 'spam', undefined, null)).toBeNull();
+  });
+
+  it('endBetween cancels a pending invite in either direction, and only between that pair', async () => {
+    const c = clock();
+    const { deps, sent } = fakeDeps({ friends: [['a', 'b'], ['a', 'c']], online: ['a', 'b', 'c'] });
+    const resolvers: Array<(v: boolean) => void> = [];
+    deps.areFriends = () => new Promise((resolve) => resolvers.push(resolve));
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    const B = { id: 'b', handle: 'bob', avatar: '{}' };
+    // a -> b pending, b unfriends a (endBetween(b, a))
+    const p1 = s.invite(A, 'a-s1', 'b', false);
+    s.endBetween('b', 'a');
+    resolvers[0](true);
+    expect(await p1).toBeNull();
+    // b -> a pending, a unfriends b (endBetween(a, b))
+    const p2 = s.invite(B, 'b-s1', 'a', false);
+    s.endBetween('a', 'b');
+    resolvers[1](true);
+    expect(await p2).toBeNull();
+    expect(sent).toEqual([]);
+    expect(s.book.isBusy('a') || s.book.isBusy('b')).toBe(false);
+    // an unrelated pair's endBetween leaves a -> c pending
+    const p3 = s.invite(A, 'a-s1', 'c', false);
+    s.endBetween('a', 'b');
+    resolvers[2](true);
+    expect(await p3).toBeNull();
+    expect(s.book.get('a')).toMatchObject({ kind: 'ringing', peer: 'c' });
+  });
+
+  it('sessionLost cancels that user\'s pending invite', async () => {
+    const c = clock();
+    const { deps, sent } = fakeDeps({ friends: [['a', 'b']], online: ['b'] });
+    let resolveFriends!: (v: boolean) => void;
+    deps.areFriends = () => new Promise((resolve) => { resolveFriends = resolve; });
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    const pending = s.invite(A, 'a-s1', 'b', false);
+    s.sessionLost('a');
+    resolveFriends(true);
+    expect(await pending).toBeNull();
+    expect(sent).toEqual([]);
+    expect(s.book.isBusy('a')).toBe(false);
+  });
+
+  it('isCallSession tracks the tab carrying the call, so its leave can hold the call while other tabs stay', async () => {
+    const c = clock();
+    const { deps, sent } = fakeDeps({ friends: [['a', 'b']], online: ['b'], tabs: { b: ['b-s1', 'b-s2'] } });
+    const s = new FriendCallService(new FriendCallBook(c.now), deps, c.now);
+    await s.invite(A, 'a-s1', 'b', true);
+    expect(s.isCallSession('a', 'a-s1')).toBe(true);
+    expect(s.isCallSession('b', 'b-s1')).toBe(false); // the callee has no call tab until it accepts
+    s.accept('b', 'b-s2');
+    expect(s.isCallSession('b', 'b-s2')).toBe(true);
+    expect(s.isCallSession('b', 'b-s1')).toBe(false);
+    // the call tab left while b-s1 stays online: the room calls sessionLost
+    sent.length = 0;
+    s.sessionLost('b');
+    expect(sent).toEqual([['a', 'fcall_hold', { peer: 'b' }]]);
+    expect(s.book.get('b').kind).toBe('rejoining');
+    // no rejoin: the grace ends the call instead of leaving it active forever
+    c.t += FRIEND_REJOIN_GRACE_MS + 1;
+    s.sweep();
+    expect(s.book.isBusy('a') || s.book.isBusy('b')).toBe(false);
   });
 });

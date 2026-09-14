@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { confirmAdult } from '../api';
 import { useAdultGate } from '../adultGate';
 import { useAppStore } from '../store';
+import { isTypingTarget } from './typingTarget';
 import './friend-call.css';
 
 /** One-time 18+ confirmation before calling someone who is not a friend. */
@@ -26,6 +27,8 @@ export function AdultGate() {
   useEffect(() => {
     if (!pending) return;
     const onKey = (e: KeyboardEvent) => {
+      // keys typed into a field (chat) are never meant for this dialog
+      if (isTypingTarget(e.target)) return;
       if (e.key === 'Escape') close();
       else if (e.key === 'Enter' && !saving) void yes();
     };

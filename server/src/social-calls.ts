@@ -177,8 +177,8 @@ export class FriendCallService {
   private sigLimit = new RateLimiter(VOICE_RTC_RATE.count, VOICE_RTC_RATE.windowMs);
   private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
   private lastPeer = new Map<string, { peer: string; at: number }>();
-  /** caller -> token for an in-flight invite() still awaiting its gating checks */
-  private pendingInvite = new Map<string, symbol>();
+  /** caller -> token and target for an in-flight invite() still awaiting its gating checks */
+  private pendingInvite = new Map<string, { token: symbol; to: string }>();
 
   constructor(
     readonly book: FriendCallBook,
@@ -212,6 +212,16 @@ export class FriendCallService {
     if (!sid || !this.d.notifySession(userId, sid, type, payload)) this.d.notify(userId, type, payload);
   }
 
+  /** whether `sessionId` is the tab currently carrying this user's call */
+  isCallSession(userId: string, sessionId: string): boolean {
+    return this.callSession.get(userId) === sessionId;
+  }
+
+  /**
+   * Null when the invite rang, or when it was superseded (hangup, a newer invite, unfriend,
+   * session loss) while its gating checks were resolving: a superseded invite fails silently
+   * so a stale failure can never tear down a newer ring on the client.
+   */
   async invite(me: CallerInfo, sessionId: string, toRaw: unknown, videoRaw: unknown): Promise<FriendCallError | null> {
     const to = userIdOf(toRaw);
     if (!to) return 'bad_request';
@@ -219,16 +229,16 @@ export class FriendCallService {
     // A caller can hangup/cancel while areFriends/blockPairs are still resolving; only the
     // latest invite() from this caller may go ahead once its awaits settle.
     const token = Symbol();
-    this.pendingInvite.set(me.id, token);
-    const stillPending = () => this.pendingInvite.get(me.id) === token;
+    this.pendingInvite.set(me.id, { token, to });
+    const stillPending = () => this.pendingInvite.get(me.id)?.token === token;
     const isFriend = await this.d.areFriends(me.id, to);
-    if (!stillPending()) return 'busy_self';
+    if (!stillPending()) return null;
     if (!isFriend) {
       this.pendingInvite.delete(me.id);
       return 'not_friends';
     }
     const blocked = (await this.d.blockPairs(me.id)).includes(to);
-    if (!stillPending()) return 'busy_self';
+    if (!stillPending()) return null;
     if (blocked) {
       this.pendingInvite.delete(me.id);
       return 'blocked_pair';
@@ -288,7 +298,9 @@ export class FriendCallService {
 
   /** unfriend or block: end a call between exactly these two */
   endBetween(a: string, b: string) {
-    this.pendingInvite.delete(a);
+    // an invite still awaiting its gates, in either direction, must not ring afterwards
+    if (this.pendingInvite.get(a)?.to === b) this.pendingInvite.delete(a);
+    if (this.pendingInvite.get(b)?.to === a) this.pendingInvite.delete(b);
     const s = this.book.get(a);
     if (s.kind !== 'idle' && s.peer === b) this.finish(a, 'ended');
   }
@@ -302,15 +314,21 @@ export class FriendCallService {
   }
 
   /** a tab (re)joined a room with this call: it becomes the call's tab, both sides renegotiate */
-  resume(meId: string, sessionId: string) {
+  /**
+   * `fresh`: the resuming tab has no live peer connection (always after a page reload), so
+   * both sides must rebuild theirs; an ICE restart only works against the same connection.
+   */
+  resume(meId: string, sessionId: string, fresh: boolean) {
     const r = this.book.resume(meId);
     if (!r) return;
     this.callSession.set(meId, sessionId);
-    this.d.notifySession(meId, sessionId, 'fcall_rejoin', { peer: r.peer, video: r.video, initiator: r.initiator });
-    this.toTab(r.peer, 'fcall_rejoin', { peer: meId, video: r.video, initiator: !r.initiator });
+    this.d.notifySession(meId, sessionId, 'fcall_rejoin', { peer: r.peer, video: r.video, initiator: r.initiator, fresh });
+    this.toTab(r.peer, 'fcall_rejoin', { peer: meId, video: r.video, initiator: !r.initiator, fresh });
   }
 
+  /** the call's tab left, or the user's last session did */
   sessionLost(userId: string) {
+    this.pendingInvite.delete(userId);
     const r = this.book.sessionLost(userId);
     if (!r) return;
     if (r.held) {

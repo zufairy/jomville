@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDLE_CALL } from './call';
 import { useAppStore } from './store';
 import { useRoster } from './roster';
@@ -133,7 +133,7 @@ describe('FriendCallManager signaling (no media)', () => {
     saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: ME_ACCOUNT }, s);
     const r = new FriendCallManager(s);
     r.resume();
-    expect(sent).toEqual([['fcall_resume', undefined]]);
+    expect(sent).toEqual([['fcall_resume', { fresh: true }]]);
     expect(useFriendCall.getState()).toMatchObject({ phase: 'rejoining', peer: PEER, initiator: true });
     r.teardown();
   });
@@ -144,7 +144,7 @@ describe('FriendCallManager signaling (no media)', () => {
     saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: ME_ACCOUNT }, s);
     const r = new FriendCallManager(s);
     r.resume();
-    expect(sent).toEqual([['fcall_resume', undefined]]);
+    expect(sent).toEqual([['fcall_resume', { fresh: true }]]);
     expect(useFriendCall.getState()).toMatchObject({ phase: 'rejoining', peer: PEER, initiator: true });
     r.teardown();
   });
@@ -168,11 +168,67 @@ describe('FriendCallManager signaling (no media)', () => {
     expect(useFriendCall.getState().phase).toBe('idle');
   });
 
+  it('a live tab with no peer connection resumes as fresh', () => {
+    useFriendCall.getState().patch({ phase: 'rejoining', peer: PEER, initiator: true, video: false });
+    m.resume();
+    expect(sent).toEqual([['fcall_resume', { fresh: true }]]);
+    m.teardown();
+  });
+
+  it('accept starts the connect timeout', () => {
+    vi.useFakeTimers();
+    try {
+      m.onIncoming({ from: PEER, video: false });
+      m.accept();
+      expect(useFriendCall.getState().phase).toBe('connecting');
+      vi.advanceTimersByTime(30_000);
+      expect(useFriendCall.getState().phase).toBe('idle');
+      expect(sent.at(-1)).toEqual(['fcall_end', undefined]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a report failure keeps the call up', () => {
     useFriendCall.getState().patch({ phase: 'active', peer: PEER, initiator: true, video: false });
     m.report('spam');
     m.onFail({ action: 'report', code: 'no_call' });
     expect(useFriendCall.getState().phase).toBe('active');
+  });
+});
+
+describe('FriendCallManager media release (regression: call ends during connect awaits)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('stops tracks acquired after teardown and sends nothing', async () => {
+    const sent: Array<[string, unknown]> = [];
+    bindFriendCallSender((type, data) => sent.push([type, data]));
+    useFriendCall.getState().reset();
+    useAppStore.getState().setCall(IDLE_CALL);
+    let resolveMedia!: (s: MediaStream) => void;
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => (resolveMedia = resolve)));
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+    const pcCtor = vi.fn();
+    vi.stubGlobal('RTCPeerConnection', pcCtor);
+    vi.stubGlobal('MediaStream', vi.fn());
+    const tracks = [{ kind: 'audio', enabled: true, stop: vi.fn() }, { kind: 'video', enabled: true, stop: vi.fn() }];
+    const stream = { getTracks: () => tracks, getAudioTracks: () => [tracks[0]], getVideoTracks: () => [tracks[1]] } as unknown as MediaStream;
+
+    const m = new FriendCallManager(memStorage());
+    m.invite(PEER, true);
+    const starting = m.onStart({ peer: 'u2', video: true, initiator: true });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    sent.length = 0;
+    m.onEnd({ reason: 'ended' }); // the call ends while getUserMedia is still pending
+    resolveMedia(stream);
+    await starting;
+
+    for (const t of tracks) expect(t.stop).toHaveBeenCalled();
+    expect(pcCtor).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+    expect(useFriendCall.getState().phase).toBe('idle');
   });
 });
 

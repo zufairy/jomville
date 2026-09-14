@@ -80,6 +80,11 @@ export function FriendCallWindow() {
     setPos((p) => clampPos(p, { w: r.width, h: r.height }, { w: window.innerWidth, h: window.innerHeight }));
   }, [visible]);
 
+  // a report view left open must not greet the next call
+  useEffect(() => {
+    if (phase === 'idle') setReporting(false);
+  }, [phase]);
+
   useEffect(() => {
     if (phase === 'idle' || phase === 'ringing_in') return;
     const onKey = (e: KeyboardEvent) => {

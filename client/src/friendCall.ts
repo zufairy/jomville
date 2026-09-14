@@ -187,7 +187,12 @@ export class FriendCallManager {
   private pendingSdp: RTCSessionDescriptionInit | null = null;
   private acceptedHere = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private videoEls: { local: HTMLVideoElement; remote: HTMLVideoElement } | null = null;
+  private videoEls: { local: HTMLVideoElement; remote: HTMLVideoElement; audio: HTMLAudioElement } | null = null;
+  /**
+   * Bumped by teardown and by every connect/rejoin: an async step that finds it changed after
+   * an await belongs to a call (or attempt) that is over and must release what it acquired.
+   */
+  private gen = 0;
 
   constructor(private storage: KV | null = session()) {}
 
@@ -220,6 +225,11 @@ export class FriendCallManager {
     saveCall({ peer: s.peer, video: s.video, initiator: s.initiator, savedAt: Date.now(), account: this.ownAccount() }, this.storage);
   }
 
+  /**
+   * The video elements move between window slots and may be detached (bubble, report view),
+   * which pauses them, so both are muted: remote audio plays through a separate `<audio>`
+   * that stays attached to the document for the life of the page.
+   */
   els() {
     this.videoEls ??= (() => {
       const local = document.createElement('video');
@@ -227,9 +237,13 @@ export class FriendCallManager {
       for (const el of [local, remote]) {
         el.autoplay = true;
         el.playsInline = true;
+        el.muted = true;
       }
-      local.muted = true;
-      return { local, remote };
+      const audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.hidden = true;
+      document.body.appendChild(audio);
+      return { local, remote, audio };
     })();
     return this.videoEls;
   }
@@ -246,6 +260,8 @@ export class FriendCallManager {
     this.acceptedHere = true;
     send?.('fcall_accept');
     this.patch({ phase: 'connecting' });
+    // if fcall_start never arrives, do not sit in "Connecting…" forever
+    this.startTimer(CONNECT_TIMEOUT_MS, 'Could not connect');
   }
 
   decline() {
@@ -286,14 +302,15 @@ export class FriendCallManager {
   resume() {
     const s = this.s;
     if (s.phase !== 'idle') {
-      if (LIVE.includes(s.phase)) send?.('fcall_resume');
+      // fresh: no live peer connection here, so the peer must rebuild rather than ICE-restart
+      if (LIVE.includes(s.phase)) send?.('fcall_resume', { fresh: !this.pc });
       return;
     }
     const saved = loadCall(Date.now(), this.storage, this.ownAccount());
     if (!saved) return;
     this.patch({ ...IDLE_FRIEND_CALL, phase: 'rejoining', peer: saved.peer, video: saved.video, initiator: saved.initiator });
     this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
-    send?.('fcall_resume');
+    send?.('fcall_resume', { fresh: true });
   }
 
   // ---- server events
@@ -341,22 +358,37 @@ export class FriendCallManager {
     this.hold();
   }
 
-  async onRejoin(m: { peer: string; video: boolean; initiator: boolean }) {
+  async onRejoin(m: { peer: string; video: boolean; initiator: boolean; fresh?: boolean }) {
     const s = this.s;
     if (s.phase === 'idle' || s.peer?.id !== m.peer) return;
     this.patch({ phase: 'rejoining', initiator: m.initiator, video: m.video });
     const pc = this.pc;
-    if (pc && pc.connectionState === 'connected') {
+    // an ICE restart only works when neither side rebuilt its connection (fresh === false:
+    // the resuming tab still has its live one); otherwise the DTLS fingerprint changed
+    if (pc && pc.connectionState === 'connected' && m.fresh === false) {
       // only the websocket blipped: keep the connection, restart ICE
+      const gen = this.gen;
+      const stale = () => gen !== this.gen || this.pc !== pc || this.s.peer?.id !== m.peer;
       this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
       if (m.initiator) {
-        const offer = await pc.createOffer({ iceRestart: true });
-        await pc.setLocalDescription(offer);
-        send?.('fsig', { toUserId: m.peer, data: { sdp: pc.localDescription } });
+        try {
+          const offer = await pc.createOffer({ iceRestart: true });
+          if (stale()) return;
+          await pc.setLocalDescription(offer);
+          if (stale()) return;
+          send?.('fsig', { toUserId: m.peer, data: { sdp: pc.localDescription } });
+        } catch {
+          if (stale()) return;
+        }
       }
       this.patch({ phase: 'active' });
       this.clearTimer();
       return;
+    }
+    // full reconnect with the same roles: drop the old connection first
+    if (pc) {
+      pc.close();
+      this.pc = null;
     }
     this.pendingSdp = null;
     this.pendingIce = [];
@@ -384,28 +416,52 @@ export class FriendCallManager {
   private async connect(initiator: boolean, timeoutMs: number) {
     const peer = this.s.peer;
     if (!peer) return;
+    // the call can end (or a newer attempt start) during any await below: bail out then,
+    // releasing whatever this attempt acquired, so mic/camera never stay live after the end
+    const gen = ++this.gen;
+    const stale = () => gen !== this.gen || this.s.peer?.id !== peer.id || this.s.phase === 'idle';
     this.startTimer(timeoutMs, 'Could not connect');
     if (!this.local) {
+      let stream: MediaStream;
       try {
-        this.local = await navigator.mediaDevices.getUserMedia({ audio: true, video: this.s.video ? { facingMode: 'user', width: { ideal: 640 } } : false });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: this.s.video ? { facingMode: 'user', width: { ideal: 640 } } : false });
       } catch {
+        if (stale()) return;
         useAppStore.getState().flash('mic/camera blocked');
         send?.('fcall_end');
         this.teardown();
         return;
       }
-      this.local.getAudioTracks().forEach((t) => (t.enabled = this.s.micOn));
-      this.local.getVideoTracks().forEach((t) => (t.enabled = this.s.camOn));
+      if (stale() || this.local) {
+        // over, or a concurrent attempt already holds a stream: this one is not needed
+        if (stream !== this.local) stream.getTracks().forEach((t) => t.stop());
+        if (stale()) return;
+      } else {
+        this.local = stream;
+      }
+      this.local!.getAudioTracks().forEach((t) => (t.enabled = this.s.micOn));
+      this.local!.getVideoTracks().forEach((t) => (t.enabled = this.s.camOn));
     }
+    const ice = await loadIce();
+    if (stale() || !this.local) return;
+    const local = this.local;
     const els = this.els();
-    els.local.srcObject = this.local;
+    els.local.srcObject = local;
     this.pc?.close();
     const remote = new MediaStream();
     this.remote = remote;
     els.remote.srcObject = remote;
-    const pc = new RTCPeerConnection(await loadIce());
+    els.audio.srcObject = remote;
+    els.audio.play().catch(() => {});
+    const pc = new RTCPeerConnection(ice);
     this.pc = pc;
-    for (const t of this.local.getTracks()) pc.addTrack(t, this.local);
+    const abandon = () => {
+      if (!stale() && this.pc === pc) return false;
+      pc.close();
+      if (this.pc === pc) this.pc = null;
+      return true;
+    };
+    for (const t of local.getTracks()) pc.addTrack(t, local);
     pc.ontrack = (ev) => {
       if (this.pc !== pc) return;
       remote.addTrack(ev.track);
@@ -424,15 +480,23 @@ export class FriendCallManager {
         this.hold();
       }
     };
-    if (this.pendingSdp) {
-      const sdp = this.pendingSdp;
-      this.pendingSdp = null;
-      await this.applySdp(sdp);
-    }
-    if (initiator) {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      send?.('fsig', { toUserId: peer.id, data: { sdp: pc.localDescription } });
+    try {
+      if (this.pendingSdp) {
+        const sdp = this.pendingSdp;
+        this.pendingSdp = null;
+        await this.applySdp(sdp);
+        if (abandon()) return;
+      }
+      if (initiator) {
+        const offer = await pc.createOffer();
+        if (abandon()) return;
+        await pc.setLocalDescription(offer);
+        if (abandon()) return;
+        send?.('fsig', { toUserId: peer.id, data: { sdp: pc.localDescription } });
+      }
+    } catch {
+      // a closed connection rejects; a live one is left to the connect timer
+      abandon();
     }
   }
 
@@ -475,6 +539,7 @@ export class FriendCallManager {
   }
 
   teardown() {
+    this.gen++;
     this.clearTimer();
     this.pc?.close();
     this.pc = null;
@@ -484,6 +549,7 @@ export class FriendCallManager {
     if (this.videoEls) {
       this.videoEls.local.srcObject = null;
       this.videoEls.remote.srcObject = null;
+      this.videoEls.audio.srcObject = null;
     }
     this.pendingIce = [];
     this.pendingSdp = null;
@@ -500,6 +566,6 @@ export const onFriendCallIncoming = (m: { from: FriendPeer; video: boolean }) =>
 export const onFriendCallStart = (m: { peer: string; video: boolean; initiator: boolean }) => void friendCall.onStart(m);
 export const onFriendCallEnd = (m: { reason: string }) => friendCall.onEnd(m);
 export const onFriendCallHold = (m: { peer: string }) => friendCall.onHold(m);
-export const onFriendCallRejoin = (m: { peer: string; video: boolean; initiator: boolean }) => void friendCall.onRejoin(m);
+export const onFriendCallRejoin = (m: { peer: string; video: boolean; initiator: boolean; fresh?: boolean }) => void friendCall.onRejoin(m);
 export const onFriendSignal = (m: { from: string; data: { sdp?: RTCSessionDescriptionInit; ice?: RTCIceCandidateInit } }) => void friendCall.onSignal(m);
 export const onFriendCallFail = (m: { action: 'invite' | 'report'; code: string }) => friendCall.onFail(m);
