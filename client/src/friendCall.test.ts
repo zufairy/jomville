@@ -7,6 +7,7 @@ import {
   FriendCallManager,
   IDLE_FRIEND_CALL,
   RESUME_MAX_AGE_MS,
+  RING_OUT_TIMEOUT_MS,
   STORAGE_KEY,
   accountFingerprint,
   bindFriendCallSender,
@@ -133,7 +134,7 @@ describe('FriendCallManager signaling (no media)', () => {
     saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: ME_ACCOUNT }, s);
     const r = new FriendCallManager(s);
     r.resume();
-    expect(sent).toEqual([['fcall_resume', { fresh: true }]]);
+    expect(sent).toEqual([['fcall_resume', undefined]]);
     expect(useFriendCall.getState()).toMatchObject({ phase: 'rejoining', peer: PEER, initiator: true });
     r.teardown();
   });
@@ -144,7 +145,7 @@ describe('FriendCallManager signaling (no media)', () => {
     saveCall({ peer: PEER, video: true, initiator: true, savedAt: Date.now(), account: ME_ACCOUNT }, s);
     const r = new FriendCallManager(s);
     r.resume();
-    expect(sent).toEqual([['fcall_resume', { fresh: true }]]);
+    expect(sent).toEqual([['fcall_resume', undefined]]);
     expect(useFriendCall.getState()).toMatchObject({ phase: 'rejoining', peer: PEER, initiator: true });
     r.teardown();
   });
@@ -168,11 +169,25 @@ describe('FriendCallManager signaling (no media)', () => {
     expect(useFriendCall.getState().phase).toBe('idle');
   });
 
-  it('a live tab with no peer connection resumes as fresh', () => {
-    useFriendCall.getState().patch({ phase: 'rejoining', peer: PEER, initiator: true, video: false });
-    m.resume();
-    expect(sent).toEqual([['fcall_resume', { fresh: true }]]);
-    m.teardown();
+  it('an outgoing ring nobody answers ends with "No answer" after the ring TTL plus slack', () => {
+    vi.useFakeTimers();
+    try {
+      m.invite(PEER, false);
+      vi.advanceTimersByTime(RING_OUT_TIMEOUT_MS - 1);
+      expect(useFriendCall.getState().phase).toBe('ringing_out');
+      vi.advanceTimersByTime(1);
+      expect(useFriendCall.getState().phase).toBe('idle');
+      expect(sent.at(-1)).toEqual(['fcall_decline', {}]);
+      expect(RING_OUT_TIMEOUT_MS).toBe(35_000);
+      // a failure or end clears the timer: nothing fires later for a torn-down ring
+      m.invite(PEER, false);
+      m.onFail({ action: 'invite', code: 'busy_peer' });
+      sent.length = 0;
+      vi.advanceTimersByTime(RING_OUT_TIMEOUT_MS);
+      expect(sent).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('accept starts the connect timeout', () => {
@@ -229,6 +244,70 @@ describe('FriendCallManager media release (regression: call ends during connect 
     expect(pcCtor).not.toHaveBeenCalled();
     expect(sent).toEqual([]);
     expect(useFriendCall.getState().phase).toBe('idle');
+  });
+});
+
+describe('FriendCallManager rejoin and audio retry', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('every rejoin closes the old connection and reconnects; the call is not marked active early', async () => {
+    const sent: Array<[string, unknown]> = [];
+    bindFriendCallSender((type, data) => sent.push([type, data]));
+    useAppStore.getState().setCall(IDLE_CALL);
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>(() => {}));
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+    const m = new FriendCallManager(memStorage());
+    useFriendCall.getState().patch({ ...IDLE_FRIEND_CALL, phase: 'active', peer: PEER, initiator: true, video: false });
+    const oldPc = { connectionState: 'connected', close: vi.fn(), createOffer: vi.fn() };
+    (m as unknown as { pc: unknown }).pc = oldPc;
+    void m.onRejoin({ peer: 'u2', video: false, initiator: true });
+    await Promise.resolve();
+    expect(oldPc.close).toHaveBeenCalled();
+    expect(oldPc.createOffer).not.toHaveBeenCalled(); // no ICE restart
+    expect(getUserMedia).toHaveBeenCalledTimes(1); // full reconnect (no local stream yet)
+    expect(useFriendCall.getState().phase).toBe('rejoining');
+    m.teardown();
+  });
+
+  it('a rejected audio play() retries once on the next pointerdown, and teardown removes the listener', async () => {
+    const win = new EventTarget();
+    vi.stubGlobal('window', win);
+    let calls = 0;
+    const audio = {
+      autoplay: false,
+      hidden: false,
+      srcObject: null as unknown,
+      play: vi.fn(() => (++calls === 1 ? Promise.reject(new Error('NotAllowedError')) : Promise.resolve())),
+    };
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => (tag === 'audio' ? audio : { autoplay: false, playsInline: false, muted: false, srcObject: null }),
+      body: { appendChild: () => {} },
+    });
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    const m = new FriendCallManager(memStorage());
+    m.els();
+    audio.srcObject = {};
+    m.retryAudio();
+    await flush();
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    win.dispatchEvent(new Event('pointerdown'));
+    await flush();
+    expect(audio.play).toHaveBeenCalledTimes(2);
+    win.dispatchEvent(new Event('pointerdown')); // one-shot: already played, no more retries
+    await flush();
+    expect(audio.play).toHaveBeenCalledTimes(2);
+
+    // rejected again, then the call ends: the gesture listener is gone
+    calls = 0;
+    m.retryAudio();
+    await flush();
+    expect(audio.play).toHaveBeenCalledTimes(3);
+    m.teardown();
+    win.dispatchEvent(new Event('keydown'));
+    await flush();
+    expect(audio.play).toHaveBeenCalledTimes(3);
   });
 });
 

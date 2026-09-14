@@ -448,10 +448,9 @@ export class GameRoom extends Room<WorldState> {
       if (me) friendCalls.hangup(me.id);
     });
 
-    this.onMessage('fcall_resume', (client, msg: { fresh?: unknown }) => {
+    this.onMessage('fcall_resume', (client) => {
       const me = client.auth as User | undefined;
-      // no payload (an older client) counts as fresh: a full reconnect always works
-      if (me) friendCalls.resume(me.id, client.sessionId, msg?.fresh !== false);
+      if (me) friendCalls.resume(me.id, client.sessionId);
     });
 
     this.onMessage('fsig', (client, msg: { toUserId?: unknown; data?: unknown }) => {

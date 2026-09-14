@@ -52,6 +52,8 @@ export const STORAGE_KEY = 'leypark.fcall';
 export const RESUME_MAX_AGE_MS = 15_000;
 export const REJOIN_GRACE_MS = 10_000;
 export const CONNECT_TIMEOUT_MS = 30_000;
+/** mirrors the server's FRIEND_RING_TTL_MS (30 s) plus slack for its sweep */
+export const RING_OUT_TIMEOUT_MS = 30_000 + 5_000;
 
 export interface SavedCall {
   peer: FriendPeer;
@@ -193,6 +195,8 @@ export class FriendCallManager {
    * an await belongs to a call (or attempt) that is over and must release what it acquired.
    */
   private gen = 0;
+  /** one-shot gesture listener that retries remote audio after an autoplay rejection */
+  private audioRetry: (() => void) | null = null;
 
   constructor(private storage: KV | null = session()) {}
 
@@ -253,6 +257,8 @@ export class FriendCallManager {
     if (this.busy()) return useAppStore.getState().flash('you are already on a call');
     send?.('fcall_invite', { toUserId: peer.id, video });
     this.patch({ ...IDLE_FRIEND_CALL, phase: 'ringing_out', peer, video, initiator: true, ringingSince: Date.now() });
+    // the server sweeps an unanswered ring after FRIEND_RING_TTL_MS; never ring forever if that end is lost
+    this.startTimer(RING_OUT_TIMEOUT_MS, 'No answer');
   }
 
   accept() {
@@ -277,18 +283,21 @@ export class FriendCallManager {
   }
 
   toggleMic() {
+    this.retryAudio();
     const on = !this.s.micOn;
     this.local?.getAudioTracks().forEach((t) => (t.enabled = on));
     this.patch({ micOn: on });
   }
 
   toggleCam() {
+    this.retryAudio();
     const on = !this.s.camOn;
     this.local?.getVideoTracks().forEach((t) => (t.enabled = on));
     this.patch({ camOn: on });
   }
 
   setCollapsed(collapsed: boolean) {
+    if (!collapsed) this.retryAudio();
     this.patch({ collapsed });
   }
 
@@ -302,15 +311,14 @@ export class FriendCallManager {
   resume() {
     const s = this.s;
     if (s.phase !== 'idle') {
-      // fresh: no live peer connection here, so the peer must rebuild rather than ICE-restart
-      if (LIVE.includes(s.phase)) send?.('fcall_resume', { fresh: !this.pc });
+      if (LIVE.includes(s.phase)) send?.('fcall_resume');
       return;
     }
     const saved = loadCall(Date.now(), this.storage, this.ownAccount());
     if (!saved) return;
     this.patch({ ...IDLE_FRIEND_CALL, phase: 'rejoining', peer: saved.peer, video: saved.video, initiator: saved.initiator });
     this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
-    send?.('fcall_resume', { fresh: true });
+    send?.('fcall_resume');
   }
 
   // ---- server events
@@ -358,41 +366,23 @@ export class FriendCallManager {
     this.hold();
   }
 
-  async onRejoin(m: { peer: string; video: boolean; initiator: boolean; fresh?: boolean }) {
+  /**
+   * Always a full reconnect with the server-given role. Neither side can know whether the
+   * other's peer connection survived (a reload rebuilds it with a new DTLS fingerprint), so an
+   * ICE restart is never safe; the cost is a brief media gap on a pure websocket blip. The call
+   * only turns active again once the new connection reports connected.
+   */
+  async onRejoin(m: { peer: string; video: boolean; initiator: boolean }) {
     const s = this.s;
     if (s.phase === 'idle' || s.peer?.id !== m.peer) return;
     this.patch({ phase: 'rejoining', initiator: m.initiator, video: m.video });
-    const pc = this.pc;
-    // an ICE restart only works when neither side rebuilt its connection (fresh === false:
-    // the resuming tab still has its live one); otherwise the DTLS fingerprint changed
-    if (pc && pc.connectionState === 'connected' && m.fresh === false) {
-      // only the websocket blipped: keep the connection, restart ICE
-      const gen = this.gen;
-      const stale = () => gen !== this.gen || this.pc !== pc || this.s.peer?.id !== m.peer;
-      this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
-      if (m.initiator) {
-        try {
-          const offer = await pc.createOffer({ iceRestart: true });
-          if (stale()) return;
-          await pc.setLocalDescription(offer);
-          if (stale()) return;
-          send?.('fsig', { toUserId: m.peer, data: { sdp: pc.localDescription } });
-        } catch {
-          if (stale()) return;
-        }
-      }
-      this.patch({ phase: 'active' });
-      this.clearTimer();
-      return;
-    }
-    // full reconnect with the same roles: drop the old connection first
-    if (pc) {
-      pc.close();
+    if (this.pc) {
+      this.pc.close();
       this.pc = null;
     }
     this.pendingSdp = null;
     this.pendingIce = [];
-    await this.connect(m.initiator, REJOIN_GRACE_MS);
+    await this.connect(m.initiator, REJOIN_GRACE_MS, 'Call dropped', true);
   }
 
   onEnd(m: { reason: string }) {
@@ -413,14 +403,15 @@ export class FriendCallManager {
   }
 
   // ---- media
-  private async connect(initiator: boolean, timeoutMs: number) {
+  /** `keepTimer`: a running (rejoin grace) timer is kept rather than restarted */
+  private async connect(initiator: boolean, timeoutMs: number, timeoutText = 'Could not connect', keepTimer = false) {
     const peer = this.s.peer;
     if (!peer) return;
     // the call can end (or a newer attempt start) during any await below: bail out then,
     // releasing whatever this attempt acquired, so mic/camera never stay live after the end
     const gen = ++this.gen;
     const stale = () => gen !== this.gen || this.s.peer?.id !== peer.id || this.s.phase === 'idle';
-    this.startTimer(timeoutMs, 'Could not connect');
+    if (!(keepTimer && this.timer)) this.startTimer(timeoutMs, timeoutText);
     if (!this.local) {
       let stream: MediaStream;
       try {
@@ -452,7 +443,7 @@ export class FriendCallManager {
     this.remote = remote;
     els.remote.srcObject = remote;
     els.audio.srcObject = remote;
-    els.audio.play().catch(() => {});
+    this.retryAudio();
     const pc = new RTCPeerConnection(ice);
     this.pc = pc;
     const abandon = () => {
@@ -520,12 +511,56 @@ export class FriendCallManager {
     if (!this.timer) this.startTimer(REJOIN_GRACE_MS, 'Call dropped');
   }
 
+  /**
+   * Play remote audio; an autoplay rejection stays silent but arms a one-shot retry on the next
+   * pointerdown/keydown. Window controls (mic, camera, expand) call this too.
+   */
+  retryAudio() {
+    const audio = this.videoEls?.audio;
+    if (!audio?.srcObject) return;
+    let p: Promise<void> | undefined;
+    try {
+      p = audio.play();
+    } catch {
+      return this.armAudioRetry();
+    }
+    p?.then(
+      () => this.disarmAudioRetry(),
+      () => {
+        if (audio.srcObject) this.armAudioRetry();
+      },
+    );
+  }
+
+  private armAudioRetry() {
+    if (this.audioRetry || typeof window === 'undefined') return;
+    const retry = () => {
+      this.disarmAudioRetry();
+      this.retryAudio();
+    };
+    this.audioRetry = retry;
+    window.addEventListener('pointerdown', retry, { capture: true });
+    window.addEventListener('keydown', retry, { capture: true });
+  }
+
+  private disarmAudioRetry() {
+    const retry = this.audioRetry;
+    if (!retry) return;
+    this.audioRetry = null;
+    window.removeEventListener('pointerdown', retry, { capture: true });
+    window.removeEventListener('keydown', retry, { capture: true });
+  }
+
   private startTimer(ms: number, text: string) {
     this.clearTimer();
     this.timer = setTimeout(() => {
       this.timer = null;
       const phase = this.s.phase;
-      if (phase === 'connecting' || phase === 'rejoining') {
+      if (phase === 'ringing_out') {
+        useAppStore.getState().flash(text);
+        send?.('fcall_decline', {});
+        this.teardown();
+      } else if (phase === 'connecting' || phase === 'rejoining') {
         useAppStore.getState().flash(text);
         send?.('fcall_end');
         this.teardown();
@@ -541,6 +576,7 @@ export class FriendCallManager {
   teardown() {
     this.gen++;
     this.clearTimer();
+    this.disarmAudioRetry();
     this.pc?.close();
     this.pc = null;
     this.local?.getTracks().forEach((t) => t.stop());
@@ -566,6 +602,6 @@ export const onFriendCallIncoming = (m: { from: FriendPeer; video: boolean }) =>
 export const onFriendCallStart = (m: { peer: string; video: boolean; initiator: boolean }) => void friendCall.onStart(m);
 export const onFriendCallEnd = (m: { reason: string }) => friendCall.onEnd(m);
 export const onFriendCallHold = (m: { peer: string }) => friendCall.onHold(m);
-export const onFriendCallRejoin = (m: { peer: string; video: boolean; initiator: boolean; fresh?: boolean }) => void friendCall.onRejoin(m);
+export const onFriendCallRejoin = (m: { peer: string; video: boolean; initiator: boolean }) => void friendCall.onRejoin(m);
 export const onFriendSignal = (m: { from: string; data: { sdp?: RTCSessionDescriptionInit; ice?: RTCIceCandidateInit } }) => void friendCall.onSignal(m);
 export const onFriendCallFail = (m: { action: 'invite' | 'report'; code: string }) => friendCall.onFail(m);

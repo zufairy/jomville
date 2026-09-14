@@ -92,12 +92,9 @@ async function main() {
   await b.room.leave();
   assert((await a.next('fcall_hold')).peer === b.userId, 'hold while b changes room');
   b = await join('wonderdome', tb);
-  b.send('fcall_resume', { fresh: true });
-  const rb = await b.next('fcall_rejoin');
-  assert(rb.initiator === false && rb.fresh === true, 'b rejoins fresh');
-  const ra = await a.next('fcall_rejoin');
-  // fresh: a must rebuild its peer connection rather than ICE-restart the old one
-  assert(ra.initiator === true && ra.fresh === true, 'a renegotiates from scratch');
+  b.send('fcall_resume');
+  assert((await b.next('fcall_rejoin')).initiator === false, 'b rejoins');
+  assert((await a.next('fcall_rejoin')).initiator === true, 'a renegotiates');
   b.send('fsig', { toUserId: a.userId, data: { sdp: { type: 'answer', sdp: 'smoke' } } });
   assert((await a.next('fsig')).from === b.userId, 'signal after room change');
   console.log('5. b changed room within the grace and the call resumed');

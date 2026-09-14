@@ -226,15 +226,11 @@ describe('FriendCallService', () => {
     expect(sent).toEqual([['a', 'fcall_hold', { peer: 'b' }]]);
     sent.length = 0;
     c.t += 5_000;
-    s.resume('b', 'b-s2', true);
+    s.resume('b', 'b-s2');
     expect(sent).toEqual([
-      ['b', 'fcall_rejoin', { peer: 'a', video: true, initiator: false, fresh: true }],
-      ['a', 'fcall_rejoin', { peer: 'b', video: true, initiator: true, fresh: true }],
+      ['b', 'fcall_rejoin', { peer: 'a', video: true, initiator: false }],
+      ['a', 'fcall_rejoin', { peer: 'b', video: true, initiator: true }],
     ]);
-    sent.length = 0;
-    // a websocket blip on a live connection: both sides may ICE-restart
-    s.resume('b', 'b-s2', false);
-    expect(sent.map((e) => (e[2] as { fresh: boolean }).fresh)).toEqual([false, false]);
     sent.length = 0;
     s.sessionLost('a');
     c.t += 10_001;

@@ -314,16 +314,13 @@ export class FriendCallService {
   }
 
   /** a tab (re)joined a room with this call: it becomes the call's tab, both sides renegotiate */
-  /**
-   * `fresh`: the resuming tab has no live peer connection (always after a page reload), so
-   * both sides must rebuild theirs; an ICE restart only works against the same connection.
-   */
-  resume(meId: string, sessionId: string, fresh: boolean) {
+  /** a tab (re)joined a room with this call: it becomes the call's tab, both sides rebuild their connection */
+  resume(meId: string, sessionId: string) {
     const r = this.book.resume(meId);
     if (!r) return;
     this.callSession.set(meId, sessionId);
-    this.d.notifySession(meId, sessionId, 'fcall_rejoin', { peer: r.peer, video: r.video, initiator: r.initiator, fresh });
-    this.toTab(r.peer, 'fcall_rejoin', { peer: meId, video: r.video, initiator: !r.initiator, fresh });
+    this.d.notifySession(meId, sessionId, 'fcall_rejoin', { peer: r.peer, video: r.video, initiator: r.initiator });
+    this.toTab(r.peer, 'fcall_rejoin', { peer: meId, video: r.video, initiator: !r.initiator });
   }
 
   /** the call's tab left, or the user's last session did */
