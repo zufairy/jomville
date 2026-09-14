@@ -57,7 +57,8 @@ import { KitchenLobby } from './kitchen/lobby';
 import { ROUND_KEY } from './kitchen/rounds';
 import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
-import { registry } from './registry';
+import { humanCount, registry } from './registry';
+import { presence } from './social';
 
 export interface JoinOptions {
   slug?: string;
@@ -88,6 +89,8 @@ export class GameRoom extends Room<WorldState> {
   private chatLimit = new RateLimiter(CHAT_RATE.count, CHAT_RATE.windowMs);
   private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
   private blockLimit = new RateLimiter(BLOCK_RATE.count, BLOCK_RATE.windowMs);
+  /** one invite per (inviter, friend) per 30 s */
+  private inviteLimit = new RateLimiter(1, 30_000);
   private blocks = new BlockBook();
   private emoteLimit = new RateLimiter(EMOTE_RATE.count, EMOTE_RATE.windowMs);
   private avatarLimit = new RateLimiter(10, 5000);
@@ -294,6 +297,9 @@ export class GameRoom extends Room<WorldState> {
       if (!this.blockLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
       await GameRoom.repo.block(me.id, target);
       this.blocks.add(me.id, target);
+      // blocking also ends the friendship; refresh both friend lists
+      presence.notify(target, 'friend_update', {});
+      presence.notify(me.id, 'friend_update', {});
       client.send('sys', { code: 'blocked' });
       // cut any live proximity-voice link between the two, both ways
       const other = String(msg.id);
@@ -309,6 +315,19 @@ export class GameRoom extends Room<WorldState> {
       await GameRoom.repo.unblock(me.id, target);
       this.blocks.remove(me.id, target);
       client.send('sys', { code: 'unblocked' });
+    });
+
+    // ---- friends: invite an online friend to this room
+    this.onMessage('friend_invite', async (client, msg: { toUserId?: unknown }) => {
+      const me = client.auth as User | undefined;
+      const to = typeof msg?.toUserId === 'string' ? msg.toUserId : '';
+      if (!me || !to || to === me.id) return;
+      if (!this.inviteLimit.allow(`${me.id}:${to}`)) return this.reject(client, 'rate_limited');
+      if (!(await GameRoom.repo.areFriends(me.id, to))) return this.reject(client, 'not_friends');
+      if (!presence.isOnline(to)) return this.reject(client, 'friend_offline');
+      const avatar = this.state.players.get(client.sessionId)?.avatar ?? serializeAvatar(me.avatar);
+      presence.notify(to, 'friend_invite', { from: { id: me.id, handle: me.handle, avatar }, room: { slug: this.state.slug, name: this.state.name } });
+      client.send('friend_invite_sent', { to });
     });
 
     this.onMessage('report', async (client, msg: { id?: unknown; reason?: unknown; note?: unknown }) => {
@@ -626,9 +645,11 @@ export class GameRoom extends Room<WorldState> {
     p.y = spawn.y;
     this.state.players.set(client.sessionId, p);
     this.blocks.join(client.sessionId, user.id);
+    presence.join(user.id, client.sessionId, { slug: this.state.slug, name: this.state.name }, (type, payload) => client.send(type, payload));
+    void this.announcePresence(user.id);
     void this.reloadBlocks(client.sessionId, user.id);
     if (this.love) client.send('love', this.loveSnapshot());
-    registry.set(this.state.slug, this.state.players.size);
+    this.publishLive();
     void GameRoom.repo.coins(user.id).then((coins) => client.send('coins', { coins, earned: 0 }));
     this.bots?.onHumanJoin({ id: client.sessionId, handle: p.handle, x: p.x, y: p.y });
     if (process.env.DOVEY_DEBUG) console.log('[join]', this.state.slug, user.handle, 'now', this.state.players.size);
@@ -636,6 +657,13 @@ export class GameRoom extends Room<WorldState> {
 
   private async reloadBlocks(sessionId: string, userId: string) {
     this.blocks.reload(sessionId, await GameRoom.repo.blockPairs(userId));
+  }
+
+  /** tell this user's online friends whether they are online now and where */
+  private async announcePresence(userId: string) {
+    const ids = await GameRoom.repo.friendIdsOf(userId).catch(() => [] as string[]);
+    const payload = { id: userId, online: presence.isOnline(userId), room: presence.where(userId) };
+    for (const id of ids) presence.notify(id, 'friend_presence', payload);
   }
 
   /** Deliver a chat (or roll result) line to everyone who has not blocked the speaker. */
@@ -716,6 +744,11 @@ export class GameRoom extends Room<WorldState> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     await this.flush();
     registry.set(this.state.slug, 0);
+  }
+
+  /** public live count: real people only, the park's AI locals are not visitors */
+  private publishLive() {
+    registry.set(this.state.slug, humanCount(this.state.players.keys(), (id) => !!this.bots?.has(id)));
   }
 
   /** Nearest unoccupied tile to the room centre (Manhattan order, so neighbours before diagonals). */
@@ -932,7 +965,7 @@ export class GameRoom extends Room<WorldState> {
   }
 
   private sendTableState(m: Match) {
-    const names = m.players.map((id) => (isBot(id) ? 'Dovey Bot' : this.handleOf(id)));
+    const names = m.players.map((id) => (isBot(id) ? 'Leypark Bot' : this.handleOf(id)));
     const seats = m.players.map((id) => (isBot(id) ? '' : id));
     const now = Date.now();
     m.players.forEach((id, seat) => {
@@ -1042,6 +1075,11 @@ export class GameRoom extends Room<WorldState> {
       this.clients.find((c) => c.sessionId === peer)?.send('call_end', { reason: 'left' });
       if (wasActive) this.broadcast('call_state', { a: client.sessionId, b: peer, on: false });
     }
+    const leaver = client.auth as User | undefined;
+    if (leaver) {
+      presence.leave(leaver.id, client.sessionId);
+      void this.announcePresence(leaver.id);
+    }
     this.sim.remove(client.sessionId);
     this.blocks.leave(client.sessionId);
     this.reportLimit.forget(client.sessionId);
@@ -1054,7 +1092,7 @@ export class GameRoom extends Room<WorldState> {
     this.useLimit.forget(client.sessionId);
     this.chanceLimit.forget(client.sessionId);
     this.state.players.delete(client.sessionId);
-    registry.set(this.state.slug, this.state.players.size);
+    this.publishLive();
     if (process.env.DOVEY_DEBUG) console.log('[leave]', this.state.slug, 'now', this.state.players.size);
   }
 }

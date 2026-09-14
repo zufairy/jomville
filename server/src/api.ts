@@ -3,6 +3,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { SYSTEM_ROOMS, furnitureDef, isInstanceDef } from '@dovey/shared';
 import { Repo } from './repo';
 import { registry } from './registry';
+import { presence } from './social';
 import { wardrobe } from './vending';
 import { DAILY_CREDITS } from '@dovey/shared';
 
@@ -55,6 +56,68 @@ export function buildApi(repo: Repo) {
     }
     if (req.body?.onboarded === true) await repo.setOnboarded(user.id);
     res.json(await meJson((await repo.userById(user.id))!));
+  });
+
+  // ---- friends
+  const userOf = async (body: unknown) => {
+    const t = tokenOf(body);
+    return t ? repo.userByToken(t) : null;
+  };
+  const idOf = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : '');
+
+  app.post('/api/friends', async (req, res) => {
+    const u = await userOf(req.body);
+    if (!u) return res.status(401).json({ error: 'unknown' });
+    const [friends, pending] = await Promise.all([repo.friendsOf(u.id), repo.pendingOf(u.id)]);
+    res.json({
+      friends: friends.map((f) => ({ ...f, online: presence.isOnline(f.id), room: presence.where(f.id) })),
+      incoming: pending.incoming,
+      outgoing: pending.outgoing,
+    });
+  });
+
+  app.post('/api/friends/request', async (req, res) => {
+    const u = await userOf(req.body);
+    if (!u) return res.status(401).json({ error: 'unknown' });
+    const to = idOf(req.body?.toUserId);
+    if (!to) return res.status(400).json({ error: 'bad request' });
+    const result = await repo.requestFriend(u.id, to);
+    if (result === 'sent') presence.notify(to, 'friend_request', { from: { id: u.id, handle: u.handle } });
+    if (result === 'accepted') {
+      presence.notify(to, 'friend_update', {});
+      presence.notify(u.id, 'friend_update', {});
+    }
+    res.json({ result });
+  });
+
+  app.post('/api/friends/respond', async (req, res) => {
+    const u = await userOf(req.body);
+    if (!u) return res.status(401).json({ error: 'unknown' });
+    const from = idOf(req.body?.fromUserId);
+    if (!from || typeof req.body?.accept !== 'boolean') return res.status(400).json({ error: 'bad request' });
+    const result = await repo.respondFriend(u.id, from, req.body.accept);
+    if (result === 'accepted' || result === 'declined') presence.notify(from, 'friend_update', {});
+    res.json({ result });
+  });
+
+  app.post('/api/friends/cancel', async (req, res) => {
+    const u = await userOf(req.body);
+    if (!u) return res.status(401).json({ error: 'unknown' });
+    const to = idOf(req.body?.toUserId);
+    if (!to) return res.status(400).json({ error: 'bad request' });
+    await repo.cancelFriendRequest(u.id, to);
+    presence.notify(to, 'friend_update', {});
+    res.json({ result: 'ok' });
+  });
+
+  app.post('/api/friends/remove', async (req, res) => {
+    const u = await userOf(req.body);
+    if (!u) return res.status(401).json({ error: 'unknown' });
+    const other = idOf(req.body?.userId);
+    if (!other) return res.status(400).json({ error: 'bad request' });
+    await repo.removeFriend(u.id, other);
+    presence.notify(other, 'friend_update', {});
+    res.json({ result: 'ok' });
   });
 
   /** Sign in with Google: verify the ID token server-side, link to this device's user. */

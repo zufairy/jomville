@@ -25,3 +25,8 @@ export const REPORT_NOTE_MAX = 200;
 
 /** Reasons a moderator should see first. */
 export const URGENT_REASONS: ReportReason[] = ['grooming', 'sexual', 'hate'];
+
+/** most accepted friends one player can have */
+export const FRIEND_LIMIT = 200;
+/** most friend requests one player can have waiting on others */
+export const FRIEND_PENDING_LIMIT = 50;

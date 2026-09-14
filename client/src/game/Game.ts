@@ -57,6 +57,7 @@ import { RIDE_SEAT_Z, seatPose } from './seats';
 import { BEACH_CRITTERS, DREAM_CRITTERS, WONDER_CRITTERS } from '@dovey/shared';
 import { bindLoveSender, love } from '../love';
 import { bindTableSender, useTables } from '../tableGames';
+import { bindFriendSender, useFriends } from '../friends';
 import { useAppStore } from '../store';
 
 function waitForActivation(): Promise<void> {
@@ -202,6 +203,7 @@ export class Game {
     this.emotes = new EmotePool(this.fxLayer);
     bindLoveSender((type, data) => this.net.send(type, data));
     bindTableSender((type, data) => this.net.send(type, data));
+    bindFriendSender((type, data) => this.net.send(type, data));
     this.calls.onVibe = (v) => {
       if (this.theme === 'love') love.vibe(v);
     };
@@ -341,6 +343,7 @@ export class Game {
         onJoined: () => {
           this.ensureSelf();
           this.voice.rejoin();
+          void useFriends.getState().load();
         },
         onVoiceSignal: (from, data) => void this.voice.onSignal(from, data as VoiceSignal),
         onVoiceDrop: (id) => this.voice.drop(id),
