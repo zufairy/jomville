@@ -62,17 +62,21 @@ export function reachTile(pose: { x: number; y: number; fx: number; fy: number }
  * that best matches where it faces. null when the facing already reaches one,
  * or nothing sensible is in reach.
  */
-export function aimAssist(pose: { x: number; y: number; fx: number; fy: number }, stations: readonly StationLike[]): Vec | null {
+export function aimAssist<T extends StationLike>(pose: { x: number; y: number; fx: number; fy: number }, stations: readonly T[], useful?: (st: T) => boolean): Vec | null {
   const r = reachTile(pose);
-  if (stationOn(stations, r.x, r.y)) return null;
+  const faced = stationOn(stations, r.x, r.y);
+  // facing a station that will react: leave it alone
+  if (faced && (!useful || useful(faced))) return null;
   let best: Vec | null = null;
   let bestScore = -0.3;
   for (const a of AXES) {
     const tx = Math.floor(pose.x + a.x * kitchen.REACH);
     const ty = Math.floor(pose.y + a.y * kitchen.REACH);
     if (tx === Math.floor(pose.x) && ty === Math.floor(pose.y)) continue;
-    if (!stationOn(stations, tx, ty)) continue;
-    const score = a.x * pose.fx + a.y * pose.fy;
+    const st = stationOn(stations, tx, ty);
+    if (!st) continue;
+    // a station that will do something beats one that only matches the facing better
+    const score = a.x * pose.fx + a.y * pose.fy + (useful?.(st) ? 2 : 0);
     if (score > bestScore + 1e-6) {
       bestScore = score;
       best = a;

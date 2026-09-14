@@ -2,7 +2,7 @@ import { Client, Room } from 'colyseus.js';
 import { kitchen } from '@dovey/shared';
 import { endpoint } from '../net';
 import { deviceToken } from '../identity';
-import { Controls } from './controls';
+import { Controls, InputClock } from './controls';
 import { Interp } from './interp';
 import { Predictor } from './predict';
 import { KitchenView, applySnap, createView } from './view';
@@ -23,11 +23,14 @@ export class KitchenRound {
   /** sounds and shakes for round events (the store gets them too) */
   onEvent: ((e: kitchen.KitchenEvent) => void) | null = null;
   private client = new Client(endpoint());
+  private inputClock = new InputClock();
 
   constructor() {
     this.controls.context = {
-      pose: () => this.predictor?.pose() ?? null,
+      // controls aim from the sim position, never the smoothed display pose
+      pose: () => this.predictor?.simPose() ?? null,
       stations: () => this.view?.stations ?? [],
+      held: () => this.view?.chefs.find((c) => c.id === this.me)?.held ?? null,
     };
   }
 
@@ -107,9 +110,13 @@ export class KitchenRound {
 
   private sendInput() {
     if (!this.room || !this.view || this.view.over) return;
-    const inp = this.controls.next();
-    this.room.send('k_in', inp);
-    this.predictor?.input(inp);
+    // a late timer (busy frame, throttled tab) catches up instead of slowing the chef down
+    const due = this.inputClock.due(performance.now());
+    for (let i = 0; i < due; i++) {
+      const inp = this.controls.next();
+      this.room.send('k_in', inp);
+      this.predictor?.input(inp);
+    }
   }
 
   private onSnap(snap: kitchen.KitchenSnap) {

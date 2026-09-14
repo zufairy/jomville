@@ -87,13 +87,31 @@ describe('TapPilot via Controls', () => {
     expect(simulate(c, chef, 2)[0].grab).toBe(true);
   });
 
-  it('any key cancels an active tap path', () => {
+  it('game keys cancel an active tap path, other keys do not', () => {
     const c = new Controls();
     const chef: kitchen.MovingChef = { ...spawn, fx: 0, fy: 1, dash: 0, dashCd: 0 };
     c.pilot.start(planTap(lv, chef, { x: 10, y: 6 })!);
     simulate(c, chef, 3);
     expect(c.pilot.active).toBe(true);
-    c.keyDown('KeyQ');
+    c.keyDown('MetaLeft');
+    c.keyDown('Tab');
+    expect(c.pilot.active).toBe(true);
+    c.keyDown('Space');
+    expect(c.pilot.active).toBe(false);
+  });
+
+  it('a blocked path reports once with the press state so the caller can replan', () => {
+    const c = new Controls();
+    const chef: kitchen.MovingChef = { ...spawn, fx: 0, fy: 1, dash: 0, dashCd: 0 };
+    const plan = planTap(lv, chef, { x: 0, y: 1 }, 'pending')!;
+    c.pilot.start(plan);
+    c.pilot.holding = true;
+    const blocked: Array<[boolean, boolean]> = [];
+    c.pilot.onBlocked = (p, holding) => blocked.push([p === plan, holding]);
+    // the chef never moves (something in the way)
+    c.context = { pose: () => chef, stations: () => lv.stations };
+    for (let t = 0; t < 60; t++) c.next();
+    expect(blocked).toEqual([[true, true]]);
     expect(c.pilot.active).toBe(false);
   });
 
@@ -104,6 +122,10 @@ describe('TapPilot via Controls', () => {
     expect(up.mx).toBeCloseTo(-Math.SQRT1_2, 6);
     expect(up.my).toBeCloseTo(-Math.SQRT1_2, 6);
     c.keyUp('KeyW');
+    // the tap latch keeps a quick press walking for a couple more samples
+    c.next();
+    c.next();
+    expect(c.next()).toMatchObject({ mx: 0, my: 0 });
     const chef: kitchen.MovingChef = { x: 1.5, y: 1.3, fx: -Math.SQRT1_2, fy: -Math.SQRT1_2, dash: 0, dashCd: 0 };
     c.context = { pose: () => chef, stations: () => lv.stations };
     c.pressGrab();

@@ -13,6 +13,10 @@ export interface TapPlan {
   /** axis from goal to station */
   face: Vec | null;
   action: TapAction;
+  /** the tile that was tapped (replans aim at it again) */
+  target: Vec;
+  /** already replanned once after getting blocked */
+  retried?: boolean;
 }
 
 export interface LevelGrid {
@@ -40,7 +44,7 @@ export function planTap(lv: LevelGrid, from: { x: number; y: number }, tile: Vec
   const start = { x: Math.floor(from.x), y: Math.floor(from.y) };
   if (!solidAt(lv, tile.x, tile.y)) {
     const path = findPath(grid, start, tile);
-    return path && { goal: tile, path, station: null, face: null, action: 'walk' };
+    return path && { goal: tile, path, station: null, face: null, action: 'walk', target: tile };
   }
   let best: TapPlan | null = null;
   let bestCost = Infinity;
@@ -52,7 +56,7 @@ export function planTap(lv: LevelGrid, from: { x: number; y: number }, tile: Vec
     const cost = path.length + Math.hypot(stand.x + 0.5 - from.x, stand.y + 0.5 - from.y) * 0.01;
     if (cost < bestCost) {
       bestCost = cost;
-      best = { goal: stand, path, station: tile, face: { x: 0 - a.x, y: 0 - a.y }, action };
+      best = { goal: stand, path, station: tile, face: { x: 0 - a.x, y: 0 - a.y }, action, target: tile };
     }
   }
   return best;
@@ -78,6 +82,8 @@ export class TapPilot {
   /** true while the pointer that started a hold is still down */
   holding = false;
   onArrive: ((plan: TapPlan) => void) | null = null;
+  /** the path stopped making progress (another chef in the way); `holding` is the press state at the time */
+  onBlocked: ((plan: TapPlan, holding: boolean) => void) | null = null;
   private i = 0;
   private best = Infinity;
   private stuck = 0;
@@ -120,7 +126,9 @@ export class TapPilot {
           this.best = d;
           this.stuck = 0;
         } else if (++this.stuck > STUCK_TICKS) {
+          const holding = this.holding;
           this.cancel();
+          this.onBlocked?.(plan, holding);
           return idle;
         }
         const k = Math.min(1, Math.max(0.35, d * 4)) / Math.max(d, 1e-6);
