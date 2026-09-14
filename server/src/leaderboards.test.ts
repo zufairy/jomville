@@ -40,6 +40,17 @@ describe('PlayMinuteGate', () => {
     expect(g.take(['u1', 'u2'], 49_999)).toEqual([]);
     expect(g.take(['u1', 'u2'], 60_000)).toEqual(['u1', 'u2']);
   });
+
+  it('prunes stale entries once the map grows large, instead of growing forever', () => {
+    const g = new PlayMinuteGate(50_000);
+    const many = Array.from({ length: 1001 }, (_, i) => `u${i}`);
+    g.take(many, 0);
+    expect((g as unknown as { last: Map<string, number> }).last.size).toBe(1001);
+    // Everyone above is long past the gap; a later tick for one new user should
+    // prune the stale entries rather than merely appending to an ever-growing map.
+    g.take(['fresh'], 1_000_000);
+    expect((g as unknown as { last: Map<string, number> }).last.size).toBe(1);
+  });
 });
 
 describe('leaderboard columns', () => {

@@ -115,6 +115,7 @@ describe('leaderboards repo', () => {
     const rc = await repo.leaderboardRanks(c, '2026-09-14');
     expect(rc).toEqual({
       hidden: false,
+      handle: 'lb_c',
       coins: { rank: 2, value: 3000 },
       assets: { rank: null, value: 0 },
       timeWeek: { rank: null, value: 0 },
@@ -127,5 +128,14 @@ describe('leaderboards repo', () => {
     await repo.setHideRank(h, false);
     const rh = await repo.leaderboardRanks(h, '2026-09-14');
     expect(rh && !rh.hidden && rh.coins).toEqual({ rank: 1, value: 9000 });
+  });
+
+  it('setHideRank reports whether the flag actually changed', async () => {
+    const a = await user('lb_a', 100);
+    expect(await repo.setHideRank(a, true)).toBe(true);
+    // already true: no-op
+    expect(await repo.setHideRank(a, true)).toBe(false);
+    expect(await repo.setHideRank(a, false)).toBe(true);
+    expect(await repo.setHideRank(a, false)).toBe(false);
   });
 });

@@ -704,8 +704,13 @@ export class Repo {
     );
   }
 
-  async setHideRank(userId: string, hide: boolean): Promise<void> {
-    await this.db.query('update users set hide_rank = $2 where id = $1', [userId, hide]);
+  /** Returns whether the flag actually changed (no-op toggles skip the leaderboard cache invalidation). */
+  async setHideRank(userId: string, hide: boolean): Promise<boolean> {
+    const rows = await this.db.query(
+      'update users set hide_rank = $2 where id = $1 and hide_rank <> $2 returning id',
+      [userId, hide],
+    );
+    return rows.length > 0;
   }
 
   /** Top `limit` per board, value > 0 only, ties share a rank. */
@@ -739,9 +744,9 @@ export class Repo {
       const col = BOARD_COLUMN[key];
       return `m.${col} as ${col}, (select count(*) from scores s where s.${col} > m.${col})::int as ${col}_above`;
     }).join(',\n       ');
-    const rows = await this.db.query<Record<string, number>>(
+    const rows = await this.db.query<Record<string, number | string>>(
       `${SCORES_SQL}
-       select ${select}
+       select m.handle, ${select}
        from scores m where m.id = $4`,
       [priceTable(), SYSTEM_HANDLE, monday, userId],
     );
@@ -751,7 +756,14 @@ export class Repo {
       const value = Number(row[BOARD_COLUMN[key]]);
       return { rank: value > 0 ? Number(row[`${BOARD_COLUMN[key]}_above`]) + 1 : null, value };
     };
-    return { hidden: false, coins: mine('coins'), assets: mine('assets'), timeWeek: mine('timeWeek'), timeAll: mine('timeAll') };
+    return {
+      hidden: false,
+      handle: String(row.handle),
+      coins: mine('coins'),
+      assets: mine('assets'),
+      timeWeek: mine('timeWeek'),
+      timeAll: mine('timeAll'),
+    };
   }
 
   // ---- duels

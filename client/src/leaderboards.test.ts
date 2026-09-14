@@ -31,7 +31,7 @@ describe('leaderboard formatting', () => {
   it('labels the viewer rank', () => {
     const mine = { rank: 7, value: 10 };
     const none = { rank: null, value: 0 };
-    const me = { hidden: false as const, coins: mine, assets: none, timeWeek: mine, timeAll: mine };
+    const me = { hidden: false as const, handle: 'me', coins: mine, assets: none, timeWeek: mine, timeAll: mine };
     expect(rankLabel(null, 'coins')).toBeNull();
     expect(rankLabel({ hidden: true }, 'coins')).toBe('Your rank: Hidden');
     expect(rankLabel(me, 'coins')).toBe('Your rank: #7');

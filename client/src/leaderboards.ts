@@ -13,7 +13,7 @@ export interface MyRank {
   rank: number | null;
   value: number;
 }
-export type MyRanks = { hidden: true } | ({ hidden: false } & Record<BoardKey, MyRank>);
+export type MyRanks = { hidden: true } | ({ hidden: false; handle: string } & Record<BoardKey, MyRank>);
 
 export type Tab = 'coins' | 'assets' | 'time';
 export type TimeSpan = 'week' | 'all';
@@ -68,9 +68,15 @@ const send = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-/** `fresh` skips the HTTP cache (after the hide toggle). */
+/**
+ * `fresh` re-fetches and replaces the browser's stored copy (after the hide
+ * toggle, and on retry) instead of merely bypassing it: `cache:'no-store'`
+ * would skip the HTTP cache for this request but leave the stale stored
+ * response in place for the next `max-age=30` fetch, so a refresh right
+ * after hiding could show the old list again.
+ */
 export async function fetchBoards(fresh = false): Promise<Boards> {
-  const r = await fetch(`${base}/api/leaderboards`, fresh ? { cache: 'no-store' } : undefined);
+  const r = await fetch(`${base}/api/leaderboards`, fresh ? { cache: 'reload' } : undefined);
   if (!r.ok) throw new Error('leaderboards failed');
   return r.json();
 }

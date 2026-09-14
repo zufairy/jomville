@@ -23,7 +23,7 @@ export interface MyRank {
   rank: number | null;
   value: number;
 }
-export type MyRanks = { hidden: true } | ({ hidden: false } & Record<BoardKey, MyRank>);
+export type MyRanks = { hidden: true } | ({ hidden: false; handle: string } & Record<BoardKey, MyRank>);
 
 export const BOARD_SIZE = 50;
 /** limited-edition instances are worth this many times their shop price */
@@ -51,12 +51,20 @@ export function priceTable(defs: ReadonlyArray<{ id: string; price: number }> = 
 }
 
 /** Every room ticks its own minute; this keeps one minute per user per tick across all of them. */
+/** Above this size, `take` prunes stale entries first so the map doesn't grow without bound. */
+const PRUNE_ABOVE = 1000;
+
 export class PlayMinuteGate {
   private last = new Map<string, number>();
 
   constructor(private gapMs = PLAY_MINUTE_GAP_MS) {}
 
   take(userIds: Iterable<string>, now: number): string[] {
+    if (this.last.size > PRUNE_ABOVE) {
+      for (const [id, at] of this.last) {
+        if (now - at >= this.gapMs) this.last.delete(id);
+      }
+    }
     const out: string[] = [];
     for (const id of userIds) {
       const prev = this.last.get(id);

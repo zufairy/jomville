@@ -87,7 +87,8 @@ export function Leaderboards() {
   const top = rows.slice(0, 3);
   const rest = rows.slice(3);
   const hidden = me !== null && me.hidden === true;
-  const myRank = me !== null && !me.hidden ? me[key].rank : null;
+  // Handles are unique; matching by rank would highlight every user tied at the same rank.
+  const myHandle = me !== null && !me.hidden ? me.handle : null;
   const footer = footerState(storedToken(), me, meChecked);
 
   const toggleHide = async () => {
@@ -172,10 +173,10 @@ export function Leaderboards() {
         ) : (
           <>
             <ol className="lb-podium">
-              {top.map((r, i) => (
+              {top.map((r) => (
                 <li
                   key={r.handle}
-                  className={`lb-stall lb-stall--${MEDALS[i]}${r.rank === myRank ? ' lb-stall--me' : ''}`}
+                  className={`lb-stall${r.rank <= 3 ? ` lb-stall--${MEDALS[r.rank - 1]}` : ''}${r.handle === myHandle ? ' lb-stall--me' : ''}`}
                 >
                   <span className="lb-medal">#{r.rank}</span>
                   <Head avatar={r.avatar} scale={3} />
@@ -187,7 +188,7 @@ export function Leaderboards() {
             {rest.length > 0 && (
               <ol className="lb-list">
                 {rest.map((r) => (
-                  <li key={r.handle} className={`lb-row${r.rank === myRank ? ' lb-row--me' : ''}`}>
+                  <li key={r.handle} className={`lb-row${r.handle === myHandle ? ' lb-row--me' : ''}`}>
                     <span className="lb-rank">#{r.rank}</span>
                     <Head avatar={r.avatar} scale={1.5} />
                     <span className="lb-handle">{r.handle}</span>

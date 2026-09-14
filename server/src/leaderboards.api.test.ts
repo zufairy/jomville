@@ -63,4 +63,43 @@ describe('leaderboards api', () => {
     const b4 = await (await fetch(`${BASE}/api/leaderboards`)).json();
     expect(b4.coins[0]).toMatchObject({ handle: 'lb_rich', value: 100 });
   });
+
+  it('does not invalidate the cache when hideRank is a no-op', async () => {
+    const token = 'n'.repeat(32);
+    await repo.createUser(token, DEFAULT_AVATAR);
+    const b1 = await (await fetch(`${BASE}/api/leaderboards`)).json();
+    // setting hideRank to its current value (false) must not bust the cache
+    expect((await post('/api/me', { token, hideRank: false }, 'PATCH')).status).toBe(200);
+    const b2 = await (await fetch(`${BASE}/api/leaderboards`)).json();
+    expect(b2.generatedAt).toBe(b1.generatedAt);
+  });
+
+  it('rate-limits the hideRank toggle without blocking other PATCH /api/me fields', async () => {
+    const token = 'h'.repeat(32);
+    const u = await repo.createUser(token, DEFAULT_AVATAR);
+    for (let i = 0; i < 5; i++) {
+      expect((await post('/api/me', { token, hideRank: i % 2 === 0 }, 'PATCH')).status).toBe(200);
+    }
+    const [before] = await db.query<{ hide_rank: boolean }>('select hide_rank from users where id = $1', [u.id]);
+    expect(before.hide_rank).toBe(true); // last of the 5 allowed toggles (i=4, even -> true)
+
+    // 6th hideRank change within the window is dropped, but the handle field still applies.
+    const r6 = await post('/api/me', { token, handle: 'lb_limited', hideRank: false }, 'PATCH');
+    expect(r6.status).toBe(200);
+    const body = await r6.json();
+    expect(body.handle).toBe('lb_limited');
+    const [after] = await db.query<{ hide_rank: boolean }>('select hide_rank from users where id = $1', [u.id]);
+    expect(after.hide_rank).toBe(true);
+  });
+
+  it('rate-limits POST /api/leaderboards/me', async () => {
+    const token = 'r'.repeat(32);
+    await repo.createUser(token, DEFAULT_AVATAR);
+    for (let i = 0; i < 10; i++) {
+      expect((await post('/api/leaderboards/me', { token })).status).toBe(200);
+    }
+    const r11 = await post('/api/leaderboards/me', { token });
+    expect(r11.status).toBe(429);
+    expect(await r11.json()).toEqual({ error: 'rate_limited' });
+  });
 });

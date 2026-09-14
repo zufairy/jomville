@@ -3,6 +3,7 @@ import { footerState } from './leaderboardFooter';
 
 const RANKED: import('../leaderboards').MyRanks = {
   hidden: false,
+  handle: 'me',
   coins: { rank: 3, value: 100 },
   assets: { rank: 1, value: 50 },
   timeWeek: { rank: 2, value: 60 },

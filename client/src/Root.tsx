@@ -7,7 +7,7 @@ import { routeFromPath } from './router';
  * rooms, every in-game sheet) only downloads for /play and /r/:slug.
  */
 const App = lazy(() => import('./App').then((m) => ({ default: m.App })));
-/** rankings: no Pixi, no game store */
+/** rankings: no game store, but still pulls the shared avatar chunk (which includes Pixi core) for avatar previews */
 const Leaderboards = lazy(() => import('./ui/Leaderboards').then((m) => ({ default: m.Leaderboards })));
 
 export function Root() {

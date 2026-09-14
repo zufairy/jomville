@@ -32,6 +32,9 @@ export function buildApi(repo: Repo) {
 
   /** leaderboards are recomputed at most once a minute */
   const boards = new LeaderboardCache(() => repo.leaderboards(klMonday(new Date())));
+  // hideRank toggles free-invalidate the cache; leaderboards/me runs a full scan uncached. Rate-limit both per user.
+  const hideRankLimit = new RateLimiter(5, 10_000);
+  const myRanksLimit = new RateLimiter(10, 10_000);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
@@ -63,9 +66,10 @@ export function buildApi(repo: Repo) {
       if (!(await repo.setHandle(user.id, h))) return res.status(409).json({ error: 'handle taken or invalid' });
     }
     if (req.body?.onboarded === true) await repo.setOnboarded(user.id);
-    if (typeof req.body?.hideRank === 'boolean') {
-      await repo.setHideRank(user.id, req.body.hideRank);
-      boards.invalidate();
+    if (typeof req.body?.hideRank === 'boolean' && hideRankLimit.allow(user.id)) {
+      // Only bust the leaderboard cache when the flag actually flipped; a repeated
+      // no-op toggle (or a client re-sending the same value) shouldn't force a reload.
+      if (await repo.setHideRank(user.id, req.body.hideRank)) boards.invalidate();
     }
     res.json(await meJson((await repo.userById(user.id))!));
   });
@@ -223,6 +227,7 @@ export function buildApi(repo: Repo) {
     const token = tokenOf(req.body);
     const user = token ? await repo.userByToken(token) : null;
     if (!user) return res.status(401).json({ error: 'unknown' });
+    if (!myRanksLimit.allow(user.id)) return res.status(429).json({ error: 'rate_limited' });
     const ranks = await repo.leaderboardRanks(user.id, klMonday(new Date()));
     if (!ranks) return res.status(401).json({ error: 'unknown' });
     res.json(ranks);
