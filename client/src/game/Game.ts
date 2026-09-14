@@ -57,6 +57,7 @@ import { RIDE_SEAT_Z, seatPose } from './seats';
 import { BEACH_CRITTERS, DREAM_CRITTERS, WONDER_CRITTERS } from '@dovey/shared';
 import { bindLoveSender, love } from '../love';
 import { bindTableSender, useTables } from '../tableGames';
+import { bindTradeSender, useTrade } from '../trade';
 import { bindFriendSender, useFriends } from '../friends';
 import { useAppStore } from '../store';
 
@@ -203,6 +204,7 @@ export class Game {
     this.emotes = new EmotePool(this.fxLayer);
     bindLoveSender((type, data) => this.net.send(type, data));
     bindTableSender((type, data) => this.net.send(type, data));
+    bindTradeSender((type, data) => this.net.send(type, data));
     bindFriendSender((type, data) => this.net.send(type, data));
     this.calls.onVibe = (v) => {
       if (this.theme === 'love') love.vibe(v);
@@ -1330,6 +1332,7 @@ export class Game {
     st.setDuel(IDLE_DUEL);
     // a rejoin is a new session: the old seat and match are gone server-side
     useTables.getState().reset();
+    useTrade.getState().reset();
     st.setSessionId(null);
     st.setPlayerCount(0);
   }

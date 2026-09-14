@@ -27,4 +27,5 @@ export * from './tableGames';
 export * from './gameDen';
 export * from './casino';
 export * from './kitchenWorld';
+export * from './trade';
 export * as kitchen from './kitchen';

@@ -212,6 +212,14 @@ export function buildApi(repo: Repo) {
     res.json(await repo.openReports());
   });
 
+  /** A user's last 50 trades (both sides, offers with serials), for judging scam reports. */
+  app.get('/api/mod/trades', async (req, res) => {
+    if (!isMod(req as never)) return res.status(404).json({ error: 'not found' });
+    const user = typeof req.query.user === 'string' ? req.query.user : '';
+    if (!user) return res.status(400).json({ error: 'bad user' });
+    res.json(await repo.tradesFor(user, 50));
+  });
+
   app.post('/api/mod/reports/:id', async (req, res) => {
     if (!isMod(req as never)) return res.status(404).json({ error: 'not found' });
     const id = Number(req.params.id);
