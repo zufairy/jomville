@@ -15,6 +15,7 @@ export interface FriendInvite {
 
 const MAX_INVITES = 5;
 let inviteSeq = 0;
+let loadSeq = 0;
 
 export function sortFriends(list: FriendView[]): FriendView[] {
   return [...list].sort((a, b) => Number(b.online) - Number(a.online) || a.handle.localeCompare(b.handle));
@@ -43,8 +44,9 @@ export const useFriends = create<FriendsStore>((set, get) => ({
   setOpen: (open) => set({ open }),
   setData: (p) => set({ friends: sortFriends(p.friends), incoming: p.incoming, outgoing: p.outgoing }),
   load: async () => {
+    const seq = ++loadSeq;
     const p = await fetchFriends();
-    if (p) get().setData(p);
+    if (p && seq === loadSeq) get().setData(p);
   },
   applyPresence: ({ id, online, room }) => {
     const friends = get().friends;
@@ -78,6 +80,7 @@ const RESULT_TEXT: Record<string, string> = {
   declined: 'request declined',
   no_request: 'that request is gone',
   error: 'something went wrong, try again',
+  rate_limited: 'slow down',
 };
 
 async function act(path: 'request' | 'respond' | 'cancel' | 'remove', body: Record<string, unknown>) {

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_AVATAR, SYSTEM_HANDLE } from '@dovey/shared';
+import { DEFAULT_AVATAR, FRIEND_PENDING_LIMIT, SYSTEM_HANDLE } from '@dovey/shared';
 import { Db, openTestDb } from './db';
 import { Repo } from './repo';
 
@@ -212,4 +212,40 @@ describe('friends', () => {
     expect(await repo.requestFriend(a.id, b.id)).toBe('blocked');
     expect(await repo.requestFriend(b.id, a.id)).toBe('blocked');
   });
+
+  it('cancel/remove are no-ops when nothing exists, true when something is deleted', async () => {
+    const a = await mk('m');
+    const b = await mk('n');
+    expect(await repo.cancelFriendRequest(a.id, b.id)).toBe(false);
+    expect(await repo.removeFriend(a.id, b.id)).toBe(false);
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.cancelFriendRequest(a.id, b.id)).toBe(true);
+    expect(await repo.cancelFriendRequest(a.id, b.id)).toBe(false);
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.respondFriend(b.id, a.id, true)).toBe('accepted');
+    expect(await repo.removeFriend(a.id, b.id)).toBe(true);
+    expect(await repo.removeFriend(a.id, b.id)).toBe(false);
+  });
+
+  it('blocking deletes pending requests both ways', async () => {
+    const a = await mk('o');
+    const b = await mk('p');
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    await repo.block(b.id, a.id);
+    expect((await repo.pendingOf(a.id)).outgoing).toEqual([]);
+    expect((await repo.pendingOf(b.id)).incoming).toEqual([]);
+  });
+
+  it('enforces the pending outgoing-request limit', async () => {
+    const from = await mk('q');
+    const targets = [];
+    for (let i = 0; i < FRIEND_PENDING_LIMIT; i++) {
+      targets.push(await repo.createUser(`p${i}`.padEnd(32, 'x'), DEFAULT_AVATAR));
+    }
+    for (const t of targets) {
+      expect(await repo.requestFriend(from.id, t.id)).toBe('sent');
+    }
+    const oneMore = await repo.createUser('pOverflow'.padEnd(32, 'x'), DEFAULT_AVATAR);
+    expect(await repo.requestFriend(from.id, oneMore.id)).toBe('limit');
+  }, 20_000);
 });
