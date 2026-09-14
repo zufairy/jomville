@@ -3,6 +3,7 @@ import { AvatarConfig, Placement, RoomStyle, parseStyle } from '@dovey/shared';
 import { useAppStore } from './store';
 import { deviceToken } from './identity';
 import { useLove } from './love';
+import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { fetchInventory } from './api';
 
@@ -25,7 +26,8 @@ export interface NetEvents {
   onAdd: (id: string, p: RemotePlayer) => void;
   onChange: (id: string, p: RemotePlayer) => void;
   onRemove: (id: string) => void;
-  onChat: (id: string, text: string) => void;
+  /** `roll` marks a server-issued dice/wheel result (drawn distinct from typed chat) */
+  onChat: (id: string, text: string, roll?: boolean) => void;
   onEmote: (id: string, i: number) => void;
   /** someone tapped themselves to use their gear */
   onGearUse: (id: string) => void;
@@ -115,6 +117,7 @@ export class Net {
   resume() {
     if (!this.events || !this.closed) return;
     this.closed = false;
+    useRoster.getState().clear();
     this.events.onReset();
     this.retry(0);
   }
@@ -190,12 +193,17 @@ export class Net {
 
     $(room.state).players.onAdd((p: RemotePlayer, id: string) => {
       events.onAdd(id, p);
+      useRoster.getState().upsert(id, { handle: p.handle, userId: p.userId, avatar: p.avatar });
       if (id === room.sessionId) syncRoom();
-      $(p).onChange(() => events.onChange(id, p));
+      $(p).onChange(() => {
+        events.onChange(id, p);
+        useRoster.getState().upsert(id, { handle: p.handle, userId: p.userId, avatar: p.avatar });
+      });
       store.setPlayerCount(room.state.players.size);
     });
     $(room.state).players.onRemove((_p: RemotePlayer, id: string) => {
       events.onRemove(id);
+      useRoster.getState().remove(id);
       store.setPlayerCount(room.state.players.size);
     });
 
@@ -239,6 +247,7 @@ export class Net {
     };
     room.onMessage('inventory_refresh', refreshInventory);
     room.onMessage('chat', (m: { id: string; text: string }) => events.onChat(m.id, m.text));
+    room.onMessage('roll', (m: { id: string; text: string }) => events.onChat(m.id, m.text, true));
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
     room.onMessage('sys', (m: { code: string }) => {
@@ -267,7 +276,7 @@ export class Net {
       };
       store.flash(msgs[m.code] ?? 'nope');
       // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray
-      const rollback = new Set(['not_owned', 'bad_request', 'overlap', 'out_of_bounds', 'room_full', 'bad_rot', 'bad_coords', 'unknown_def']);
+      const rollback = new Set(['not_owned', 'bad_request', 'overlap', 'out_of_bounds', 'room_full', 'bad_rot', 'bad_coords', 'unknown_def', 'rate_limited', 'not_owner']);
       if (rollback.has(m.code)) refreshInventory();
     });
 
@@ -276,6 +285,7 @@ export class Net {
       this.room = null;
       if (this.closed) return;
       if (import.meta.env.DEV) console.debug('[net] dropped', code);
+      useRoster.getState().clear();
       events.onReset();
       this.retry(0);
     });
