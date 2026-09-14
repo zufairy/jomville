@@ -97,8 +97,8 @@ describe('TradeController', () => {
     await s.ctl.handle('sa', 't_confirm', {});
     expect(s.last('sa', 't_done')).toBeUndefined();
     await s.ctl.handle('sb', 't_confirm', {});
-    expect(s.last('sa', 't_done')).toEqual({ ok: true });
-    expect(s.last('sb', 't_done')).toEqual({ ok: true });
+    expect(s.last('sa', 't_done')).toMatchObject({ ok: true });
+    expect(s.last('sb', 't_done')).toMatchObject({ ok: true });
     expect(s.last('sa', 'coins')).toEqual({ coins: coinsA - 400 + 100, earned: 0 });
     expect(s.last('sb', 'coins')).toEqual({ coins: 5000 + 400 - 100, earned: 0 });
 
@@ -204,8 +204,8 @@ describe('TradeController', () => {
     s.advance(3000);
     await s.ctl.handle('sa', 't_confirm', {});
     await s.ctl.handle('sb', 't_confirm', {});
-    expect(s.last('sa', 't_done')).toEqual({ ok: false, code: 'not_owned' });
-    expect(s.last('sb', 't_done')).toEqual({ ok: false, code: 'not_owned' });
+    expect(s.last('sa', 't_done')).toMatchObject({ ok: false, code: 'not_owned' });
+    expect(s.last('sb', 't_done')).toMatchObject({ ok: false, code: 'not_owned' });
     expect(await repo.coins(b.id)).toBe(coinsB);
     expect((await repo.instances(a.id)).find((i) => i.id === buy.item.id)?.placed).toBe('room1');
     expect(s.ctl.book.get('sb')).toBeUndefined();
@@ -216,8 +216,8 @@ describe('TradeController', () => {
     const { a, b } = await opened(s);
     await s.ctl.handle('sa', 't_offer', { slots: [], coins: 900 });
     await s.ctl.handle('sb', 't_report', { note: 'swapped at the last second' });
-    expect(s.last('sa', 't_done')).toEqual({ ok: false, code: 'reported' });
-    expect(s.last('sb', 't_done')).toEqual({ ok: false, code: 'reported' });
+    expect(s.last('sa', 't_done')).toMatchObject({ ok: false, code: 'reported' });
+    expect(s.last('sb', 't_done')).toMatchObject({ ok: false, code: 'reported' });
     expect(s.ctl.book.get('sa')).toBeUndefined();
     const rows = await db.query<{ reporter_id: string; target_id: string; reason: string; context: string; room_id: string }>(
       'select reporter_id, target_id, reason, context, room_id from reports where reporter_id = $1',
@@ -239,39 +239,82 @@ describe('TradeController', () => {
 
     await s.ctl.handle('sa', 't_invite', { id: 'sb' });
     await s.ctl.handle('sb', 't_respond', { ok: false });
-    expect(s.last('sa', 't_done')).toEqual({ ok: false, code: 'declined' });
+    expect(s.last('sa', 't_done')).toMatchObject({ ok: false, code: 'declined' });
 
     s.advance(5000);
     await s.ctl.handle('sa', 't_invite', { id: 'sb' });
     s.advance(20_000);
     await s.ctl.handle('sb', 't_respond', { ok: true });
-    expect(s.last('sa', 't_done')).toEqual({ ok: false, code: 'expired' });
-    expect(s.last('sb', 't_done')).toEqual({ ok: false, code: 'expired' });
+    expect(s.last('sa', 't_done')).toMatchObject({ ok: false, code: 'expired' });
+    expect(s.last('sb', 't_done')).toMatchObject({ ok: false, code: 'expired' });
 
     await s.ctl.handle('sc', 't_invite', { id: 'sd' });
     s.advance(20_000);
     s.ctl.sweep();
-    expect(s.last('sc', 't_done')).toEqual({ ok: false, code: 'expired' });
-    expect(s.last('sd', 't_done')).toEqual({ ok: false, code: 'expired' });
+    expect(s.last('sc', 't_done')).toMatchObject({ ok: false, code: 'expired' });
+    expect(s.last('sd', 't_done')).toMatchObject({ ok: false, code: 'expired' });
 
     await s.ctl.handle('sa', 't_invite', { id: 'sb' });
     await s.ctl.handle('sb', 't_respond', { ok: true });
     await s.ctl.handle('sa', 't_cancel', {});
-    expect(s.last('sb', 't_done')).toEqual({ ok: false, code: 'cancelled' });
-    expect(s.last('sa', 't_done')).toEqual({ ok: false, code: 'cancelled' });
+    expect(s.last('sb', 't_done')).toMatchObject({ ok: false, code: 'cancelled' });
+    expect(s.last('sa', 't_done')).toMatchObject({ ok: false, code: 'cancelled' });
 
     s.advance(5000);
     await s.ctl.handle('sa', 't_invite', { id: 'sb' });
     await s.ctl.handle('sb', 't_respond', { ok: true });
     s.ctl.leave('sa');
-    expect(s.last('sb', 't_done')).toEqual({ ok: false, code: 'left' });
+    expect(s.last('sb', 't_done')).toMatchObject({ ok: false, code: 'left' });
 
     s.advance(5000);
     await s.ctl.handle('sc', 't_invite', { id: 'sd' });
     await s.ctl.handle('sd', 't_respond', { ok: true });
     s.advance(300_000);
     s.ctl.sweep();
-    expect(s.last('sc', 't_done')).toEqual({ ok: false, code: 'idle' });
-    expect(s.last('sd', 't_done')).toEqual({ ok: false, code: 'idle' });
+    expect(s.last('sc', 't_done')).toMatchObject({ ok: false, code: 'idle' });
+    expect(s.last('sd', 't_done')).toMatchObject({ ok: false, code: 'idle' });
+  });
+
+  it('starting a trade withdraws other invites and stale answers cannot touch the new window', async () => {
+    const s = setup();
+    for (const sid of ['sa', 'sb', 'sc', 'sd']) s.users.set(sid, await player(0));
+    await s.ctl.handle('sa', 't_invite', { id: 'sb' });
+    await s.ctl.handle('sc', 't_invite', { id: 'sd' });
+    await s.ctl.handle('sd', 't_invite', { id: 'sa' });
+    await s.ctl.handle('sa', 't_respond', { ok: true });
+    expect(s.ctl.book.get('sa')?.a.id).toBe('sd');
+    expect(s.all('sb', 't_done')).toEqual([{ ok: false, code: 'cancelled', with: 'sa' }]);
+    expect(s.all('sc', 't_done')).toEqual([{ ok: false, code: 'trade_busy', with: 'sd' }]);
+    expect(s.all('sa', 't_done')).toEqual([]);
+    expect(s.all('sd', 't_done')).toEqual([]);
+
+    await s.ctl.handle('sb', 't_respond', { ok: true });
+    s.advance(20_000);
+    s.ctl.sweep();
+    expect(s.all('sa', 't_done')).toEqual([]);
+    expect(s.all('sd', 't_done')).toEqual([]);
+    expect(s.all('sb', 't_done')).toHaveLength(1);
+    expect(s.ctl.book.get('sa')?.a.id).toBe('sd');
+  });
+
+  it('a stray t_respond with no invite is ignored', async () => {
+    const s = setup();
+    s.users.set('sa', await player(0));
+    await s.ctl.handle('sa', 't_respond', { ok: true });
+    expect(s.sent).toEqual([]);
+  });
+
+  it('leaving while the trade executes does not also say left', async () => {
+    const s = setup();
+    await opened(s);
+    await s.ctl.handle('sa', 't_offer', { slots: [], coins: 10 });
+    await s.ctl.handle('sa', 't_accept', {});
+    await s.ctl.handle('sb', 't_accept', {});
+    s.advance(3000);
+    await s.ctl.handle('sa', 't_confirm', {});
+    const running = s.ctl.handle('sb', 't_confirm', {});
+    s.ctl.leave('sa');
+    await running;
+    expect(s.all('sb', 't_done')).toEqual([{ ok: true, with: 'sa' }]);
   });
 });

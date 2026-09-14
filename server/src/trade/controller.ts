@@ -30,6 +30,10 @@ export interface TradeHost {
 }
 
 const EMPTY: ResolvedOffer = { slots: [], coins: 0 };
+const both = (t: Trade): Array<[string, string]> => [
+  [t.a.id, t.b.id],
+  [t.b.id, t.a.id],
+];
 
 /**
  * Player-to-player trading for one room: consent-gated invites, a shared
@@ -74,9 +78,13 @@ export class TradeController {
 
   /** The session left the room: close its trade and invites, tell the others. */
   leave(sid: string) {
+    const executing = this.book.get(sid)?.executing ?? false;
     const { trade, peers } = this.book.close(sid, true);
     if (trade) this.forget(trade);
-    this.done(peers, false, 'left');
+    // a running trade still sends its own t_done when the transaction ends
+    const partner = trade ? this.book.sides(trade, sid).them.id : null;
+    const tell = executing ? peers.filter((p) => p !== partner) : peers;
+    this.done(tell.map((p) => [p, sid]), false, 'left');
     this.resolved.delete(sid);
     this.msgLimit.forget(sid);
     this.inviteLimit.forget(sid);
@@ -87,9 +95,9 @@ export class TradeController {
     const { idle, expired } = this.book.sweep();
     for (const t of idle) {
       this.forget(t);
-      this.done([t.a.id, t.b.id], false, 'idle');
+      this.done(both(t), false, 'idle');
     }
-    for (const e of expired) this.done([e.from, e.to], false, 'expired');
+    for (const e of expired) this.done([[e.from, e.to], [e.to, e.from]], false, 'expired');
   }
 
   private async invite(sid: string, me: { id: string; handle: string }, rawTo: unknown) {
@@ -114,19 +122,26 @@ export class TradeController {
 
   private respond(sid: string, ok: boolean) {
     const r = this.book.respond(sid, ok);
-    if (!r) return this.done([sid], false, 'expired');
+    if (!r) return; // nothing pending: a late or duplicate answer
     if (r.kind === 'start') {
+      const people = [r.trade.a.id, r.trade.b.id];
+      for (const d of r.dropped) {
+        if (people.includes(d.from) && people.includes(d.to)) continue;
+        // an invite sent by one of them is withdrawn; an invite to one of them finds them busy
+        if (people.includes(d.from)) this.done([[d.to, d.from]], false, 'cancelled');
+        else this.done([[d.from, d.to]], false, 'trade_busy');
+      }
       if (!this.host.userOf(r.trade.a.id)) {
         this.book.finish(r.trade);
-        return this.done([sid], false, 'peer_gone');
+        return this.done([[sid, r.trade.a.id]], false, 'peer_gone');
       }
       this.resolved.set(r.trade.a.id, EMPTY);
       this.resolved.set(r.trade.b.id, EMPTY);
       return this.pushState(r.trade);
     }
-    if (r.kind === 'declined') return this.done([r.from], false, 'declined');
+    if (r.kind === 'declined') return this.done([[r.from, sid]], false, 'declined');
     const code: TradeDoneCode = r.kind === 'busy' ? 'trade_busy' : 'expired';
-    this.done([r.from, sid], false, code);
+    this.done([[r.from, sid], [sid, r.from]], false, code);
   }
 
   private async offer(sid: string, userId: string, m: Record<string, unknown>) {
@@ -165,19 +180,19 @@ export class TradeController {
     if (!ua || !ub) {
       this.book.finish(t);
       this.forget(t);
-      return this.done([t.a.id, t.b.id], false, 'peer_gone');
+      return this.done(both(t), false, 'peer_gone');
     }
     const r = await this.host.repo.executeTrade(ua.id, ub.id, t.a.offer, t.b.offer, this.host.roomId());
     this.book.finish(t);
     this.forget(t);
-    if (!r.ok) return this.done([t.a.id, t.b.id], false, r.code);
+    if (!r.ok) return this.done(both(t), false, r.code);
     for (const [sid, uid] of [
       [t.a.id, ua.id],
       [t.b.id, ub.id],
     ]) {
       this.host.send(sid, 'coins', { coins: await this.host.repo.coins(uid), earned: 0 });
     }
-    this.done([t.a.id, t.b.id], true);
+    this.done(both(t), true);
   }
 
   private cancel(sid: string) {
@@ -185,7 +200,8 @@ export class TradeController {
     if (!trade && this.book.get(sid)) return this.sys(sid, 'trade_locked');
     if (trade) this.forget(trade);
     if (!trade && !peers.length) return;
-    this.done([sid, ...peers], false, 'cancelled');
+    const mine = trade ? this.book.sides(trade, sid).them.id : peers[0];
+    this.done([[sid, mine], ...peers.map((p): [string, string] => [p, sid])], false, 'cancelled');
   }
 
   private async report(sid: string, userId: string, rawNote: unknown) {
@@ -204,7 +220,7 @@ export class TradeController {
     // close first, so nothing can execute while the report is written
     this.book.finish(t);
     this.forget(t);
-    this.done([t.a.id, t.b.id], false, 'reported');
+    this.done(both(t), false, 'reported');
     if (target) await this.host.repo.report(userId, target.id, this.host.roomId(), 'scam', context);
   }
 
@@ -231,8 +247,9 @@ export class TradeController {
     this.resolved.delete(t.b.id);
   }
 
-  private done(ids: string[], ok: boolean, code?: TradeDoneCode) {
-    for (const id of ids) this.host.send(id, 't_done', ok ? { ok: true } : { ok: false, code });
+  /** `pairs` are [recipient, the other person]; `with` lets a client ignore news about a different invite */
+  private done(pairs: Array<[string, string]>, ok: boolean, code?: TradeDoneCode) {
+    for (const [to, other] of pairs) this.host.send(to, 't_done', ok ? { ok: true, with: other } : { ok: false, code, with: other });
   }
 
   private sys(sid: string, code: string) {

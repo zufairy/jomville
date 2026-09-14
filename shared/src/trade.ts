@@ -55,6 +55,8 @@ export type TradeDoneCode = TradeFailCode | 'cancelled' | 'declined' | 'expired'
 export interface TradeDoneMsg {
   ok: boolean;
   code?: TradeDoneCode;
+  /** session id of the other person this trade or invite was with */
+  with?: string;
 }
 
 export type TradeLogSlot = { def: string; qty: number } | { itemId: string; def: string; serial: number | null };

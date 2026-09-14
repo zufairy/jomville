@@ -23,7 +23,9 @@ export interface Trade {
   executing: boolean;
 }
 
-export type RespondResult = { kind: 'start'; trade: Trade } | { kind: 'declined' | 'expired' | 'busy'; from: string };
+export type RespondResult =
+  | { kind: 'start'; trade: Trade; dropped: Array<{ from: string; to: string }> }
+  | { kind: 'declined' | 'expired' | 'busy'; from: string };
 export type ConfirmResult = 'no_trade' | 'not_accepted' | 'too_early' | 'waiting' | 'execute';
 
 export class TradeBook {
@@ -54,7 +56,14 @@ export class TradeBook {
     const trade: Trade = { a: side(inv.from), b: side(to), confirmAt: null, touchedAt: this.now(), executing: false };
     this.trades.set(inv.from, trade);
     this.trades.set(to, trade);
-    return { kind: 'start', trade };
+    // both people are busy now: every other invite to or from either of them is withdrawn
+    const dropped: Array<{ from: string; to: string }> = [];
+    for (const [invitee, other] of this.invites) {
+      if (invitee !== inv.from && invitee !== to && other.from !== inv.from && other.from !== to) continue;
+      this.invites.delete(invitee);
+      dropped.push({ from: other.from, to: invitee });
+    }
+    return { kind: 'start', trade, dropped };
   }
 
   get(id: string): Trade | undefined {

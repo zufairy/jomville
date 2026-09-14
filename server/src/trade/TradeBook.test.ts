@@ -118,4 +118,22 @@ describe('TradeBook', () => {
     expect(b.respond('q', true)).toBeNull();
     expect(b.respond('p', true)).toBeNull();
   });
+
+  it('starting a trade drops every other invite to or from both people', () => {
+    const { b } = book();
+    b.invite('a', 'b');
+    b.invite('d', 'a');
+    b.invite('c', 'd');
+    const r = b.respond('a', true);
+    expect(r?.kind).toBe('start');
+    if (r?.kind !== 'start') return;
+    expect([r.trade.a.id, r.trade.b.id]).toEqual(['d', 'a']);
+    expect([...r.dropped].sort((x, y) => x.from.localeCompare(y.from))).toEqual([
+      { from: 'a', to: 'b' },
+      { from: 'c', to: 'd' },
+    ]);
+    expect(b.respond('b', true)).toBeNull();
+    expect(b.respond('d', true)).toBeNull();
+    expect(b.sweep().expired).toEqual([]);
+  });
 });
