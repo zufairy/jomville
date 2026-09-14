@@ -10,7 +10,7 @@ vi.mock('./api', () => ({
 }));
 
 import { useAppStore } from './store';
-import { bindTradeSender, onTradeDone, onTradeIncoming, onTradeState, onTradeSys, trade, useTrade } from './trade';
+import { bindTradeSender, onTradeDone, onTradeIncoming, onTradeState, onTradeSys, trade, tradeSysText, useTrade } from './trade';
 
 const sent: Array<[string, unknown]> = [];
 const empty = { slots: [], coins: 0 };
@@ -91,5 +91,47 @@ describe('trade store', () => {
     trade.cancel();
     expect(sent.at(-1)).toEqual(['t_cancel', undefined]);
     expect(useTrade.getState().phase).toBe('idle');
+  });
+});
+
+describe('trade window fixes', () => {
+  const chair = (qty: number) => ({ def: 'chair', qty, itemId: null, name: 'chair', serial: null });
+
+  it('a t_done about another invite does not close the open window', async () => {
+    useTrade.getState().applyState(state(), 1);
+    await onTradeDone({ ok: false, code: 'expired', with: 'p9' });
+    await onTradeDone({ ok: false, code: 'trade_busy', with: 'p9' });
+    expect(useTrade.getState().phase).toBe('open');
+    await onTradeDone({ ok: false, code: 'cancelled', with: 'p1' });
+    expect(useTrade.getState().phase).toBe('idle');
+  });
+
+  it('a waiting card ignores answers from other people', async () => {
+    trade.invite('p1', 'bob');
+    await onTradeDone({ ok: false, code: 'declined', with: 'p2' });
+    expect(useTrade.getState().phase).toBe('waiting');
+  });
+
+  it('rapid offer taps build on the pending draft until the server catches up', () => {
+    useTrade.getState().applyState(state(), 1);
+    trade.offer({ slots: [{ def: 'chair', qty: 1 }], coins: 0 });
+    trade.offer({ slots: [{ def: 'chair', qty: 2 }], coins: 0 });
+    useTrade.getState().applyState(state({ you: { slots: [chair(1)], coins: 0 } }), 2);
+    expect(useTrade.getState().draft).toEqual({ slots: [{ def: 'chair', qty: 2 }], coins: 0 });
+    useTrade.getState().applyState(state({ you: { slots: [chair(2)], coins: 0 } }), 3);
+    expect(useTrade.getState().draft).toBeNull();
+    trade.offer({ slots: [{ def: 'chair', qty: 9 }], coins: 0 });
+    onTradeSys('insufficient_items');
+    expect(useTrade.getState().draft).toBeNull();
+  });
+
+  it('trade refusals use trade copy only while trading', () => {
+    expect(tradeSysText('not_owned')).toBeNull();
+    trade.invite('p1', 'bob');
+    expect(tradeSysText('no_such_player')).toBe("they're not here");
+    expect(tradeSysText('blocked_pair')).toBe("you can't trade with someone you blocked");
+    useTrade.getState().applyState(state(), 1);
+    expect(tradeSysText('not_owned')).toBe("that item isn't yours to trade anymore");
+    expect(tradeSysText('overlap')).toBeNull();
   });
 });

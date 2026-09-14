@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FURNITURE, REPORT_NOTE_MAX, TRADE_CONFIRM_DELAY_MS, TRADE_SLOTS, isInstanceDef, type ResolvedOffer, type ResolvedSlot } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { trade, useTrade } from '../trade';
-import { confirmLeft, isFlashing, removeSlot, toOffer, toggleInstance, withCoins, withStack } from '../tradeLogic';
+import { confirmLeft, isFlashing, toOffer, toggleInstance, withCoins, withStack } from '../tradeLogic';
 import { Thumb } from './BuildBar';
 import { VipModal } from './VipModal';
 import './trade.css';
@@ -78,6 +78,7 @@ export function TradeWindow() {
   const view = useTrade((s) => s.view);
   const changedAt = useTrade((s) => s.changedAt);
   const confirmed = useTrade((s) => s.confirmed);
+  const draft = useTrade((s) => s.draft);
   const inventory = useAppStore((s) => s.inventory);
   const instances = useAppStore((s) => s.instances);
   const [reporting, setReporting] = useState(false);
@@ -121,12 +122,18 @@ export function TradeWindow() {
     );
   }
 
-  const offer = toOffer(view.you);
-  const full = view.you.slots.length >= TRADE_SLOTS;
+  // build every edit on my newest sent offer, so quick taps are not lost before the server echoes
+  const offer = draft ?? toOffer(view.you);
+  const full = offer.slots.length >= TRADE_SLOTS;
   const stacks = FURNITURE.filter((f) => !isInstanceDef(f) && (inventory[f.id] ?? 0) > 0);
   const unplaced = instances.filter((i) => !i.placed);
-  const offeredQty = (def: string) => view.you.slots.find((s) => !s.itemId && s.def === def)?.qty ?? 0;
-  const offeredItem = (id: string) => view.you.slots.some((s) => s.itemId === id);
+  const offeredQty = (def: string) => offer.slots.find((s): s is { def: string; qty: number } => !('itemId' in s) && s.def === def)?.qty ?? 0;
+  const offeredItem = (id: string) => offer.slots.some((s) => 'itemId' in s && s.itemId === id);
+  const takeBack = (i: number) => {
+    const slot = view.you.slots[i];
+    if (!slot) return;
+    trade.offer(slot.itemId ? toggleInstance(offer, slot.itemId) : withStack(offer, slot.def, 0));
+  };
   const bothAccepted = view.acceptedYou && view.acceptedThem;
   const left = confirmLeft(view.confirmEndsAt, now) ?? 0;
   const commitCoins = () => {
@@ -178,7 +185,7 @@ export function TradeWindow() {
               accepted={view.acceptedYou}
               changedAt={changedAt}
               now={now}
-              onRemove={(i) => trade.offer(removeSlot(offer, i))}
+              onRemove={takeBack}
             />
             <Column title={view.partner.handle} side="them" offer={view.them} accepted={view.acceptedThem} changedAt={changedAt} now={now} />
           </div>

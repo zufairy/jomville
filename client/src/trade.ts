@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Offer, TradeDoneMsg, TradeStateMsg } from '@dovey/shared';
 import { fetchInventory } from './api';
 import { useAppStore } from './store';
-import { type TradeView, flashKeys, markChanged } from './tradeLogic';
+import { type TradeView, flashKeys, markChanged, sameOffer, toOffer } from './tradeLogic';
 
 /**
  * Trade window client state, kept out of the main store like table games.
@@ -19,6 +19,8 @@ interface TradeStore {
   changedAt: Record<string, number>;
   /** I pressed Confirm and wait for the other side */
   confirmed: boolean;
+  /** my last sent offer the server has not echoed yet, so quick taps build on it */
+  draft: Offer | null;
   setWaiting: (peer: string, handle: string) => void;
   setIncoming: (peer: string, handle: string) => void;
   applyState: (m: TradeStateMsg, now: number) => void;
@@ -26,7 +28,7 @@ interface TradeStore {
   reset: () => void;
 }
 
-const IDLE = { phase: 'idle' as TradePhase, peer: '', handle: '', view: null, changedAt: {}, confirmed: false };
+const IDLE = { phase: 'idle' as TradePhase, peer: '', handle: '', view: null, changedAt: {}, confirmed: false, draft: null as Offer | null };
 
 export const useTrade = create<TradeStore>((set, get) => ({
   ...IDLE,
@@ -53,6 +55,7 @@ export const useTrade = create<TradeStore>((set, get) => ({
         },
         changedAt: markChanged(s.changedAt, keys, now),
         confirmed: both ? s.confirmed : false,
+        draft: s.draft && !sameOffer(s.draft, toOffer(m.you)) ? s.draft : null,
       };
     }),
   markConfirmed: () => set({ confirmed: true }),
@@ -75,7 +78,10 @@ export const trade = {
     send?.('t_respond', { ok });
     if (!ok) useTrade.getState().reset();
   },
-  offer: (o: Offer) => send?.('t_offer', o),
+  offer: (o: Offer) => {
+    send?.('t_offer', o);
+    useTrade.setState({ draft: o });
+  },
   accept: () => send?.('t_accept'),
   confirm: () => {
     send?.('t_confirm');
@@ -122,7 +128,10 @@ export function onTradeState(m: TradeStateMsg) {
 
 /** Every t_done re-fetches inventory: there is no server push, and stale offers must not linger. */
 export async function onTradeDone(m: TradeDoneMsg) {
-  useTrade.getState().reset();
+  const s = useTrade.getState();
+  // news about some other invite (withdrawn, expired, declined) must not close this window
+  if (m.with && s.phase !== 'idle' && s.peer && m.with !== s.peer) return;
+  s.reset();
   useAppStore.getState().flash(m.ok ? TRADE_DONE_TEXT.ok : (TRADE_DONE_TEXT[m.code ?? ''] ?? 'trade closed'));
   const inv = await fetchInventory();
   if (!inv) return;
@@ -132,6 +141,23 @@ export async function onTradeDone(m: TradeDoneMsg) {
   st.setInstances(inv.instances);
 }
 
+const OFFER_REFUSALS = new Set(['bad_offer', 'insufficient_coins', 'insufficient_items', 'not_owned', 'trade_locked', 'rate_limited', 'no_trade']);
+
+/** While trading, some shared sys codes mean something trade-specific. */
+const TRADE_SYS_TEXT: Record<string, string> = {
+  not_owned: "that item isn't yours to trade anymore",
+  no_such_player: "they're not here",
+  blocked_pair: "you can't trade with someone you blocked",
+  peer_gone: "they're not here",
+};
+
+/** Toast text for a sys code while a trade invite or window is active; null otherwise. */
+export function tradeSysText(code: string): string | null {
+  const { phase } = useTrade.getState();
+  if (phase !== 'waiting' && phase !== 'open') return null;
+  return TRADE_SYS_TEXT[code] ?? null;
+}
+
 const INVITE_REFUSALS = new Set(['no_such_player', 'trade_busy', 'blocked_pair', 'too_new', 'trade_off', 'rate_limited']);
 
 /** sys codes that change trade UI state (the text itself is flashed by net.ts). */
@@ -139,4 +165,5 @@ export function onTradeSys(code: string) {
   const s = useTrade.getState();
   if (s.phase === 'waiting' && INVITE_REFUSALS.has(code)) s.reset();
   if (s.phase === 'open' && (code === 'too_early' || code === 'not_accepted')) useTrade.setState({ confirmed: false });
+  if (s.phase === 'open' && OFFER_REFUSALS.has(code)) useTrade.setState({ draft: null });
 }

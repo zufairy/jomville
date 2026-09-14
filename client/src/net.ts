@@ -7,7 +7,7 @@ import { useRoster } from './roster';
 import { onTableEnd, onTableState, onTableStatus } from './tableGames';
 import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, onFriendUpdate } from './friends';
 import { fetchInventory } from './api';
-import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting } from './trade';
+import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
 
 export interface RemotePlayer {
@@ -312,7 +312,7 @@ export class Net {
         not_friends: 'you can only invite friends',
         friend_offline: 'they went offline',
       };
-      store.flash(msgs[m.code] ?? 'nope');
+      store.flash(tradeSysText(m.code) ?? msgs[m.code] ?? 'nope');
       onTradeSys(m.code);
       // a rejected claim/placement can leave an optimistic instance-hide stranded in the tray
       const rollback = new Set(['not_owned', 'bad_request', 'overlap', 'out_of_bounds', 'room_full', 'bad_rot', 'bad_coords', 'unknown_def', 'rate_limited', 'not_owner']);

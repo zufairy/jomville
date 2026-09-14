@@ -13,6 +13,16 @@ export interface TradeView {
 
 export const slotKey = (s: ResolvedSlot | undefined): string => (!s ? '' : s.itemId ? `i:${s.itemId}` : `s:${s.def}:${s.qty}`);
 
+/** Same slots in the same order and the same coins. */
+export function sameOffer(a: Offer, b: Offer): boolean {
+  if (a.coins !== b.coins || a.slots.length !== b.slots.length) return false;
+  return a.slots.every((s, i) => {
+    const t = b.slots[i];
+    if ('itemId' in s) return 'itemId' in t && t.itemId === s.itemId;
+    return !('itemId' in t) && t.def === s.def && t.qty === s.qty;
+  });
+}
+
 export function toOffer(r: ResolvedOffer): Offer {
   return { coins: r.coins, slots: r.slots.map((s) => (s.itemId ? { itemId: s.itemId } : { def: s.def, qty: s.qty })) };
 }
