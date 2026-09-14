@@ -46,7 +46,13 @@ export class Presence {
   }
 
   notify(userId: string, type: string, payload: unknown) {
-    for (const s of this.users.get(userId) ?? []) s.send(type, payload);
+    for (const s of this.users.get(userId) ?? []) {
+      try {
+        s.send(type, payload);
+      } catch (e) {
+        console.warn('[presence] send failed', userId, type, e);
+      }
+    }
   }
 }
 

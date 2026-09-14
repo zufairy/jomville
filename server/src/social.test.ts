@@ -30,4 +30,15 @@ describe('Presence', () => {
     p.leave('nobody', 'nope');
     expect(p.isOnline('nobody')).toBe(false);
   });
+
+  it('one failing session does not stop delivery to the others or throw', () => {
+    const p = new Presence();
+    const got: string[] = [];
+    p.join('u1', 's1', { slug: 'a', name: 'A' }, () => {
+      throw new Error('socket closed');
+    });
+    p.join('u1', 's2', { slug: 'b', name: 'B' }, (type) => got.push(type));
+    expect(() => p.notify('u1', 'friend_update', {})).not.toThrow();
+    expect(got).toEqual(['friend_update']);
+  });
 });
