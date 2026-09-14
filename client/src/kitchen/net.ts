@@ -59,7 +59,11 @@ export class KitchenRound {
       if (this.room !== room) return;
       this.stop();
       this.room = null;
-      if (this.closed || code === CONSENTED || useKitchen.getState().phase === 'results') return;
+      if (this.closed || useKitchen.getState().phase === 'results') return;
+      if (code === CONSENTED) {
+        useKitchen.getState().lost();
+        return;
+      }
       void this.reconnect(room.reconnectionToken);
     });
     this.stop();

@@ -70,7 +70,8 @@ export const useKitchen = create<KitchenStore>((set, get) => ({
   result: null,
   note: null,
   setCrew: (crew) => set({ crew }),
-  go: (roomId) => set({ roomId, phase: 'joining', result: null, note: null, score: 0, streak: 0, orders: [] }),
+  go: (roomId) =>
+    set({ roomId, phase: 'joining', result: null, note: null, score: 0, streak: 0, orders: [], over: false, time: 0, timeAt: 0, lag: false, reconnecting: false }),
   setPhase: (phase) => set({ phase }),
   setHud: (v) => {
     const s = get();
