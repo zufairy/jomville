@@ -36,11 +36,15 @@ export function artFps(def: FurnitureDef, sk: string): number | null {
   return holoIdle(def, sk) ? 4 : null;
 }
 
-/** mirrored for odd rotations, anchored on the footprint centre */
+/**
+ * Mirrored for odd rotations, anchored on the footprint centre. Seats also get
+ * `rot` so they can draw the backrest on the near side when they face away
+ * (rot 1 is the near drawing mirrored, rot 3 the far one).
+ */
 const sprite =
   (kind: string): Painter =>
   (g, c) => {
-    const map = casinoMap({ kind, state: c.state, frame: c.frame, on: c.on });
+    const map = casinoMap({ kind, state: c.state, frame: c.frame, on: c.on, rot: c.rot });
     if (map) drawPixelMap(g, map, c.cx, c.cy, c.rot % 2 === 1);
   };
 

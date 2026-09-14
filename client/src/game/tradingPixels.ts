@@ -1,3 +1,4 @@
+import { seatFacing } from '@dovey/shared';
 import { PixelCanvas, PixelMap } from './pixelArt';
 import { GOLD, Iso, V3, cached, drum, hash, layer, mixHex, orb, shimmer } from './pixelKit';
 
@@ -371,43 +372,81 @@ function railFrame(): PixelMap {
 
 // ---------------------------------------------------------------- trade sofa
 
-function sofaFrame(): PixelMap {
+/**
+ * Whether a seat's backrest stands on the near (camera) side of its footprint:
+ * true when it faces away from the viewer (seatFacing up or left, rot 1 and 2).
+ * Seat art comes in a far-back and a near-back drawing; odd rotations mirror
+ * one of them (rot 3 = far mirrored, rot 1 = near mirrored).
+ */
+export function seatBackNear(rot = 0): boolean {
+  const f = seatFacing(rot);
+  return f === 0 || f === 3;
+}
+
+/** cushion top of the trade sofa, in art px above the floor (seats.ts sits avatars on it) */
+export const TRADE_SOFA_SEAT_Z = 12;
+
+function sofaFrame(near: boolean): PixelMap {
   const OX = 14;
   const OY = 20;
   const cv = new PixelCanvas(44, 44);
   const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, top: (p: V3) => string, front: (p: V3) => string, side: (p: V3) => string) =>
     layer(cv, (l) => new Iso(l, OX, OY).box(x0, y0, z0, x1, y1, z1, top, front, side));
   const gold = (k: string) => () => k;
-  // gold feet
-  box(28.5, 3, 0, 30.5, 5, 3.5, gold('a'), gold('b'), gold('d'));
-  box(1.5, 12, 0, 3.5, 14, 3.5, gold('a'), (p) => (p[0] < 2.3 ? 'w' : 'b'), gold('d'));
-  box(28.5, 12, 0, 30.5, 14, 3.5, gold('a'), gold('b'), gold('d'));
-  // body with gold piping along the bottom
-  box(1, 3, 3, 31, 14, 9, gold('R'), (p) => (p[2] < 4.2 ? (p[0] < 3 ? 'a' : 'b') : p[2] > 7.8 ? 'S' : 'R'), (p) => (p[2] < 4.2 ? 'c' : 'M'));
-  // tufted backrest with a rolled gold top
-  box(
-    1, 1, 9, 31, 4.5, 21,
-    (p) => (p[1] > 3.6 ? 'w' : 'a'),
-    (p) => {
-      if (p[2] > 19.8) return 'a';
-      const tx = (((p[0] - 4) % 6) + 6) % 6;
-      const row = p[2] > 13.5 ? 1 : 0;
-      const bx = row ? Math.abs(tx - 3) : Math.min(tx, 6 - tx);
-      if (bx < 0.7 && Math.abs(p[2] - (row ? 16.5 : 12)) < 0.6) return 'K';
-      return p[2] > 17 ? 'S' : 'R';
-    },
-    (p) => (p[2] > 19.8 ? 'c' : 'M'),
-  );
-  // left arm, cushions, right arm (back to front)
-  const armTop = (p: V3) => (p[1] > 13 ? 'a' : 'S');
-  box(1, 3, 9, 4.5, 14, 15, armTop, (p) => (p[2] > 14 ? 'S' : 'R'), gold('M'));
-  box(4.5, 4.5, 9, 16, 14, 12, (p) => (p[1] > 13 ? 'R' : 'S'), gold('R'), gold('M'));
-  box(16, 4.5, 9, 27.5, 14, 12, (p) => (p[1] > 13 ? 'R' : 'S'), gold('R'), gold('M'));
-  box(27.5, 3, 9, 31, 14, 15, armTop, (p) => (p[2] > 14 ? 'S' : 'R'), gold('M'));
-  // gold scroll studs on the arm fronts
-  const iso = new Iso(cv, OX, OY);
-  iso.dot(2.8, 14, 12, 'a');
-  iso.dot(29.2, 14, 12, 'a');
+  const S = TRADE_SOFA_SEAT_Z;
+  const piping = (p: V3) => (p[2] < 4.2 ? (p[0] < 3 ? 'a' : 'b') : p[2] > 7.8 ? 'S' : 'R');
+  const armFront = (p: V3) => (p[2] > 14 ? 'S' : 'R');
+  if (!near) {
+    // facing the viewer: backrest along the far (y=0) edge, drawn back to front
+    // gold feet
+    box(28.5, 3, 0, 30.5, 5, 3.5, gold('a'), gold('b'), gold('d'));
+    box(1.5, 12, 0, 3.5, 14, 3.5, gold('a'), (p) => (p[0] < 2.3 ? 'w' : 'b'), gold('d'));
+    box(28.5, 12, 0, 30.5, 14, 3.5, gold('a'), gold('b'), gold('d'));
+    // body with gold piping along the bottom
+    box(1, 3, 3, 31, 14, 9, gold('R'), piping, (p) => (p[2] < 4.2 ? 'c' : 'M'));
+    // tufted backrest with a rolled gold top
+    box(
+      1, 1, 9, 31, 4.5, 21,
+      (p) => (p[1] > 3.6 ? 'w' : 'a'),
+      (p) => {
+        if (p[2] > 19.8) return 'a';
+        const tx = (((p[0] - 4) % 6) + 6) % 6;
+        const row = p[2] > 13.5 ? 1 : 0;
+        const bx = row ? Math.abs(tx - 3) : Math.min(tx, 6 - tx);
+        if (bx < 0.7 && Math.abs(p[2] - (row ? 16.5 : 12)) < 0.6) return 'K';
+        return p[2] > 17 ? 'S' : 'R';
+      },
+      (p) => (p[2] > 19.8 ? 'c' : 'M'),
+    );
+    // left arm, cushions, right arm (back to front)
+    const armTop = (p: V3) => (p[1] > 13 ? 'a' : 'S');
+    box(1, 3, 9, 4.5, 14, 15, armTop, armFront, gold('M'));
+    box(4.5, 4.5, 9, 16, 14, S, (p) => (p[1] > 13 ? 'R' : 'S'), gold('R'), gold('M'));
+    box(16, 4.5, 9, 27.5, 14, S, (p) => (p[1] > 13 ? 'R' : 'S'), gold('R'), gold('M'));
+    box(27.5, 3, 9, 31, 14, 15, armTop, armFront, gold('M'));
+    // gold scroll studs on the arm fronts
+    const iso = new Iso(cv, OX, OY);
+    iso.dot(2.8, 14, 12, 'a');
+    iso.dot(29.2, 14, 12, 'a');
+  } else {
+    // facing away: the same sofa turned half round, backrest along the near (y=16) edge, drawn last
+    box(28.5, 2, 0, 30.5, 4, 3.5, gold('a'), gold('b'), gold('d'));
+    box(1.5, 11, 0, 3.5, 13, 3.5, gold('a'), (p) => (p[0] < 2.3 ? 'w' : 'b'), gold('d'));
+    box(28.5, 11, 0, 30.5, 13, 3.5, gold('a'), gold('b'), gold('d'));
+    box(1, 2, 3, 31, 13, 9, gold('R'), piping, (p) => (p[2] < 4.2 ? 'c' : 'M'));
+    const armTop = (p: V3) => (p[1] < 3 ? 'a' : 'S');
+    box(1, 2, 9, 4.5, 13, 15, armTop, armFront, gold('M'));
+    box(4.5, 2, 9, 16, 11.5, S, (p) => (p[1] < 3 ? 'R' : 'S'), gold('R'), gold('M'));
+    box(16, 2, 9, 27.5, 11.5, S, (p) => (p[1] < 3 ? 'R' : 'S'), gold('R'), gold('M'));
+    box(27.5, 2, 9, 31, 13, 15, armTop, armFront, gold('M'));
+    // plain velvet back panel (the tufts face the seat) with gold piping and the rolled gold top
+    box(
+      1, 11.5, 3, 31, 15, 21,
+      (p) => (p[1] < 12.4 ? 'w' : 'a'),
+      (p) => (p[2] > 19.8 ? 'a' : p[2] < 4.2 ? (p[0] < 3 ? 'a' : 'b') : p[2] > 17 ? 'S' : 'R'),
+      (p) => (p[2] > 19.8 ? 'c' : p[2] < 4.2 ? 'c' : 'M'),
+    );
+  }
   return cv.toMap({ ...GOLD, ...VELVET }, cv.h - (OY + 12));
 }
 
@@ -491,6 +530,8 @@ export interface TradingPaintCtx {
   state: string;
   frame: number;
   on: boolean;
+  /** placement rotation; seats pick their far- or near-backrest drawing from it */
+  rot?: number;
 }
 
 export function tradingMap(c: TradingPaintCtx): PixelMap | null {
@@ -513,7 +554,10 @@ export function tradingMap(c: TradingPaintCtx): PixelMap | null {
     case 'gold_rail':
       return cached('gold_rail', railFrame);
     case 'trade_sofa':
-      return cached('trade_sofa', sofaFrame);
+    {
+      const near = seatBackNear(c.rot);
+      return cached(`trade_sofa:${near ? 'near' : 'far'}`, () => sofaFrame(near));
+    }
     case 'trading_banner':
       return cached(`banner:${c.frame % 8}`, () => bannerFrame(c.frame % 8));
     default:
@@ -524,8 +568,8 @@ export function tradingMap(c: TradingPaintCtx): PixelMap | null {
 /** every frame this module draws, for tests and previews */
 export function allTradingFrames(): Array<{ name: string; map: PixelMap }> {
   const out: Array<{ name: string; map: PixelMap }> = [];
-  const add = (kind: string, frames: number) => {
-    for (let frame = 0; frame < frames; frame++) out.push({ name: `${kind}::on:${frame}`, map: tradingMap({ kind, state: '', frame, on: true })! });
+  const add = (kind: string, frames: number, rot = 0) => {
+    for (let frame = 0; frame < frames; frame++) out.push({ name: `${kind}:r${rot}:on:${frame}`, map: tradingMap({ kind, state: '', frame, on: true, rot })! });
   };
   add('dragon_egg', 12);
   add('egg_stack_2', 12);
@@ -536,6 +580,7 @@ export function allTradingFrames(): Array<{ name: string; map: PixelMap }> {
   add('palm_planter', 1);
   add('gold_rail', 1);
   add('trade_sofa', 1);
+  add('trade_sofa', 1, 2);
   add('trading_banner', 8);
   return out;
 }

@@ -1,6 +1,6 @@
 import { PixelCanvas, PixelMap } from './pixelArt';
 import { GOLD, Iso, Pt, V3, cached, drum, hash, layer, mixHex, orb, shadeHex, shimmer } from './pixelKit';
-import { allTradingFrames, tradingMap } from './tradingPixels';
+import { allTradingFrames, seatBackNear, tradingMap } from './tradingPixels';
 
 /**
  * Pixel-art frames for the casino set, built on a small iso raster so every
@@ -465,32 +465,50 @@ function wheelFrame(key: string, frame: number): PixelMap {
 
 // ---------------------------------------------------------------- throne
 
-function throneFrame(frame: number): PixelMap {
+/** velvet cushion top of the throne, in art px above the floor (seats.ts sits avatars on it) */
+export const THRONE_SEAT_Z = 11;
+
+/** `near`: backrest on the camera side (facing away, see seatBackNear); otherwise along the far y=0 edge */
+function throneFrame(frame: number, near = false): PixelMap {
   const OY = 34;
   const cv = new PixelCanvas(32, 49);
   const red = (p: V3) => (hash(p[0], p[1] + p[2], 5) < 0.1 ? 'S' : 'R');
-  layer(cv, (l) => {
-    const li = new Iso(l, 16, OY);
-    // backrest with a velvet panel and crest
-    li.box(3, 2, 9, 13, 4, 28, 'a', (p) => (p[0] > 4.5 && p[0] < 11.5 && p[2] > 11 && p[2] < 26 ? red(p) : p[0] < 4.5 ? 'a' : 'b'), 'd');
-  });
-  layer(cv, (l) => {
-    const [x, y] = new Iso(l, 16, OY).p(8, 3, 31);
-    orb(l, x, y, 3, 3, ['a', 'b', 'c', 'd']);
-    l.set(x, y - 1, 'R');
-    l.set(x - 1, y - 1, 'R');
-    l.set(x, y, 'S');
-  });
+  const backrest = () => {
+    layer(cv, (l) => {
+      const li = new Iso(l, 16, OY);
+      if (near) {
+        // seen from behind: plain gilded back, standing on the floor behind the seat block
+        li.box(3, 12, 0, 13, 14, 28, 'a', (p) => (p[2] < 1.5 ? 'd' : p[2] > 26 ? 'a' : p[0] < 4.5 ? 'a' : 'b'), (p) => (p[2] < 1.5 ? 'e' : 'd'));
+      } else {
+        // backrest with a velvet panel and crest
+        li.box(3, 2, 9, 13, 4, 28, 'a', (p) => (p[0] > 4.5 && p[0] < 11.5 && p[2] > 11 && p[2] < 26 ? red(p) : p[0] < 4.5 ? 'a' : 'b'), 'd');
+      }
+    });
+    layer(cv, (l) => {
+      const [x, y] = new Iso(l, 16, OY).p(8, near ? 13 : 3, 31);
+      orb(l, x, y, 3, 3, ['a', 'b', 'c', 'd']);
+      l.set(x, y - 1, 'R');
+      l.set(x - 1, y - 1, 'R');
+      l.set(x, y, 'S');
+    });
+  };
+  // seat block, cushion and armrests run y 4..13 facing the viewer, 3..12 turned away
+  const y0 = near ? 3 : 4;
+  const y1 = near ? 12 : 13;
+  if (!near) backrest();
   layer(cv, (l) => {
     const li = new Iso(l, 16, OY);
     // gilded seat block with a skirt band
-    li.box(3, 4, 0, 13, 13, 9, 'b', (p) => (p[2] < 1.5 ? 'd' : p[2] > 7.5 ? 'a' : p[0] < 4.5 ? 'a' : 'b'), (p) => (p[2] < 1.5 ? 'e' : p[2] > 7.5 ? 'c' : 'd'));
-    li.box(4.5, 5, 9, 11.5, 12.5, 11, red, 'S', 'M');
+    li.box(3, y0, 0, 13, y1, 9, 'b', (p) => (p[2] < 1.5 ? 'd' : p[2] > 7.5 ? 'a' : p[0] < 4.5 ? 'a' : 'b'), (p) => (p[2] < 1.5 ? 'e' : p[2] > 7.5 ? 'c' : 'd'));
+    li.box(4.5, near ? 3.5 : 5, 9, 11.5, near ? 11 : 12.5, THRONE_SEAT_Z, red, 'S', 'M');
   });
   // armrests
-  for (const x0 of [3, 11]) layer(cv, (l) => new Iso(l, 16, OY).box(x0, 4, 9, x0 + 2, 13, 15, 'a', 'b', 'd'));
-  const iso = new Iso(cv, 16, OY);
-  for (const x of [5, 8, 11]) iso.dot(x, 13, 4.5, 'w');
+  for (const x0 of [3, 11]) layer(cv, (l) => new Iso(l, 16, OY).box(x0, y0, 9, x0 + 2, y1, 15, 'a', 'b', 'd'));
+  if (near) backrest();
+  else {
+    const iso = new Iso(cv, 16, OY);
+    for (const x of [5, 8, 11]) iso.dot(x, 13, 4.5, 'w');
+  }
   shimmer(cv, frame);
   return cv.toMap({ ...GOLD, R: 0xc8102e, S: 0x8e0f24, M: 0x5e0a18 }, cv.h - (OY + 8));
 }
@@ -695,6 +713,8 @@ export interface CasinoPaintCtx {
   state: string;
   frame: number;
   on: boolean;
+  /** placement rotation; seats pick their far- or near-backrest drawing from it */
+  rot?: number;
 }
 
 /** the pixel map for a casino kind in a given state/frame, or null for unknown kinds */
@@ -714,7 +734,10 @@ export function casinoMap(c: CasinoPaintCtx): PixelMap | null {
       return cached(`wheel:${k}:${f}`, () => wheelFrame(k, f));
     }
     case 'throne':
-      return cached(`throne:${f8}`, () => throneFrame(f8));
+    {
+      const near = seatBackNear(c.rot);
+      return cached(`throne:${near ? 'near' : 'far'}:${f8}`, () => throneFrame(f8, near));
+    }
     case 'felt_table':
       return cached('felt_table', feltTableFrame);
     case 'chip_stack':
@@ -749,6 +772,7 @@ export function allCasinoFrames(): Array<{ name: string; map: PixelMap }> {
   for (const k of ['0', '1', '2', '3', '4', '5', '6', '7', '8']) add('wheel_fortune', k, 1);
   add('wheel_fortune', '-1', 12);
   add('throne', '', 8);
+  for (let frame = 0; frame < 8; frame++) out.push({ name: `throne:r2:on:${frame}`, map: casinoMap({ kind: 'throne', state: '', frame, on: true, rot: 2 })! });
   add('felt_table', '', 1);
   add('chip_stack', '', 1);
   add('casino_carpet', '', 1);
