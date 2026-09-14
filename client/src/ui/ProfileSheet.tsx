@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { REPORT_NOTE_MAX, REPORT_REASONS, ReportReason } from '@dovey/shared';
 import { useAppStore } from '../store';
+import { trade, useTrade } from '../trade';
 
 /** Tap-on-avatar popover: who they are, what you can do with them, and how to get away from them. */
 export function ProfileSheet() {
@@ -9,6 +10,7 @@ export function ProfileSheet() {
   const actions = useAppStore((s) => s.actions);
   const call = useAppStore((s) => s.call);
   const duel = useAppStore((s) => s.duel);
+  const tradePhase = useTrade((s) => s.phase);
   const muted = useAppStore((s) => s.muted);
   const blocked = useAppStore((s) => s.blocked);
   const [reporting, setReporting] = useState(false);
@@ -113,6 +115,16 @@ export function ProfileSheet() {
               }}
             >
               ⚔️ challenge to a duel
+            </button>
+            <button
+              className="btn btn--duel"
+              disabled={tradePhase !== 'idle'}
+              onClick={() => {
+                trade.invite(sessionId, handle);
+                close();
+              }}
+            >
+              🤝 trade
             </button>
           </div>
         </>

@@ -15,6 +15,7 @@ import { LoveMeterUI } from './ui/LoveMeterUI';
 import { ShopSheet } from './ui/ShopSheet';
 import { StyleSheet } from './ui/StyleSheet';
 import { DuelUI } from './ui/DuelUI';
+import { TradeWindow } from './ui/TradeWindow';
 import { TableGameUI } from './ui/TableGameUI';
 import { KitchenLobby } from './ui/KitchenLobby';
 import { KitchenRoundUI } from './ui/KitchenRound';
@@ -129,6 +130,7 @@ function Play() {
       <LoveMeterUI />
       <CallUI />
       <DuelUI />
+      <TradeWindow />
       <TableGameUI />
       <KitchenLobby />
       <KitchenRoundUI />
