@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AvatarConfig, RoomStyle, SLOTS, Slot, isOptionalSlot, isStarter, normalizeAvatar, parseAvatar, randomAvatar, serializeAvatar } from '@dovey/shared';
+import { AvatarConfig, Placement, RoomStyle, SLOTS, Slot, isOptionalSlot, isStarter, normalizeAvatar, parseAvatar, randomAvatar, serializeAvatar } from '@dovey/shared';
 import { CallInfo, IDLE_CALL } from './call';
 
 export type DuelPhase = 'idle' | 'ringing' | 'incoming' | 'pick' | 'reveal' | 'over';
@@ -74,6 +74,8 @@ export interface GameActions {
   previewOf: (def: string) => string;
   /** camera */
   recenter: () => void;
+  /** walk up to a placed item and use it (close = shut chance furni) */
+  useFurniture: (id: string, close?: boolean) => void;
 }
 
 export interface ChatLine {
@@ -171,6 +173,11 @@ interface AppState {
   /** true while the camera has left follow mode (user panned/zoomed) */
   cameraFree: boolean;
   setCameraFree: (v: boolean) => void;
+  /** placement id shown in the item info window */
+  selectedItem: string | null;
+  /** live copy of that placement, refreshed only when it changes */
+  selectedPlacement: Placement | null;
+  setSelectedItem: (p: Placement | null) => void;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -296,4 +303,7 @@ export const useAppStore = create<AppState>((set) => ({
   setChatHistoryOpen: (chatHistoryOpen) => set({ chatHistoryOpen }),
   cameraFree: false,
   setCameraFree: (cameraFree) => set({ cameraFree }),
+  selectedItem: null,
+  selectedPlacement: null,
+  setSelectedItem: (p) => set({ selectedItem: p?.id ?? null, selectedPlacement: p }),
 }));

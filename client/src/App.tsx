@@ -3,6 +3,7 @@ import { attachGame, detachGame } from './game/instance';
 import { useAppStore } from './store';
 import { ChatBar } from './ui/ChatBar';
 import { ChatFeed } from './ui/ChatFeed';
+import { ItemInfo } from './ui/ItemInfo';
 import { EmoteWheel } from './ui/EmoteWheel';
 import { Customizer } from './ui/Customizer';
 import { BuildBar } from './ui/BuildBar';
@@ -149,6 +150,7 @@ function Play() {
         <div className="bottom">
           <div className="bottom__stack">
             <ChatFeed />
+            <ItemInfo />
             <ChatBar />
           </div>
           <EmoteWheel />

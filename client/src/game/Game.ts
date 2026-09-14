@@ -212,6 +212,10 @@ export class Game {
       undo: () => this.undoLast(),
       previewOf: (def) => atlas.preview(def),
       recenter: () => this.camera.follow(),
+      useFurniture: (id, close = false) => {
+        const f = this.furniture.get(id);
+        if (f) this.useItem(f.placement, close);
+      },
       callInvite: (peer, handle, video) => this.calls.invite(peer, handle, video),
       callAccept: () => this.calls.accept(),
       callDecline: () => this.calls.decline(),
@@ -869,6 +873,9 @@ export class Game {
     if (action.kind === 'walk') this.walkTo(action.x, action.y);
     else if (action.kind === 'use') this.useItem(action.item, e.button === 2 || this.rightDown || performance.now() - this.downAt > 500);
     else if (action.kind === 'seat') this.walkOntoSeat(action.item);
+    // item info window: furniture taps select it, floor taps clear it
+    const picked = action.kind === 'use' || action.kind === 'seat' ? action.item : action.kind === 'none' ? (placementAt(t.x, t.y, placements) ?? this.itemAt(local.x, local.y, () => true)) : null;
+    useAppStore.getState().setSelectedItem(picked);
   }
 
   private walkTo(x: number, y: number) {
@@ -955,6 +962,7 @@ export class Game {
 
   private onFurnitureChange(p: Placement) {
     this.furniture.get(p.id)?.setPlacement(p);
+    if (useAppStore.getState().selectedItem === p.id) useAppStore.getState().setSelectedItem(p);
     this.rebuildGrid();
   }
 
@@ -964,6 +972,7 @@ export class Game {
     f.destroy({ children: true });
     this.furniture.delete(id);
     this.rebuildGrid();
+    if (useAppStore.getState().selectedItem === id) useAppStore.getState().setSelectedItem(null);
     const edit = useAppStore.getState().edit;
     if (edit.on && edit.selected === id) useAppStore.getState().setEdit({ ...edit, selected: null, moving: false });
   }
@@ -971,6 +980,7 @@ export class Game {
   // ---- editor
   private onEditModeChange() {
     const edit = useAppStore.getState().edit;
+    if (edit.on && useAppStore.getState().selectedItem) useAppStore.getState().setSelectedItem(null);
     for (const [id, f] of this.furniture) f.setSelected(edit.on && edit.selected === id);
     if (!edit.on || !edit.placing) this.hideGhost();
     if (!edit.on) this.undo.clear();
