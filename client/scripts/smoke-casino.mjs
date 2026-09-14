@@ -1,5 +1,5 @@
 /**
- * Casino smoke against a running server: A walks to booth 1 and rolls a
+ * Trading Room (slug 'casino') smoke against a running server: A walks to booth 1 and rolls a
  * Dicemaster; B sees rolling -> the same face and the roll bubble; a far player
  * cannot roll; the dealer closes the die; LTD stock endpoint answers.
  *
@@ -42,11 +42,11 @@ await wait(800);
 
 let dieId = null;
 A.state.furniture.forEach((f, id) => {
-  if (f.def === 'dicemaster' && f.x === 3 && f.y === 5) dieId = id;
+  if (f.def === 'dicemaster' && f.x === 2 && f.y === 9) dieId = id;
 });
-check('casino has booth dicemaster at 3,5', !!dieId);
+check('trading room has booth-1 dicemaster at 2,9', !!dieId);
 
-A.send('move', { x: 4, y: 6 });
+A.send('move', { x: 3, y: 10 });
 B.send('move', { x: 10, y: 18 });
 await wait(4000);
 
