@@ -808,11 +808,6 @@ export class Repo {
     return r[0] ? { createdAt: new Date(r[0].created_at), playMinutes: r[0].play_minutes } : null;
   }
 
-  /** Called once a minute per connected user by the coin trickle. */
-  async addPlayMinute(userId: string) {
-    await this.db.query('update users set play_minutes = play_minutes + 1 where id = $1', [userId]);
-  }
-
   /**
    * Swap two offers atomically: coins, then stacks, then instances, then the log
    * row, all inside one transaction. Every write is guarded again here, so an
