@@ -136,3 +136,55 @@ describe('safety', () => {
     expect((await repo.openReports()).some((r) => r.id === mine!.id)).toBe(false);
   });
 });
+
+describe('friends', () => {
+  const mk = async (ch: string) => repo.createUser(ch.repeat(32), DEFAULT_AVATAR);
+
+  it('request, accept, list, remove', async () => {
+    const a = await mk('f');
+    const b = await mk('g');
+    expect(await repo.requestFriend(a.id, a.id)).toBe('self');
+    expect(await repo.requestFriend(a.id, 'nobody')).toBe('no_user');
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.requestFriend(a.id, b.id)).toBe('pending');
+    const pb = await repo.pendingOf(b.id);
+    expect(pb.incoming.map((r) => r.id)).toEqual([a.id]);
+    expect((await repo.pendingOf(a.id)).outgoing.map((r) => r.id)).toEqual([b.id]);
+    expect(await repo.respondFriend(b.id, a.id, true)).toBe('accepted');
+    expect(await repo.areFriends(a.id, b.id)).toBe(true);
+    expect(await repo.areFriends(b.id, a.id)).toBe(true);
+    expect((await repo.friendsOf(a.id)).map((f) => f.handle)).toEqual([b.handle]);
+    expect(typeof (await repo.friendsOf(a.id))[0].avatar).toBe('string');
+    expect(await repo.friendIdsOf(b.id)).toEqual([a.id]);
+    expect((await repo.pendingOf(b.id)).incoming).toEqual([]);
+    expect(await repo.requestFriend(b.id, a.id)).toBe('already');
+    await repo.removeFriend(b.id, a.id);
+    expect(await repo.areFriends(a.id, b.id)).toBe(false);
+  });
+
+  it('a reverse request accepts; decline and cancel clear requests', async () => {
+    const a = await mk('h');
+    const b = await mk('i');
+    const c = await mk('j');
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.requestFriend(b.id, a.id)).toBe('accepted');
+    expect(await repo.areFriends(a.id, b.id)).toBe(true);
+    expect(await repo.requestFriend(a.id, c.id)).toBe('sent');
+    expect(await repo.respondFriend(c.id, a.id, false)).toBe('declined');
+    expect(await repo.respondFriend(c.id, a.id, true)).toBe('no_request');
+    expect(await repo.requestFriend(c.id, a.id)).toBe('sent');
+    await repo.cancelFriendRequest(c.id, a.id);
+    expect((await repo.pendingOf(a.id)).incoming).toEqual([]);
+  });
+
+  it('blocks stop requests and remove friendships', async () => {
+    const a = await mk('k');
+    const b = await mk('l');
+    expect(await repo.requestFriend(a.id, b.id)).toBe('sent');
+    expect(await repo.respondFriend(b.id, a.id, true)).toBe('accepted');
+    await repo.block(b.id, a.id);
+    expect(await repo.areFriends(a.id, b.id)).toBe(false);
+    expect(await repo.requestFriend(a.id, b.id)).toBe('blocked');
+    expect(await repo.requestFriend(b.id, a.id)).toBe('blocked');
+  });
+});
