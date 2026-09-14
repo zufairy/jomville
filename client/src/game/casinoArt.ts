@@ -53,7 +53,8 @@ function hang(g: Graphics, c: ArtCtx, map: PixelMap, flatTop: number) {
   const mid = onX ? tileToScreen(c.w / 2, 0) : tileToScreen(0, c.h / 2);
   const w = map.rows[0].length;
   // the shear drops the centre column by w/4 art rows
-  drawPixelMap(g, map, mid.x, mid.y - flatTop - Math.floor(w / 4) * 2 + map.rows.length * 2, !onX);
+  // never mirror: wall pieces carry lettering that must read left-to-right on either wall
+  drawPixelMap(g, map, mid.x, mid.y - flatTop - Math.floor(w / 4) * 2 + map.rows.length * 2, false);
 }
 
 export const CASINO_PAINTERS: Record<string, Painter> = {
@@ -83,7 +84,8 @@ export const CASINO_PAINTERS: Record<string, Painter> = {
     const onX = c.rot % 2 === 0;
     const mid = onX ? tileToScreen(c.w / 2, 0) : tileToScreen(0, c.h / 2);
     const rows = map.rows.length;
-    drawPixelMap(g, map, mid.x, mid.y - 82 + rows, !onX);
+    // never mirror: the sign carries lettering that must read left-to-right on either wall
+    drawPixelMap(g, map, mid.x, mid.y - 82 + rows, false);
   },
 
   trading_banner(g, c) {
