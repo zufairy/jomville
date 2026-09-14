@@ -25,4 +25,13 @@ describe('roster', () => {
     useRoster.getState().clear();
     expect(useRoster.getState().players).toEqual({});
   });
+
+  it('upsert with identical data keeps the same players object', () => {
+    useRoster.getState().upsert('s1', { handle: 'a', userId: 'u', avatar: 'x' });
+    const before = useRoster.getState().players;
+    useRoster.getState().upsert('s1', { handle: 'a', userId: 'u', avatar: 'x' });
+    expect(useRoster.getState().players).toBe(before);
+    useRoster.getState().upsert('s1', { handle: 'a', userId: 'u', avatar: 'y' });
+    expect(useRoster.getState().players).not.toBe(before);
+  });
 });

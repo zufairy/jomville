@@ -21,7 +21,15 @@ interface RosterStore {
 
 export const useRoster = create<RosterStore>((set) => ({
   players: {},
-  upsert: (id, e) => set((s) => ({ players: { ...s.players, [id]: e } })),
+  upsert: (id, e) => {
+    const s = useRoster.getState();
+    const existing = s.players[id];
+    if (existing && existing.handle === e.handle && existing.userId === e.userId && existing.avatar === e.avatar) {
+      // Data is identical, skip update to avoid notifying subscribers
+      return;
+    }
+    set((s) => ({ players: { ...s.players, [id]: e } }));
+  },
   remove: (id) =>
     set((s) => {
       const players = { ...s.players };

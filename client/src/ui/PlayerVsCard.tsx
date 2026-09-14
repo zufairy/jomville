@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 import { parseAvatar } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { useRoster } from '../roster';
@@ -18,7 +18,8 @@ export function PlayerVsCard({ player }: { player: VsPlayer }) {
   const mySession = useAppStore((s) => s.sessionId);
   const myAvatar = useAppStore((s) => s.avatar);
   const entry = useRoster((s) => (player.sessionId ? s.players[player.sessionId] : undefined));
-  const cfg = player.bot ? null : player.sessionId && player.sessionId === mySession ? myAvatar : entry ? parseAvatar(entry.avatar) : null;
+  const parsedAvatar = useMemo(() => (entry ? parseAvatar(entry.avatar) : null), [entry?.avatar]);
+  const cfg = player.bot ? null : player.sessionId && player.sessionId === mySession ? myAvatar : parsedAvatar;
 
   return (
     <div className={`vs-card ${player.active ? 'vs-card--active' : ''}`}>
