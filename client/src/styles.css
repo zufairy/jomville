@@ -2163,30 +2163,50 @@ html, body, #root {
 .kl__join input { width: 72px; font: inherit; font-family: ui-monospace, monospace; letter-spacing: 2px; text-align: center; border: 2px solid var(--ink); border-radius: 8px; padding: 4px; }
 
 /* ---- co-op kitchen: round */
-.kr { position: fixed; inset: 0; z-index: 200; background: #2b2233; touch-action: none; user-select: none; -webkit-user-select: none; }
-.kr__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.kr-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 10px 16px; pointer-events: none; }
-.kr-orders { display: flex; gap: 6px; flex-wrap: wrap; }
-.kr-order { position: relative; min-width: 92px; padding: 6px 8px 10px; background: #fff; border: 3px solid var(--ink); border-radius: 10px; font-weight: 800; font-size: 12px; overflow: hidden; }
-.kr-order i { position: absolute; left: 0; bottom: 0; height: 5px; background: #58c98b; transition: width 0.25s linear; }
-.kr-order--late i { background: #ff3b30; }
-.kr-order--late { animation: kr-shake 0.5s infinite; }
-@keyframes kr-shake { 50% { transform: translateX(2px); } }
-.kr-stats { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 900; font-size: 20px; pointer-events: auto; }
-.kr-stats em { font-style: normal; color: #f5c542; }
-.kr-leave { background: #fff; border: 2px solid var(--ink); border-radius: 8px; font-weight: 900; cursor: pointer; }
+.kr { position: fixed; inset: 0; z-index: 200; background: #2b2233; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden; }
+.kr__stage { position: absolute; inset: 0; }
+.kr__stage canvas { display: block; image-rendering: pixelated; }
+.kr-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: max(8px, env(safe-area-inset-top)) 12px 0; pointer-events: none; }
+.kr-orders { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.kr-ticket { position: relative; display: flex; align-items: center; gap: 4px; padding: 3px 8px 9px 3px; background: #fffbe8; border: 2px solid #2a1a14; border-radius: 3px 3px 8px 8px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); font: 800 11px/1.1 system-ui, sans-serif; color: #2a1a14; overflow: hidden; animation: kr-slide 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.kr-ticket img { width: 40px; height: 34px; image-rendering: pixelated; }
+.kr-ticket i { position: absolute; left: 0; bottom: 0; height: 5px; transition: width 0.25s linear, background-color 0.4s; }
+.kr-ticket--late { animation: kr-slide 0.35s both, kr-shake 0.5s 0.35s infinite; }
+@keyframes kr-slide { from { transform: translateY(-120%); opacity: 0; } }
+@keyframes kr-shake { 50% { transform: translateX(2px) rotate(-1deg); } }
+.kr-streak { align-self: center; padding: 3px 8px; border-radius: 999px; background: #f7c948; border: 2px solid #2a1a14; font-weight: 900; color: #2a1a14; animation: kr-pop 0.3s ease-out; }
+.kr-side { display: flex; gap: 6px; align-items: center; pointer-events: auto; }
+.kr-pill { display: flex; align-items: center; gap: 10px; padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.32); color: #fff; font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kr-pill small { font-size: 11px; opacity: 0.7; font-weight: 700; }
+.kr-time--low { color: #ff9a8a; }
+.kr-icon { background: rgba(255, 248, 236, 0.92); border: 2px solid #2a1a14; border-radius: 8px; font-weight: 900; cursor: pointer; min-width: 32px; height: 30px; }
+.kr-settings { position: absolute; right: 12px; top: 50px; background: #fff8ec; border: 2px solid #2a1a14; border-radius: 10px; padding: 8px 10px; font-weight: 700; font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.kr-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.12); pointer-events: none; }
+.kr-stick i { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); }
 .kr-note { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 6px 14px; border-radius: 999px; font-weight: 800; pointer-events: none; }
 .kr-note--pop { animation: kr-pop 0.25s ease-out; }
 @keyframes kr-pop { from { transform: translate(-50%, 8px) scale(0.9); opacity: 0; } }
-.kr-touch { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; }
-.kr-stick { width: 120px; height: 120px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 3px solid rgba(255, 255, 255, 0.5); display: grid; place-items: center; pointer-events: auto; touch-action: none; }
-.kr-stick i { width: 52px; height: 52px; border-radius: 50%; background: #fff; }
-.kr-btns { display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
-.kr-btn { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--ink); background: #fff; font-weight: 900; touch-action: none; }
-.kr-btn--big { width: 84px; height: 84px; background: var(--accent); color: #fff; }
-.kr-result { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); padding: 0 16px; }
-.kr-result__card { background: #fff8ec; border: 3px solid var(--ink); border-radius: 18px; padding: 18px 22px; text-align: center; font-weight: 700; max-width: 100%; }
-.kr-stars { font-size: 40px; color: #f5c542; margin: 4px 0; }
+.kr-touch { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto auto; gap: 8px; align-items: end; justify-items: center; pointer-events: none; }
+.kr-btn { position: relative; overflow: hidden; width: 60px; height: 60px; border-radius: 50%; border: 3px solid rgba(42, 26, 20, 0.85); background: rgba(255, 248, 236, 0.5); color: #2a1a14; font-weight: 900; font-size: 13px; touch-action: none; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
+.kr-btn:active, .kr-btn--on { background: rgba(255, 248, 236, 0.88); }
+.kr-btn--dash { width: 44px; height: 44px; font-size: 11px; grid-column: 2; grid-row: 1; }
+.kr-btn--chop { grid-column: 1; grid-row: 2; }
+.kr-btn--grab { width: 78px; height: 78px; grid-column: 2; grid-row: 2; background: rgba(247, 201, 72, 0.62); }
+.kr-btn--cool::after { content: ''; position: absolute; inset: 0; background: rgba(42, 26, 20, 0.45); transform-origin: bottom; animation: kr-cool 1s linear forwards; }
+@keyframes kr-cool { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+@media (orientation: landscape) and (max-height: 500px) {
+  .kr-btn { width: 50px; height: 50px; }
+  .kr-btn--grab { width: 64px; height: 64px; }
+  .kr-btn--dash { width: 40px; height: 40px; }
+}
+.kr-result { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(20, 12, 24, 0.55); padding: 0 16px; }
+.kr-result__card { background: #fff8ec; border: 3px solid #2a1a14; border-radius: 18px; box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35); padding: 18px 22px; text-align: center; font-weight: 700; max-width: 100%; animation: kr-pop 0.3s ease-out; }
+.kr-stars { display: flex; justify-content: center; gap: 6px; font-size: 46px; margin: 4px 0; }
+.kr-star { color: #cdbfa8; display: inline-block; }
+.kr-star--on { color: #f7c948; text-shadow: 0 3px 0 #b4812a; animation: kr-star 0.55s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+@keyframes kr-star { from { transform: scale(0) rotate(-120deg); opacity: 0; } }
+.kr-earned { color: #b4812a; font-weight: 900; }
+.kr-result__btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
 
 /* ---- item info window: docked above the chat bar, pushes the chat feed up ---- */
 .iteminfo {
