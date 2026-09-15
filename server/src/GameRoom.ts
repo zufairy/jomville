@@ -1,6 +1,5 @@
 import { AuthContext, Client, Room, ServerError, matchMaker } from 'colyseus';
 import {
-  SLOTS,
   BLOCK_RATE,
   CHAT_RATE,
   REPORT_NOTE_MAX,
@@ -44,6 +43,7 @@ import { beginRoll, closeChance, finishRoll, restoredState } from './chance';
 import { Furniture, Player, WorldState } from './schema';
 import { MovementSim } from './movement';
 import { Repo, User } from './repo';
+import { equippableLook, joinLook } from './look';
 import { CallBook } from './calls';
 import { Duel, DuelBook, Pick, RoundResult, Settlement, duelSettlement } from './duel';
 import { settleOrLog } from './duelSettle';
@@ -58,7 +58,7 @@ import { LoveEvent, LoveMeter } from './loveMeter';
 import { KITCHEN_WORLD } from '@dovey/shared';
 import { KitchenLobby } from './kitchen/lobby';
 import { ROUND_KEY } from './kitchen/rounds';
-import { canEquip, vend } from './vending';
+import { vend } from './vending';
 import { BlockBook } from './blocks';
 import { humanCount, registry } from './registry';
 import { inviteLimit, presence } from './social';
@@ -294,14 +294,11 @@ export class GameRoom extends Room<WorldState> {
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
       if (!this.avatarLimit.allow(client.sessionId)) return;
-      const cfg = normalizeAvatar(msg?.config);
       const u = client.auth as User | undefined;
       if (!u) return;
       void (async () => {
         // premium cosmetics must be owned; strip anything that isn't back to the starter default
-        for (const slot of SLOTS) {
-          if (!(await canEquip(GameRoom.repo, u.id, cfg[slot]))) cfg[slot] = normalizeAvatar({})[slot];
-        }
+        const cfg = await equippableLook(GameRoom.repo, u.id, normalizeAvatar(msg?.config));
         p.avatar = serializeAvatar(cfg);
         await GameRoom.repo.setAvatar(u.id, cfg);
       })();
@@ -787,18 +784,20 @@ export class GameRoom extends Room<WorldState> {
     let user = await repo.userByToken(token);
     if (!user) {
       if (token.length < 16 || token.length > 128) throw new ServerError(400, 'bad token');
+      // the client's look only seeds a brand-new user
       user = await repo.createUser(token, normalizeAvatar(options?.avatar));
     }
     if (process.env.DOVEY_DEBUG) console.log('[auth]', user.handle, ctx.ip);
-    return user;
+    return { ...user, avatar: await joinLook(repo, user, options) };
   }
 
   onJoin(client: Client, options: JoinOptions | undefined, user: User) {
     const p = new Player();
     p.handle = user.handle;
     p.userId = user.id;
-    // client-side choice wins if provided (customizer), else stored look
-    p.avatar = serializeAvatar(options?.avatar ? normalizeAvatar(options.avatar) : user.avatar);
+    // the saved look is authoritative (resolved and ownership-checked in onAuth via joinLook);
+    // options.avatar is ignored so a stale/random client look can't replace it on room switch
+    p.avatar = serializeAvatar(user.avatar);
     void GameRoom.repo.recordVisit(this.state.slug, user.id);
     const spawn = this.freeSpawnTile();
     p.x = spawn.x;

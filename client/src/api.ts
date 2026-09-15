@@ -36,6 +36,8 @@ export interface Me {
   onboarded: boolean;
   linked: boolean;
   googleEnabled: boolean;
+  /** the server-saved look (AvatarConfig JSON); normalize before use */
+  avatar?: unknown;
 }
 
 const json = (body: unknown) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

@@ -342,7 +342,8 @@ export class Game {
     const me = await this.fetchMeUntilUp();
     if (this.disposed) return;
     if (me) {
-      useAppStore.getState().setMe(me);
+      // before joining: the join, reconnects and first render all use the saved look
+      useAppStore.getState().adoptMe(me);
       if (!slug) slug = me.lobby || me.home;
       void fetchInventory().then((inv) => {
         if (!inv || this.disposed) return;

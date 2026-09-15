@@ -41,7 +41,7 @@ function loadGis(): Promise<void> {
 export function GoogleButton({ onDone }: { onDone?: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'idle' | 'busy' | 'error'>('idle');
-  const setMe = useAppStore((s) => s.setMe);
+  const adoptMe = useAppStore((s) => s.adoptMe);
   const flash = useAppStore((s) => s.flash);
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function GoogleButton({ onDone }: { onDone?: () => void }) {
             setState('busy');
             try {
               const me = await googleSignIn(credential);
-              setMe(me);
+              adoptMe(me);
               flash(`hi ${me.handle}!`);
               onDone?.();
             } catch (e) {
@@ -71,7 +71,7 @@ export function GoogleButton({ onDone }: { onDone?: () => void }) {
     return () => {
       alive = false;
     };
-  }, [setMe, flash, onDone]);
+  }, [adoptMe, flash, onDone]);
 
   if (!CLIENT_ID) {
     return (

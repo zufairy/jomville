@@ -176,6 +176,8 @@ interface AppState {
   setCall: (c: CallInfo) => void;
   setRoom: (r: RoomInfo | null) => void;
   setMe: (m: Me | null) => void;
+  /** a fresh /api/me: set me and wear the server-saved look (the source of truth), caching it locally */
+  adoptMe: (m: Me) => void;
   setBrowsing: (v: boolean) => void;
   setEdit: (e: EditMode) => void;
   setUndoCount: (n: number) => void;
@@ -280,6 +282,15 @@ export const useAppStore = create<AppState>((set) => ({
   setCall: (call) => set({ call }),
   setRoom: (room) => set({ room }),
   setMe: (me) => set({ me }),
+  adoptMe: (me) =>
+    set(() => {
+      // without this every page load (room switch) wore loadAvatar()'s cached-or-random look
+      // and joined with it, so an empty/stale localStorage replaced the saved outfit
+      if (!me.avatar || typeof me.avatar !== 'object') return { me };
+      const avatar = normalizeAvatar(me.avatar);
+      saveAvatar(avatar);
+      return { me, avatar };
+    }),
   setBrowsing: (browsing) => set({ browsing }),
   setEdit: (edit) => set({ edit }),
   setUndoCount: (undoCount) => set({ undoCount }),
