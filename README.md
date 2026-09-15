@@ -47,3 +47,7 @@ Google account to the device identity (or points the device at the existing acco
 - `shared/` — constants, grid, A*, isometric math. Used by both sides.
 - `server/` — Colyseus `room` (one instance per slug), HTTP API under `/api`, PGlite repo.
 - `client/` — Vite + React + PixiJS v8. Own avatar predicted locally, others interpolated.
+
+## Google login setup
+
+Follow the [Leypark Google login guide](docs/google-login.md) for Google Cloud, local development, Railway variables, and verification.

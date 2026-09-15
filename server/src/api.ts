@@ -11,9 +11,6 @@ import { DAILY_CREDITS } from '@dovey/shared';
 import { iceServersFromEnv } from './ice';
 import { friendCalls } from './social-calls';
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
-const oauth = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
-
 const tokenOf = (body: unknown): string => {
   const t = (body as { token?: unknown })?.token;
   return typeof t === 'string' && t.length >= 16 && t.length <= 128 ? t : '';
@@ -28,6 +25,9 @@ const tokenOf = (body: unknown): string => {
  *   POST /api/leaderboards/me   -> { hidden } | { hidden:false, coins|assets|timeWeek|timeAll: { rank, value } }
  */
 export function buildApi(repo: Repo) {
+  // Read after index.ts loads server/.env, rather than during module import.
+  const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
+  const oauth = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
   const app = express();
   app.use(express.json({ limit: '16kb' }));
 
