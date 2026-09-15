@@ -48,6 +48,8 @@ export interface NetEvents {
   /** `roll` marks a server-issued dice/wheel result (drawn distinct from typed chat) */
   onChat: (id: string, text: string, roll?: boolean) => void;
   onEmote: (id: string, i: number) => void;
+  /** someone else started (`on`) or stopped typing in the chat bar */
+  onTyping: (id: string, on: boolean) => void;
   /** someone tapped themselves to use their gear */
   onGearUse: (id: string) => void;
   onFurnitureAdd: (p: Placement) => void;
@@ -300,6 +302,7 @@ export class Net {
     });
     room.onMessage('roll', (m: { id: string; text: string }) => events.onChat(m.id, m.text, true));
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
+    room.onMessage('typing', (m: { id: string; on: boolean }) => events.onTyping(m.id, m.on === true));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
     room.onMessage('sys', (m: { code: string }) => {
       if (m.code === 'adult_required') return onAdultRequired();
