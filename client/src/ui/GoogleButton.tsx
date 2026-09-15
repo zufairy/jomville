@@ -57,6 +57,9 @@ export function GoogleButton({ onDone }: { onDone?: () => void }) {
             try {
               const me = await googleSignIn(credential);
               adoptMe(me);
+              // show the linked account's look on my sprite in the open room without a reload
+              const s = useAppStore.getState();
+              if (me.avatar) s.actions?.setAvatar(s.avatar);
               flash(`hi ${me.handle}!`);
               onDone?.();
             } catch (e) {

@@ -1,7 +1,8 @@
 import express from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { RateLimiter, SYSTEM_ROOMS, furnitureDef, isInstanceDef } from '@dovey/shared';
-import { Repo } from './repo';
+import { Repo, User } from './repo';
+import { ownedLook } from './look';
 import { registry } from './registry';
 import { presence } from './social';
 import { wardrobe } from './vending';
@@ -38,11 +39,12 @@ export function buildApi(repo: Repo) {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-  const meJson = async (user: { id: string; handle: string; avatar: unknown; onboarded: boolean; linked: boolean }) => ({
+  const meJson = async (user: User) => ({
     handle: user.handle,
     home: await repo.homeRoom(user.id),
     lobby: SYSTEM_ROOMS[0].slug,
-    avatar: user.avatar,
+    // owned-only, so the client never adopts (and briefly wears) unowned items
+    avatar: await ownedLook(repo, user),
     onboarded: user.onboarded,
     linked: user.linked,
     googleEnabled: !!oauth,

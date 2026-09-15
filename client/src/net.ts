@@ -9,6 +9,7 @@ import { onFriendInvite, onFriendInviteSent, onFriendPresence, onFriendRequest, 
 import { onFriendCallEnd, onFriendCallFail, onFriendCallHold, onFriendCallIncoming, onFriendCallRejoin, onFriendCallStart, onFriendSignal } from './friendCall';
 import { onAdultRequired } from './adultGate';
 import { fetchInventory } from './api';
+import { lookSaved, markLookSaving, resetLookSave } from './lookSave';
 import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
 
@@ -173,6 +174,8 @@ export class Net {
     }
     this.room = room;
     active = this;
+    // sends on a previous socket will never be acked on this one
+    resetLookSave();
     const $ = getStateCallbacks(room);
 
     const syncRoom = () => {
@@ -281,6 +284,10 @@ export class Net {
     room.onMessage('t_done', onTradeDone);
 
     room.onMessage('coins', (m: { coins: number; earned: number }) => events.onCoins(m.coins, m.earned));
+    // the look actually saved (unowned items stripped); adopt it once no newer save is outstanding
+    room.onMessage('avatar_saved', (m: { look?: unknown }) => {
+      if (lookSaved()) useAppStore.getState().setSavedAvatar(m.look);
+    });
     room.onMessage('inventory_delta', (m: { def: string; delta: number }) => store.addInventory(m.def, m.delta));
     const refreshInventory = () => {
       void fetchInventory().then((inv) => {
@@ -408,7 +415,9 @@ export class Net {
   }
 
   sendAvatar(config: AvatarConfig) {
-    this.room?.send('avatar', { config });
+    if (!this.room) return;
+    markLookSaving();
+    this.room.send('avatar', { config });
   }
 
   sendChat(text: string) {

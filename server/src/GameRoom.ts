@@ -43,7 +43,7 @@ import { beginRoll, closeChance, finishRoll, restoredState } from './chance';
 import { Furniture, Player, WorldState } from './schema';
 import { MovementSim } from './movement';
 import { Repo, User } from './repo';
-import { equippableLook, joinLook } from './look';
+import { joinLook, saveLook } from './look';
 import { CallBook } from './calls';
 import { Duel, DuelBook, Pick, RoundResult, Settlement, duelSettlement } from './duel';
 import { settleOrLog } from './duelSettle';
@@ -297,10 +297,14 @@ export class GameRoom extends Room<WorldState> {
       const u = client.auth as User | undefined;
       if (!u) return;
       void (async () => {
-        // premium cosmetics must be owned; strip anything that isn't back to the starter default
-        const cfg = await equippableLook(GameRoom.repo, u.id, normalizeAvatar(msg?.config));
-        p.avatar = serializeAvatar(cfg);
-        await GameRoom.repo.setAvatar(u.id, cfg);
+        try {
+          // strips unowned items and awaits the write, so the ack means a room switch now reads it
+          const look = await saveLook(GameRoom.repo, u.id, msg?.config);
+          p.avatar = serializeAvatar(look);
+          client.send('avatar_saved', { look });
+        } catch (e) {
+          console.error('[avatar]', e);
+        }
       })();
     });
 

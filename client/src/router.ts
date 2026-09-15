@@ -1,4 +1,5 @@
 import { ROOM_SLUG } from '@dovey/shared';
+import { waitForLookSave } from './lookSave';
 
 /**
  * URL scheme:
@@ -28,10 +29,19 @@ export function roomUrl(slug: string): string {
   return `/r/${slug}`;
 }
 
+/**
+ * Leave the page. A room switch is a full load and the next join reads the server-saved
+ * look, so first wait (briefly) for any look save the server hasn't acked yet.
+ */
+export async function navigate(url: string) {
+  await waitForLookSave();
+  location.assign(url);
+}
+
 export function goToRoom(slug: string) {
-  location.assign(roomUrl(slug));
+  return navigate(roomUrl(slug));
 }
 
 export function goPlay() {
-  location.assign('/play');
+  return navigate('/play');
 }

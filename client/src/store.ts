@@ -178,6 +178,8 @@ interface AppState {
   setMe: (m: Me | null) => void;
   /** a fresh /api/me: set me and wear the server-saved look (the source of truth), caching it locally */
   adoptMe: (m: Me) => void;
+  /** the server acked a look save: wear and cache exactly what it stored (no resend) */
+  setSavedAvatar: (look: unknown) => void;
   setBrowsing: (v: boolean) => void;
   setEdit: (e: EditMode) => void;
   setUndoCount: (n: number) => void;
@@ -290,6 +292,13 @@ export const useAppStore = create<AppState>((set) => ({
       const avatar = normalizeAvatar(me.avatar);
       saveAvatar(avatar);
       return { me, avatar };
+    }),
+  setSavedAvatar: (look) =>
+    set((s) => {
+      if (!look || typeof look !== 'object') return {};
+      const avatar = normalizeAvatar(look);
+      saveAvatar(avatar);
+      return serializeAvatar(avatar) === serializeAvatar(s.avatar) ? {} : { avatar };
     }),
   setBrowsing: (browsing) => set({ browsing }),
   setEdit: (edit) => set({ edit }),
