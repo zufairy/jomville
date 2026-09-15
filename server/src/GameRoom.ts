@@ -52,6 +52,7 @@ import { TRADE_CLIENT_MESSAGES, TradeController } from './trade/controller';
 import { GAME_TABLE_KIND, TABLE_BOT_REWARD, TABLE_GAME_KINDS, TABLE_REWARD, TableGameKind, tableChairs } from '@dovey/shared';
 import { Match, TableBook, TableEvent, isBot } from './tableGames';
 import { BotCrew, PERSONAS, scatterSpawns } from './bots';
+import { TypingBook } from './typing';
 import { LOBBY_MAZE_PRIZE, MAIN_LOBBY, MAZE_COOLDOWN_MS, MAZE_REWARD } from '@dovey/shared';
 import { LOVE_ROOM, LOVE_SEATS, LoveSide, LoveSnapshot, laneSpot, normalizeVibe } from '@dovey/shared';
 import { LoveEvent, LoveMeter } from './loveMeter';
@@ -96,6 +97,8 @@ export class GameRoom extends Room<WorldState> {
   private blockLimit = new RateLimiter(BLOCK_RATE.count, BLOCK_RATE.windowMs);
   private blocks = new BlockBook();
   private emoteLimit = new RateLimiter(EMOTE_RATE.count, EMOTE_RATE.windowMs);
+  /** who is typing right now (server/src/typing.ts) */
+  private typing = new TypingBook();
   private avatarLimit = new RateLimiter(10, 5000);
   private editLimit = new RateLimiter(30, 3000);
   private calls = new CallBook();
@@ -268,9 +271,22 @@ export class GameRoom extends Room<WorldState> {
         return;
       }
       this.sayTo(client.sessionId, censor(text));
+      if (this.typing.stop(client.sessionId)) this.sendTyping(client.sessionId, false);
       const me = this.state.players.get(client.sessionId)!;
       this.bots?.onHumanChat({ id: client.sessionId, handle: me.handle, x: Math.round(me.x), y: Math.round(me.y) }, censor(text));
     });
+
+    // ---- typing indicator: "…" over a head while someone types; only transitions are broadcast
+    this.onMessage('typing', (client, msg: { on?: unknown }) => {
+      // signed-in players only (bots are server-side actors and never send this)
+      if (!client.auth || !this.state.players.has(client.sessionId)) return;
+      const next = this.typing.request(client.sessionId, msg?.on === true, Date.now());
+      if (next !== null) this.sendTyping(client.sessionId, next);
+    });
+    this.clock.setInterval(() => {
+      if (!this.typing.size) return;
+      for (const id of this.typing.expire(Date.now())) this.sendTyping(id, false);
+    }, 1000);
 
     this.onMessage('emote', (client, msg: { i?: unknown }) => {
       if (!this.state.players.has(client.sessionId)) return;
@@ -829,6 +845,14 @@ export class GameRoom extends Room<WorldState> {
     for (const id of ids) presence.notify(id, 'friend_presence', payload);
   }
 
+  /** typing indicator: tell everyone else (who has not blocked them) that `id` started or stopped typing */
+  private sendTyping(id: string, on: boolean) {
+    for (const c of this.clients) {
+      if (c.sessionId === id || this.blocks.isHidden(id, c.sessionId)) continue;
+      c.send('typing', { id, on });
+    }
+  }
+
   /** Deliver a chat (or roll result) line to everyone who has not blocked the speaker. */
   private sayTo(fromSession: string, text: string, type: 'chat' | 'roll' = 'chat') {
     for (const c of this.clients) {
@@ -1267,6 +1291,7 @@ export class GameRoom extends Room<WorldState> {
   }
 
   onLeave(client: Client) {
+    if (this.typing.forget(client.sessionId)) this.sendTyping(client.sessionId, false);
     this.kitchen?.leave(client.sessionId);
     this.loveLeave(client.sessionId);
     // before the player is removed from state, so the settlement still knows both accounts

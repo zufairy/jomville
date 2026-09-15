@@ -30,6 +30,8 @@ export class Bubble extends Container {
   private text = new Text({ text: '', style: STYLE });
   age = 0;
   active = false;
+  /** drawn height including the tail, cached so per-frame layout never measures bounds */
+  h = 0;
 
   constructor() {
     super();
@@ -44,6 +46,7 @@ export class Bubble extends Container {
     this.text.text = msg;
     const w = Math.ceil(this.text.width) + PAD * 2;
     const h = Math.ceil(this.text.height) + PAD * 2;
+    this.h = h + TAIL;
     this.text.position.set(-w / 2 + PAD, -h - TAIL + PAD);
     this.bg
       .clear()
@@ -121,6 +124,12 @@ export class BubblePool {
 
   forEachActive(fn: (id: string, b: Bubble) => void) {
     for (const b of this.pool) if (b.active) fn(this.owner.get(b)!, b);
+  }
+
+  /** drawn height (tail included) of `id`'s active bubble, 0 when none */
+  heightOf(id: string): number {
+    for (const b of this.pool) if (b.active && this.owner.get(b) === id) return b.h;
+    return 0;
   }
 
   drop(id: string) {
