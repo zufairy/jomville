@@ -30,9 +30,9 @@
   box-shadow: 0 4px 0 var(--edge);
   font: inherit;
   font-weight: 900;
-  font-size: 14px;
+  font-size: 18px;
   line-height: 1.15;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
   text-align: center;
   cursor: pointer;
@@ -54,12 +54,14 @@
 
 .pf .pf-btn--full { grid-column: 1 / -1; width: 100%; }
 .pf .pf-btn--sm { min-height: 44px; padding: 4px 14px; font-size: 13px; }
-.pf .pf-btn--green { --face: #58cc02; --edge: #58a700; --line: #58cc02; --fg: #133a00; }
-.pf .pf-btn--blue { --face: #1cb0f6; --edge: #1899d6; --line: #1cb0f6; --fg: #06283d; }
+/* Duolingo-style white labels, bold 18px (WCAG large text); fills deepened to >= 3:1 with white, edges ~20% darker.
+   White contrast: green 3.60 / blue 4.12 / orange 3.79 / purple 4.62 / red 4.55 (hover brightness 1.06: 3.23 / 3.72 / 3.41 / 4.18 / 4.11). */
+.pf .pf-btn--green { --face: #3f9a00; --edge: #327b00; --line: #3f9a00; --fg: #fff; }
+.pf .pf-btn--blue { --face: #1484c0; --edge: #106a9a; --line: #1484c0; --fg: #fff; }
 .pf .pf-btn--orange,
-.sheet.pf .btn--duel { --face: #ff9600; --edge: #e08600; --line: #ff9600; --fg: #3d2000; }
-.pf .pf-btn--purple { --face: #ce82ff; --edge: #a568cc; --line: #ce82ff; --fg: #33104d; }
-.pf .pf-btn--red { --face: #ff4b4b; --edge: #ea2b2b; --line: #ff4b4b; --fg: #3d0000; }
+.sheet.pf .btn--duel { --face: #c96a00; --edge: #a15500; --line: #c96a00; --fg: #fff; }
+.pf .pf-btn--purple { --face: #9a55cc; --edge: #7b44a3; --line: #9a55cc; --fg: #fff; }
+.pf .pf-btn--red { --face: #d93a3a; --edge: #ae2e2e; --line: #d93a3a; --fg: #fff; }
 /* the pending / already-friends states read as a soft grey badge, not a broken button */
 .pf .pf-btn--soft:disabled { --face: #f0f0f0; --edge: #dcdcdc; --line: #e5e5e5; --fg: #5e5e5e; }
 

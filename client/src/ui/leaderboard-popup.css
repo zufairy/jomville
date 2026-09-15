@@ -8,12 +8,15 @@
   --lbp-deep: #0b1418;
   --lbp-ink: #f1f7fb;
   --lbp-muted: #a9bcc5;
+  /* bright blue stays for outlines/accents only; filled surfaces carry bold white text.
+     White contrast: blue fill 4.12, green fill 3.60 (both with bold 18px labels), you-bar blue 5.49 (any text size). */
   --lbp-blue: #1cb0f6;
-  --lbp-blue-edge: #1899d6;
-  --lbp-blue-ink: #06283d;
-  --lbp-green: #58cc02;
-  --lbp-green-edge: #58a700;
-  --lbp-green-ink: #133a00;
+  --lbp-blue-fill: #1484c0;
+  --lbp-blue-edge: #106a9a;
+  --lbp-bar: #0f6fa3;
+  --lbp-bar-edge: #0c5982;
+  --lbp-green: #3f9a00;
+  --lbp-green-edge: #327b00;
   --lbp-coin: #ffd84d;
   position: fixed;
   inset: 0;
@@ -69,10 +72,10 @@
 .lbp-tab {
   min-height: 46px; margin-bottom: 4px; padding: 4px 6px; border-radius: 16px; cursor: pointer;
   border: 2px solid var(--lbp-line); background: var(--lbp-card); color: var(--lbp-muted);
-  font-weight: 800; font-size: 14px; line-height: 1.1; box-shadow: 0 4px 0 var(--lbp-line);
+  font-weight: 900; font-size: 18px; line-height: 1.1; box-shadow: 0 4px 0 var(--lbp-line);
   transition: transform 0.08s ease-out, box-shadow 0.08s ease-out, filter 0.15s;
 }
-.lbp-tab[aria-pressed='true'] { background: var(--lbp-blue); border-color: var(--lbp-blue-edge); color: var(--lbp-blue-ink); box-shadow: 0 4px 0 var(--lbp-blue-edge); }
+.lbp-tab[aria-pressed='true'] { background: var(--lbp-blue-fill); border-color: var(--lbp-blue-edge); color: #fff; box-shadow: 0 4px 0 var(--lbp-blue-edge); }
 .lbp-tab:active { transform: translateY(4px); box-shadow: 0 0 0 var(--lbp-line); }
 
 .lbp__spans { display: flex; justify-content: center; gap: 6px; padding: 6px 14px 2px; }
@@ -153,13 +156,13 @@
 .lbp-me {
   flex: none; display: grid; grid-template-columns: auto 40px minmax(0, 1fr) auto; align-items: center; gap: 10px;
   margin: 0 12px 16px; padding: 8px 14px 8px 10px; border-radius: 18px;
-  background: var(--lbp-blue); box-shadow: 0 4px 0 var(--lbp-blue-edge); color: var(--lbp-blue-ink);
+  background: var(--lbp-bar); box-shadow: 0 4px 0 var(--lbp-bar-edge); color: #fff;
   animation: lbp-slide-up 0.35s 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .lbp-me__rank { min-width: 44px; display: flex; flex-direction: column; align-items: center; line-height: 1; font-weight: 900; font-size: 19px; font-variant-numeric: tabular-nums; }
 .lbp-me__rank small { font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
 .lbp-avatar--me { background: rgba(255, 255, 255, 0.35); border: 2px solid #fff; }
-.lbp-me .lbp-value { color: var(--lbp-blue-ink); }
+.lbp-me .lbp-value { color: #fff; }
 .lbp-me--hidden {
   grid-template-columns: minmax(0, 1fr) auto;
   background: var(--lbp-card); border: 2px solid var(--lbp-line); box-shadow: 0 4px 0 var(--lbp-deep); color: var(--lbp-ink);
@@ -170,11 +173,11 @@
 /* ---- chunky button ---- */
 .lbp-btn {
   min-height: 46px; margin-bottom: 4px; padding: 0 20px; border: 0; border-radius: 16px; cursor: pointer;
-  background: var(--lbp-green); color: var(--lbp-green-ink); box-shadow: 0 4px 0 var(--lbp-green-edge);
-  font-weight: 900; font-size: 14px; letter-spacing: 0.6px; text-transform: uppercase;
+  background: var(--lbp-green); color: #fff; box-shadow: 0 4px 0 var(--lbp-green-edge);
+  font-weight: 900; font-size: 18px; letter-spacing: 0.3px; text-transform: uppercase;
   transition: transform 0.08s ease-out, box-shadow 0.08s ease-out, filter 0.15s;
 }
-.lbp-btn--sm { min-height: 40px; padding: 0 14px; font-size: 13px; }
+.lbp-btn--sm { min-height: 44px; padding: 0 14px; }
 .lbp-btn:not(:disabled):active { transform: translateY(4px); box-shadow: 0 0 0 var(--lbp-green-edge); }
 .lbp-btn:disabled { background: #37464f; color: #c9d6dc; box-shadow: 0 4px 0 #26343b; cursor: default; }
 @media (hover: hover) {
@@ -202,7 +205,7 @@
 /* ---- phones ---- */
 @media (max-width: 420px) {
   .lbp__title { font-size: 20px; }
-  .lbp-tab { font-size: 13px; }
+  .lbp-tab { letter-spacing: -0.2px; padding-inline: 4px; }
   .lbp-spot__avatar { width: 56px; height: 56px; }
   .lbp-spot--p1 .lbp-spot__avatar { width: 68px; height: 68px; }
   .lbp-spot__handle { font-size: 13px; }
