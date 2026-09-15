@@ -11,6 +11,7 @@ import { onAdultRequired } from './adultGate';
 import { fetchInventory } from './api';
 import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
+import { playChat } from './roomSounds';
 
 export interface RemotePlayer {
   handle: string;
@@ -39,12 +40,16 @@ export interface NetEvents {
   onReset: () => void;
   /** a (re)join finished; sessionId is valid */
   onJoined: (sessionId: string) => void;
+  /** the first full state of this join (players and furniture) has been applied */
+  onSynced: () => void;
   onAdd: (id: string, p: RemotePlayer) => void;
   onChange: (id: string, p: RemotePlayer) => void;
   onRemove: (id: string) => void;
   /** `roll` marks a server-issued dice/wheel result (drawn distinct from typed chat) */
   onChat: (id: string, text: string, roll?: boolean) => void;
   onEmote: (id: string, i: number) => void;
+  /** someone else started (`on`) or stopped typing in the chat bar */
+  onTyping: (id: string, on: boolean) => void;
   /** someone tapped themselves to use their gear */
   onGearUse: (id: string) => void;
   onFurnitureAdd: (p: Placement) => void;
@@ -291,9 +296,13 @@ export class Net {
       });
     };
     room.onMessage('inventory_refresh', refreshInventory);
-    room.onMessage('chat', (m: { id: string; text: string }) => events.onChat(m.id, m.text));
+    room.onMessage('chat', (m: { id: string; text: string }) => {
+      events.onChat(m.id, m.text);
+      playChat(m.id, room.sessionId);
+    });
     room.onMessage('roll', (m: { id: string; text: string }) => events.onChat(m.id, m.text, true));
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
+    room.onMessage('typing', (m: { id: string; on: boolean }) => events.onTyping(m.id, m.on === true));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));
     room.onMessage('sys', (m: { code: string }) => {
       if (m.code === 'adult_required') return onAdultRequired();
@@ -356,6 +365,10 @@ export class Net {
       events.onReset();
       this.retry(0);
     });
+    // the initial furniture batch is in once the first full state has been decoded (onAdd already
+    // fired for every item); a state that somehow landed before this line counts as synced
+    if ((room.state as { players?: { size: number } }).players?.size) events.onSynced();
+    else room.onStateChange.once(() => events.onSynced());
     store.setStatus('connected');
     store.setSessionId(room.sessionId);
     events.onJoined(room.sessionId);

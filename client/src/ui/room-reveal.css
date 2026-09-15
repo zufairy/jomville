@@ -1,0 +1,126 @@
+/* ---- room reveal: frosted loading overlay over the game canvas (under the HUD) ---- */
+.room-reveal-host {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.room-reveal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* while loading, taps on the half-built room go nowhere */
+  pointer-events: auto;
+  touch-action: none;
+}
+.room-reveal--revealing { pointer-events: none; }
+
+.room-reveal__frost {
+  position: absolute;
+  inset: -2px;
+  background:
+    radial-gradient(120% 90% at 50% 42%, rgba(255, 248, 236, 0.42) 0%, rgba(255, 238, 222, 0.28) 45%, rgba(59, 42, 42, 0.46) 100%);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+  will-change: opacity;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .room-reveal__frost {
+    background: radial-gradient(120% 90% at 50% 42%, rgba(255, 246, 232, 0.97) 0%, rgba(246, 226, 208, 0.96) 55%, rgba(120, 92, 88, 0.95) 100%);
+  }
+}
+
+.room-reveal__card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 48px);
+  padding: 12px 20px 14px 12px;
+  border-radius: 22px;
+  background: rgba(255, 248, 236, 0.9);
+  border: 3px solid #3b2a2a;
+  box-shadow: 0 4px 0 #3b2a2a, 0 18px 40px rgba(59, 42, 42, 0.22);
+  color: #3b2a2a;
+  overflow: hidden;
+  opacity: 0;
+  /* quick loads never flash the card; slower ones ease it in */
+  animation: rr-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) 140ms forwards;
+}
+.room-reveal__mark {
+  flex: none;
+  animation: rr-pulse 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 2px 0 rgba(59, 42, 42, 0.35));
+}
+.room-reveal__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.room-reveal__name {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-reveal__hint {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.62;
+}
+/* a thin shimmer along the bottom edge of the card */
+.room-reveal__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #ff8a5b 40%, #f0418c 60%, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: rr-shimmer 1.3s ease-in-out infinite;
+}
+
+/* the reveal: blur melts, dim lifts, the card floats off */
+.room-reveal--revealing .room-reveal__frost {
+  animation: rr-melt var(--rr-melt, 520ms) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.room-reveal--revealing .room-reveal__card {
+  opacity: 1;
+  animation: rr-card-out 240ms ease-in forwards;
+}
+
+@keyframes rr-melt {
+  from { opacity: 1; -webkit-backdrop-filter: blur(22px) saturate(1.2); backdrop-filter: blur(22px) saturate(1.2); }
+  to { opacity: 0; -webkit-backdrop-filter: blur(0px) saturate(1); backdrop-filter: blur(0px) saturate(1); }
+}
+@keyframes rr-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes rr-card-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-6px) scale(1.03); }
+}
+@keyframes rr-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes rr-shimmer {
+  from { background-position: -60% 0; }
+  to { background-position: 160% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-reveal__card { animation: rr-fade-in 160ms linear forwards; }
+  .room-reveal__mark, .room-reveal__bar { animation: none; }
+  .room-reveal--revealing .room-reveal__frost { animation: rr-fade-out var(--rr-melt, 200ms) linear forwards; }
+  .room-reveal--revealing .room-reveal__card { animation: rr-fade-out 160ms linear forwards; }
+}
+@keyframes rr-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rr-fade-out { from { opacity: 1; } to { opacity: 0; } }

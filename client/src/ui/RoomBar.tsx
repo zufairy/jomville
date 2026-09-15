@@ -4,6 +4,7 @@ import { useAppStore } from '../store';
 import { fetchRandomRoom } from '../api';
 import { goToRoom } from '../router';
 import { Icon } from './Icon';
+import { SoundToggle } from './SoundToggle';
 
 // Only fetched the first time someone taps the trophy, so the room bundle stays lean.
 const LeaderboardPopup = lazy(() => import('./LeaderboardPopup').then((m) => ({ default: m.LeaderboardPopup })));
@@ -126,6 +127,7 @@ export function RoomBar() {
         <button className="hud__btn" onClick={share} aria-label="share room link" title="share room link">
           <Icon name="share" />
         </button>
+        <SoundToggle />
         <button
           ref={trophy}
           className={`hud__btn ${boardsOpen ? 'hud__btn--on' : ''}`}

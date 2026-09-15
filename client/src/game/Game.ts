@@ -64,6 +64,10 @@ import { bindTradeSender, useTrade } from '../trade';
 import { bindFriendSender, useFriends } from '../friends';
 import { bindFriendCallSender, friendCall } from '../friendCall';
 import { useAppStore } from '../store';
+import { RoomReveal } from './roomReveal';
+import { installUiSounds, playEnterRoom, playTypingStart } from '../roomSounds';
+import { TypingDots } from './typingDots';
+import { installTypingDetector } from '../typing';
 
 function waitForActivation(): Promise<void> {
   const d = document as Document & { prerendering?: boolean };
@@ -180,6 +184,12 @@ export class Game {
   private rides = new RideSystem(this.actorLayer);
   /** lends this app to full-screen scenes (kitchen rounds) instead of a second Pixi app */
   private lender: StageLender<Container> | null = null;
+  /** frosted blur-to-sharp overlay while a room loads */
+  private reveal = new RoomReveal();
+  private uninstallSounds: (() => void) | null = null;
+  /** "…" over the heads of people typing */
+  private typingDots!: TypingDots;
+  private uninstallTyping: (() => void) | null = null;
 
   async mount(el: HTMLElement) {
     await this.app.init({
@@ -197,6 +207,10 @@ export class Game {
     }
     atlas.bind(this.app.renderer);
     el.appendChild(this.app.canvas);
+    this.reveal.attach(el);
+    this.reveal.onStart = playEnterRoom;
+    this.reveal.begin();
+    this.uninstallSounds = installUiSounds();
     // Pixi's full types don't line up with the lender's minimal structural interface (DOM/ticker generics)
     this.lender = new StageLender<Container>(this.app as unknown as LeaseApp<Container>);
     if (import.meta.env.DEV) {
@@ -210,6 +224,8 @@ export class Game {
     this.world.addChild(this.walls, this.floor, this.marker, this.ringLayer, this.fixtures, this.actorLayer, this.voiceBadges, this.fxLayer);
     this.bubbles = new BubblePool(this.fxLayer);
     this.emotes = new EmotePool(this.fxLayer);
+    this.typingDots = new TypingDots(this.fxLayer);
+    this.uninstallTyping = installTypingDetector();
     bindLoveSender((type, data) => this.net.send(type, data));
     bindTableSender((type, data) => this.net.send(type, data));
     bindTradeSender((type, data) => this.net.send(type, data));
@@ -358,8 +374,13 @@ export class Game {
 
     await this.net.connect(
       {
-        onReset: () => this.resetWorld(),
+        onReset: () => {
+          this.reveal.begin();
+          this.resetWorld();
+        },
+        onSynced: () => this.reveal.synced(),
         onJoined: () => {
+          this.reveal.joined();
           this.ensureSelf();
           this.voice.rejoin();
           void useFriends.getState().load();
@@ -370,7 +391,15 @@ export class Game {
         onAdd: (id, p) => this.onPlayerAdd(id, p),
         onChange: (id, p) => this.onPlayerChange(id, p),
         onRemove: (id) => this.onPlayerRemove(id),
+        onTyping: (id, on) => {
+          if (id === this.net.sessionId) return;
+          if (!on) return this.typingDots.hide(id);
+          const st = useAppStore.getState();
+          if (st.muted.includes(id) || st.blocked.includes(id) || !this.actors.has(id)) return;
+          if (this.typingDots.show(id)) playTypingStart(id);
+        },
         onChat: (id, text, roll) => {
+          if (!roll) this.typingDots.hide(id);
           // muting is local, so drop their lines before they ever reach a bubble
           const st = useAppStore.getState();
           if (st.muted.includes(id) || st.blocked.includes(id)) return;
@@ -816,6 +845,7 @@ export class Game {
   private onPlayerAdd(id: string, p: RemotePlayer) {
     const avatar = new Avatar(p.x, p.y, parseAvatar(p.avatar), p.handle);
     this.actorLayer.addChild(avatar);
+    this.reveal.addAvatar(avatar);
     this.actors.set(id, { avatar, target: p });
     this.ensureSelf();
   }
@@ -834,6 +864,7 @@ export class Game {
     a.avatar.destroy();
     this.actors.delete(id);
     this.bubbles.drop(id);
+    this.typingDots.hide(id);
     if (a.avatar === this.me) {
       this.me = null;
       this.mover = null;
@@ -858,6 +889,8 @@ export class Game {
     if (this.gestures.consumeTap()) return;
     // browsers only play nearby voices once the page has had a gesture
     unlockAudio();
+    // a half-loaded room behind the frost takes no walks or uses
+    if (!this.reveal.inputOpen) return;
     if (!this.mover) return;
     const local = this.world.toLocal(e.global);
     const t = screenToTileIndex(local.x, local.y);
@@ -993,6 +1026,7 @@ export class Game {
     const f = new FurnitureSprite(p);
     this.furniture.set(p.id, f);
     this.actorLayer.addChild(f);
+    this.reveal.addFurniture(f);
     this.rebuildGrid();
   }
 
@@ -1204,6 +1238,7 @@ export class Game {
   }
 
   private update(dtMs: number) {
+    this.reveal.tick(performance.now());
     this.ensureSelf();
 
     this.markerAge += dtMs;
@@ -1301,6 +1336,14 @@ export class Game {
     this.bubbles.forEachActive((id, b) => {
       const a = this.actors.get(id);
       if (a) b.position.set(a.avatar.x, a.avatar.y - 72 * AVATAR_SCALE);
+    });
+    this.typingDots.tick(fxDt, (id, b) => {
+      const a = this.actors.get(id);
+      if (!a) return false;
+      // stack above a chat bubble that is still showing
+      const lift = this.bubbles.heightOf(id);
+      b.position.set(a.avatar.x, a.avatar.y - 72 * AVATAR_SCALE - (lift ? lift + 4 : 0));
+      return true;
     });
     this.emotes.tick(fxDt, (id) => {
       const a = this.actors.get(id);
@@ -1420,6 +1463,9 @@ export class Game {
     useAppStore.getState().setActions(null);
     window.removeEventListener('pagehide', this.onPageHide);
     window.removeEventListener('pageshow', this.onPageShow);
+    this.reveal.dispose();
+    this.uninstallSounds?.();
+    this.uninstallTyping?.();
     this.net.leave();
     if (this.initialised) {
       atlas.clear();
