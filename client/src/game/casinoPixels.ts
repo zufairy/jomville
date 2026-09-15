@@ -505,10 +505,9 @@ function throneFrame(frame: number, near = false): PixelMap {
   // armrests
   for (const x0 of [3, 11]) layer(cv, (l) => new Iso(l, 16, OY).box(x0, y0, 9, x0 + 2, y1, 15, 'a', 'b', 'd'));
   if (near) backrest();
-  else {
-    const iso = new Iso(cv, 16, OY);
-    for (const x of [5, 8, 11]) iso.dot(x, 13, 4.5, 'w');
-  }
+  // studs along the skirt band facing the camera: the seat front, or the back's foot when turned away
+  const iso = new Iso(cv, 16, OY);
+  for (const x of [5, 8, 11]) iso.dot(x, near ? 14 : 13, 4.5, 'w');
   shimmer(cv, frame);
   return cv.toMap({ ...GOLD, R: 0xc8102e, S: 0x8e0f24, M: 0x5e0a18 }, cv.h - (OY + 8));
 }

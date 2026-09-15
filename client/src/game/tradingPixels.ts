@@ -446,6 +446,10 @@ function sofaFrame(near: boolean): PixelMap {
       (p) => (p[2] > 19.8 ? 'a' : p[2] < 4.2 ? (p[0] < 3 ? 'a' : 'b') : p[2] > 17 ? 'S' : 'R'),
       (p) => (p[2] > 19.8 ? 'c' : p[2] < 4.2 ? 'c' : 'M'),
     );
+    // the gold scroll studs, seen from behind: at the ends of the back panel, level with the arms
+    const iso = new Iso(cv, OX, OY);
+    iso.dot(2.8, 15, 12, 'a');
+    iso.dot(29.2, 15, 12, 'a');
   }
   return cv.toMap({ ...GOLD, ...VELVET }, cv.h - (OY + 12));
 }

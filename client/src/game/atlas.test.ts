@@ -6,7 +6,13 @@ import { ATLAS_RES, atlas } from './atlas';
 import { HOLO_IDLE_FRAMES, holoLockSequence } from './casinoPixels';
 import { artBounds, paintFurniture } from './furnitureArt';
 
-/** the old bake path's pixels: the painter's rects rasterised at ATLAS_RES inside the art bounds */
+/**
+ * Reference raster for the parity test below: the painter's whole-pixel rects,
+ * filled at ATLAS_RES inside the art bounds with the same technique the strip
+ * uses. It is NOT a GPU-rendered bitmap from renderer.generateTexture, so
+ * "0 pixels differ" means the strip path agrees with this independent CPU
+ * rasteriser of the same rects. Parity with the WebGL bake is a live check.
+ */
 function rasterise(sk: string, frame: number): Uint8ClampedArray {
   const def = furnitureDef('holodice')!;
   const b = artBounds(def, 0);
