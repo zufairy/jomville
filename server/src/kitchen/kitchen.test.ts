@@ -78,8 +78,8 @@ describe('CrewBook', () => {
     const { b } = book();
     b.sync([['a', 'b'], [], [], []]);
     expect(b.start('zzz')).toEqual([{ type: 'error', to: 'zzz', code: 'not_in_crew' }]);
-    expect(b.start('a')).toEqual({ pad: 0, members: ['a', 'b'] });
-    expect(b.start('b')).toEqual([{ type: 'error', to: 'b', code: 'already_cooking' }]);
+    expect(b.start('a')).toEqual({ pad: 0, members: ['a', 'b'], eligible: ['a', 'b'] });
+    expect(b.start('b')).toEqual([]); // already going in: no error, no second round
     const go = b.began(0, 'room1');
     expect(go.filter((e) => e.type === 'go').map((e) => e.to)).toEqual(['a', 'b']);
     expect(b.padForRoom('room1')).toBe(0);
@@ -87,6 +87,16 @@ describe('CrewBook', () => {
     const done = b.finish(0);
     expect(crewFor(done, 'a')?.crew?.phase).toBe('open');
     expect(b.padForRoom('room1')).toBe(-1);
+  });
+
+  it('someone arriving on the rug after a round started cannot play again into it (by design)', () => {
+    const { b } = book();
+    b.sync([['a', 'b'], [], [], []]);
+    b.start('a');
+    b.began(0, 'r');
+    b.sync([['a', 'b', 'c'], [], [], []]); // cooking crews keep their roster, so c is not a member
+    expect(b.start('c', true)).toEqual([{ type: 'error', to: 'c', code: 'not_in_crew' }]);
+    expect(b.start('b', true)).toEqual([]); // already in that round: no error, no second round
   });
 
   it('times out a cooking crew that never reported back', () => {

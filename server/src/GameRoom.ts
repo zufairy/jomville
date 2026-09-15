@@ -62,6 +62,7 @@ import { canEquip, vend } from './vending';
 import { BlockBook } from './blocks';
 import { humanCount, registry } from './registry';
 import { inviteLimit, presence } from './social';
+import { klMonday, playMinutes } from './leaderboards';
 import { friendCalls } from './social-calls';
 
 export interface JoinOptions {
@@ -219,8 +220,16 @@ export class GameRoom extends Room<WorldState> {
       for (const c of this.clients) {
         const u = c.auth as User | undefined;
         if (!u) continue;
-        void GameRoom.repo.addPlayMinute(u.id).catch((e) => console.error('[trade] play minute', e));
         void GameRoom.repo.creditCoins(u.id, COINS_PER_MINUTE).then((coins) => c.send('coins', { coins, earned: COINS_PER_MINUTE }));
+      }
+      // leaderboards: one online minute per human (bots are never clients), once across all rooms/tabs
+      const humans = this.clients.flatMap((c) => {
+        const u = c.auth as User | undefined;
+        return u ? [u.id] : [];
+      });
+      const counted = playMinutes.take(humans, Date.now());
+      if (counted.length) {
+        void GameRoom.repo.addPlayMinutes(counted, klMonday(new Date())).catch((e) => console.error('[leaderboards]', e));
       }
     }, 60_000);
     this.setPatchRate(TICK_MS);
@@ -1112,6 +1121,9 @@ export class GameRoom extends Room<WorldState> {
     );
     this.onMessage('k_start', (client) => {
       if (limit.allow(client.sessionId)) void this.kitchen?.start(client.sessionId);
+    });
+    this.onMessage('k_again', (client) => {
+      if (limit.allow(client.sessionId)) void this.kitchen?.again(client.sessionId);
     });
     this.onMessage('k_code', (client, msg: { code?: unknown }) => {
       if (limit.allow(client.sessionId)) this.kitchen?.join(client.sessionId, msg?.code);

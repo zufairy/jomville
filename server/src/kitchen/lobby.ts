@@ -27,9 +27,11 @@ function roundSeconds(): number | undefined {
 
 /** Kitchen world glue: rugs -> crews -> kitchen rooms. GameRoom owns one when its slug is the Kitchen. */
 export class KitchenLobby {
-  private onDone = (roomId: string) => {
-    const pad = this.book.padForRoom(roomId);
-    if (pad >= 0) this.dispatch(this.book.finish(pad));
+  private onDone = (roomId: string) => this.dispatch(this.book.closed(roomId));
+  private onEnded = (roomId: string) => this.dispatch(this.book.ended(roomId));
+  // if the user already left the world (no session to map to), sync() prunes them from the crew and its results
+  private onLeft = (roomId: string, userId: string) => {
+    for (const p of this.host.players()) if (p.userId === userId) this.book.left(roomId, p.sessionId);
   };
 
   constructor(
@@ -38,6 +40,8 @@ export class KitchenLobby {
     readonly book = new CrewBook(),
   ) {
     rounds.on('done', this.onDone);
+    rounds.on('ended', this.onEnded);
+    rounds.on('left', this.onLeft);
   }
 
   tick() {
@@ -50,17 +54,22 @@ export class KitchenLobby {
     this.dispatch(this.book.sync(onPads));
   }
 
-  async start(sessionId: string) {
-    const r = this.book.start(sessionId);
+  /** "play again" from the results: only this player goes (or joins the crew's round already cooking) */
+  again(sessionId: string) {
+    return this.start(sessionId, true);
+  }
+
+  async start(sessionId: string, again = false) {
+    const r = this.book.start(sessionId, again);
     if (Array.isArray(r)) return this.dispatch(r);
     const byId = new Map(this.host.players().map((p) => [p.sessionId, p]));
-    const userIds = [...new Set(r.members.map((m) => byId.get(m)?.userId).filter((u): u is string => !!u))];
+    const userIds = [...new Set(r.eligible.map((m) => byId.get(m)?.userId).filter((u): u is string => !!u))];
     try {
       const roomId = await this.createRound({ level: 'diner', seed: Math.floor(Math.random() * 2 ** 31), userIds, roundTime: roundSeconds() });
       this.dispatch(this.book.began(r.pad, roomId));
     } catch (e) {
       console.error('[kitchen] could not create round', e);
-      this.dispatch([...this.book.finish(r.pad), ...r.members.map((m): CrewEvent => ({ type: 'error', to: m, code: 'kitchen_failed' }))]);
+      this.dispatch(this.book.failed(r.pad, 'kitchen_failed'));
     }
   }
 
@@ -85,6 +94,8 @@ export class KitchenLobby {
 
   dispose() {
     rounds.off('done', this.onDone);
+    rounds.off('ended', this.onEnded);
+    rounds.off('left', this.onLeft);
   }
 
   private dispatch(events: CrewEvent[]) {

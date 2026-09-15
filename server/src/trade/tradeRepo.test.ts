@@ -3,6 +3,7 @@ import { DEFAULT_AVATAR } from '@dovey/shared';
 import type { Offer } from '@dovey/shared';
 import { Db, openTestDb } from '../db';
 import { Repo } from '../repo';
+import { klMonday } from '../leaderboards';
 
 let db: Db;
 let repo: Repo;
@@ -25,8 +26,8 @@ describe('trade migrations', () => {
     const s0 = await repo.tradeStanding(u.id);
     expect(s0?.playMinutes).toBe(0);
     expect(Date.now() - s0!.createdAt.getTime()).toBeLessThan(60_000);
-    await repo.addPlayMinute(u.id);
-    await repo.addPlayMinute(u.id);
+    await repo.addPlayMinutes([u.id], klMonday(new Date()));
+    await repo.addPlayMinutes([u.id], klMonday(new Date()));
     expect((await repo.tradeStanding(u.id))?.playMinutes).toBe(2);
     expect(await repo.tradeStanding('nobody')).toBeNull();
   });

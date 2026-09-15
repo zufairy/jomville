@@ -1,6 +1,6 @@
 import { Application, Container, Graphics, Point, Sprite, Ticker } from 'pixi.js';
 import { lendGameStage } from '../game/instance';
-import { AvatarConfig, DEFAULT_AVATAR, kitchen, parseAvatar, screenToTile, tileToScreen } from '@dovey/shared';
+import { AvatarConfig, DEFAULT_AVATAR, kitchen, screenToTile, tileToScreen } from '@dovey/shared';
 import { Camera } from '../game/camera';
 import { PX } from '../game/pixelArt';
 import { useAppStore } from '../store';
@@ -14,6 +14,7 @@ import { STATION_TOP, ZC, stationSprite, stationVariant } from './stationPixels'
 import { WALL_H, floorSprite, wallsSprite } from './roomPixels';
 import { ksfx } from './sounds';
 import type { TapPlan } from './tapControls';
+import { chefLook } from './looks';
 
 interface StationGfx {
   i: number;
@@ -214,9 +215,7 @@ export class IsoRenderer {
   }
 
   private lookFor(id: string): AvatarConfig | null {
-    if (id === this.round.me) return useAppStore.getState().avatar;
-    const entry = Object.values(useRoster.getState().players).find((p) => p.userId === id);
-    return entry ? parseAvatar(entry.avatar) : null;
+    return chefLook(id, { me: this.round.me, myAvatar: useAppStore.getState().avatar, looks: this.round.looks, roster: useRoster.getState().players });
   }
 
   private frame(dtMs: number) {

@@ -1,10 +1,12 @@
 /**
  * End-to-end check of the co-op kitchen against a running server:
  * four players stand on a crew rug, start a round, join the kitchen room,
- * snapshots flow at ~20/s, one bot cooks and serves the oldest order, the round ends.
+ * snapshots flow at ~20/s, every chef's avatar comes with the room, one bot cooks and
+ * serves the oldest order through the serving window, the round ends, then two players
+ * press "play again" (one new shared round, right away) while two press "back" (left out).
  *
- *   KITCHEN_ROUND_SECONDS=60 PORT=2567 pnpm start      (another shell)
- *   node client/scripts/smoke-kitchen.mjs
+ *   KITCHEN_ROUND_SECONDS=60 PORT=2630 pnpm start      (another shell)
+ *   DOVEY_API=http://localhost:2630 node client/scripts/smoke-kitchen.mjs
  */
 import { Client } from 'colyseus.js';
 
@@ -35,15 +37,24 @@ const stationIndex = new Map();
 ROWS.forEach((row, y) => [...row].forEach((ch, x) => /[CTLOMBSPWXR]/.test(ch) && stationIndex.set(`${x},${y}`, stationIndex.size)));
 const CRATE_X = { tomato: 1, lettuce: 2, onion: 3, mushroom: 4 };
 
+async function leaveWithTimeout(room, label) {
+  const timeout = new Promise((r) => setTimeout(() => r('timeout'), 5000));
+  const result = await Promise.race([room.leave().then(() => 'ok'), timeout]);
+  if (result === 'timeout') console.log(`  (leave() for ${label} did not resolve within 5s, moving on)`);
+}
 const client = new Client(WS);
 const tokens = [0, 1, 2, 3].map((i) => `kitchenSmoke${i}`.padEnd(32, String(i)));
 for (const t of tokens) await me(t);
 const worlds = await Promise.all(tokens.map((token) => client.joinOrCreate('room', { slug: 'kitchen', token })));
 const crew = [null, null, null, null];
 let roomId = null;
+const goes = [[], [], [], []];
 worlds.forEach((w, i) => {
   w.onMessage('k_crew', (m) => (crew[i] = m.crew));
-  w.onMessage('k_go', (m) => (roomId = m.roomId));
+  w.onMessage('k_go', (m) => {
+    roomId ??= m.roomId;
+    goes[i].push(m.roomId);
+  });
   for (const t of ['chat', 'emote', 'coins', 'sys', 'love', 'tg_state', 'tg_status', 'tg_end', 'call_state', 'duel_over', 'maze_win']) w.onMessage(t, () => {});
 });
 await wait(600);
@@ -59,10 +70,12 @@ check('four players form one crew on the first rug', await until(() => crew.ever
 worlds[0].send('k_start');
 check('start sends everyone to the same kitchen room', await until(() => !!roomId));
 
-const kitchens = await Promise.all(tokens.map((token) => client.joinById(roomId, { token })));
-const st = kitchens.map(() => ({ you: null, snaps: 0, chefs: [], stations: [], orders: [], score: 0, events: [], result: null, away: [], full: false }));
+const st = tokens.map(() => ({ you: null, looks: {}, snaps: 0, chefs: [], stations: [], orders: [], score: 0, events: [], result: null, away: [], full: false }));
 function bindKitchenHandlers(k, i) {
-  k.onMessage('k_hello', (m) => (st[i].you = m.you));
+  k.onMessage('k_hello', (m) => {
+    st[i].you = m.you;
+    Object.assign(st[i].looks, m.looks);
+  });
   k.onMessage('k_snap', (s) => {
     const v = st[i];
     v.snaps++;
@@ -75,10 +88,22 @@ function bindKitchenHandlers(k, i) {
   k.onMessage('k_event', (e) => st[i].events.push(e));
   k.onMessage('k_result', (r) => (st[i].result = r));
   k.onMessage('k_away', (m) => st[i].away.push(m));
-  for (const t of ['k_roster', 'k_pong']) k.onMessage(t, () => {});
+  k.onMessage('k_roster', (m) => Object.assign(st[i].looks, m.looks));
+  k.onMessage('k_pong', () => {});
 }
-kitchens.forEach(bindKitchenHandlers);
+// bind as each join resolves: k_hello and the first full snapshot are sent from onJoin and are dropped by an unbound room
+const kitchens = await Promise.all(
+  tokens.map(async (token, i) => {
+    const k = await client.joinById(roomId, { token });
+    bindKitchenHandlers(k, i);
+    return k;
+  }),
+);
 check('every player gets a hello', await until(() => st.every((s) => s.you)));
+check(
+  "every chef's avatar arrives with the kitchen room (no world roster needed)",
+  await until(() => st.every((s) => st.every((o) => typeof s.looks[o.you] === 'string' && JSON.parse(s.looks[o.you]).body))),
+);
 const before = st[0].snaps;
 await wait(2000);
 const rate = (st[0].snaps - before) / 2;
@@ -204,18 +229,40 @@ check('an order arrives', await until(() => a.orders.length > 0, 10000));
 const dish = a.orders[0]?.dish;
 console.log('  cooking', dish);
 await cook(dish);
-check('serving scores points', await until(() => a.score > 0, 4000));
+const ordersBefore = a.orders.length;
+check('serving at the window scores points', await until(() => a.score > 0, 4000));
+check('the served order clears', await until(() => a.orders.length < ordersBefore || a.events.some((e) => e.type === 'served' && e.dish === dish), 2000));
+check('the dish served was the one cooked, nothing rejected', a.events.some((e) => e.type === 'served' && e.dish === dish) && !a.events.some((e) => e.type === 'rejected'));
 check('everyone saw the served event', st.every((s) => s.events.some((e) => e.type === 'served')));
 
 check('the round ends with a result for everyone', await until(() => st.every((s) => s.result), 90000));
 console.log('  result', st[0].result);
 
-async function leaveWithTimeout(room, label) {
-  const timeout = new Promise((r) => setTimeout(() => r('timeout'), 5000));
-  const result = await Promise.race([room.leave().then(() => 'ok'), timeout]);
-  if (result === 'timeout') console.log(`  (leave() for ${label} did not resolve within 5s, moving on)`);
-}
-for (let i = 0; i < kitchens.length; i++) await leaveWithTimeout(kitchens[i], `kitchen[${i}]`);
+// ---- play again: 0 and 1 press it at the same time, 2 and 3 press "back"
+const firstRoom = roomId;
+const goesBefore = goes.map((g) => g.length);
+const t0 = Date.now();
+await Promise.all([kitchens[2].leave(), kitchens[3].leave(), kitchens[0].leave(), kitchens[1].leave()]);
+const sysErrors = [];
+worlds.forEach((w, i) => w.onMessage('sys', (m) => sysErrors.push([i, m.code])));
+worlds[0].send('k_again');
+worlds[1].send('k_again');
+check('both play-again players go to one new round within 3s', await until(() => goes[0].length > goesBefore[0] && goes[1].length > goesBefore[1], 3000));
+const again0 = goes[0].at(-1);
+console.log(`  rematch in ${Date.now() - t0}ms`);
+check('it is the same new room for both', again0 && again0 === goes[1].at(-1) && again0 !== firstRoom);
+await wait(800);
+check('crewmates who pressed back are not pulled in', goes[2].length === goesBefore[2] && goes[3].length === goesBefore[3]);
+check('no "already cooking" or other error', sysErrors.length === 0);
+const rematch = await Promise.all([0, 1].map((i) => client.joinById(again0, { token: tokens[i] })));
+const hellos = [null, null];
+rematch.forEach((k, i) => {
+  k.onMessage('k_hello', (m) => (hellos[i] = m));
+  for (const t of ['k_roster', 'k_pong', 'k_snap', 'k_event', 'k_away', 'k_result']) k.onMessage(t, () => {});
+});
+check('both play-again players are in the new kitchen', await until(() => hellos.every(Boolean) && rematch.length === 2));
+for (let i = 0; i < rematch.length; i++) await leaveWithTimeout(rematch[i], `rematch[${i}]`);
+
 for (let i = 0; i < worlds.length; i++) await leaveWithTimeout(worlds[i], `world[${i}]`);
 const pass = checks.every(Boolean);
 console.log(pass ? 'PASS' : 'FAIL');

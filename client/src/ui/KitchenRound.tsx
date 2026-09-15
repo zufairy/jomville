@@ -3,6 +3,7 @@ import { kitchen } from '@dovey/shared';
 import { KitchenRound } from '../kitchen/net';
 import { IsoRenderer } from '../kitchen/isoRenderer';
 import { bindPointer } from '../kitchen/pointerInput';
+import { holdButton } from '../kitchen/holdButton';
 import { dishName, useKitchen } from '../kitchen/store';
 import { orderLeft } from '../kitchen/view';
 import { dishItem, itemSprite } from '../kitchen/kitchenPixels';
@@ -197,12 +198,13 @@ function TouchPad({ round, dashAt, onDash }: { round: KitchenRound; dashAt: numb
   const [coarse] = useState(() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
   const [chopping, setChopping] = useState(false);
   const cooling = useNow(200) - dashAt < 1000;
+  const [chopHold] = useState(() =>
+    holdButton((on) => {
+      setChopping(on);
+      round.controls.setUse(on);
+    }),
+  );
   if (!coarse) return null;
-
-  const chop = (on: boolean) => {
-    setChopping(on);
-    round.controls.setUse(on);
-  };
 
   return (
     <div className="kr-touch">
@@ -221,13 +223,7 @@ function TouchPad({ round, dashAt, onDash }: { round: KitchenRound; dashAt: numb
       </button>
       <button
         className={`kr-btn kr-btn--chop ${chopping ? 'kr-btn--on' : ''}`}
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          chop(true);
-        }}
-        onPointerUp={() => chop(false)}
-        onPointerCancel={() => chop(false)}
-        onLostPointerCapture={() => chop(false)}
+        {...chopHold}
       >
         chop
       </button>

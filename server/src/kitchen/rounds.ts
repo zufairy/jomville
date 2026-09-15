@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 
-/** KitchenRoom emits 'done' with its roomId on dispose so the world lobby can reopen that crew. */
+/**
+ * KitchenRoom -> world lobby: 'ended' (roomId) when time is up, 'left' (roomId, userId) when a
+ * player is gone for good, 'done' (roomId) on dispose.
+ */
 export const rounds = new EventEmitter();
 rounds.setMaxListeners(0);
 

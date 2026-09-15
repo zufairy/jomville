@@ -13,8 +13,8 @@ export function KitchenLobby() {
   const [code, setCode] = useState('');
   const [coarse] = useState(() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
 
-  // "Play again": rounds are only created by the lobby, so start again once the old kitchen has closed.
-  // `again` stays set until k_go lands (go() clears it) so a crewmate winning the race isn't an error.
+  // "Play again": we already left the old kitchen; the server starts a round for just us right away,
+  // or puts us in the one a crewmate who also chose play again started. `again` stays set until k_go lands.
   const sentAgain = useRef(false);
   useEffect(() => {
     if (!again || phase !== 'off') {
@@ -22,13 +22,9 @@ export function KitchenLobby() {
       return;
     }
     if (!crew || slug !== KITCHEN_WORLD.slug) return void useKitchen.getState().clearAgain();
-    if (crew.phase !== 'open') {
-      sentAgain.current = false;
-      return;
-    }
     if (sentAgain.current) return;
     sentAgain.current = true;
-    sendToWorld('k_start');
+    sendToWorld('k_again');
   }, [again, crew, phase, slug]);
 
   if (slug !== KITCHEN_WORLD.slug || phase !== 'off') return null;
@@ -62,7 +58,7 @@ export function KitchenLobby() {
         {crew.names.join(', ')} · {crew.members.length}/4
       </span>
       {crew.phase === 'cooking' ? (
-        <span>{again ? 'waiting for the kitchen to close, then going again…' : 'cooking…'}</span>
+        <span>{again ? 'going again…' : 'cooking…'}</span>
       ) : (
         <button className="btn kl__start" onClick={() => sendToWorld('k_start')}>
           start cooking
