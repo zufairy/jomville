@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { parseAvatar } from '@dovey/shared';
-import { AvatarPreview } from './AvatarPreview';
+import { useEffect, useRef, useState } from 'react';
+import { AvatarHead as Head } from './AvatarHead';
 import { CoinIcon } from './Icon';
 import { storedToken } from '../identity';
 import { footerState } from './leaderboardFooter';
@@ -23,11 +22,6 @@ import {
 import './leaderboards.css';
 
 const MEDALS = ['gold', 'silver', 'bronze'] as const;
-
-function Head({ avatar, scale }: { avatar: string; scale: number }) {
-  const cfg = useMemo(() => parseAvatar(avatar), [avatar]);
-  return <AvatarPreview cfg={cfg} focus="head" animate={false} fx={false} scale={scale} className="lb-head" />;
-}
 
 function Value({ k, value }: { k: BoardKey; value: number }) {
   return (

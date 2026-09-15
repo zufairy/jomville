@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 import { ROOM_CATEGORIES, ROOM_NAME_MAX } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { fetchRandomRoom } from '../api';
-import { LEADERBOARDS_URL, goToRoom } from '../router';
+import { goToRoom } from '../router';
 import { Icon } from './Icon';
 
+// Only fetched the first time someone taps the trophy, so the room bundle stays lean.
+const LeaderboardPopup = lazy(() => import('./LeaderboardPopup').then((m) => ({ default: m.LeaderboardPopup })));
+
 export function RoomBar() {
+  const [boardsOpen, setBoardsOpen] = useState(false);
+  const trophy = useRef<HTMLButtonElement>(null);
   const room = useAppStore((s) => s.room);
   const status = useAppStore((s) => s.status);
   const count = useAppStore((s) => s.playerCount);
@@ -121,7 +126,15 @@ export function RoomBar() {
         <button className="hud__btn" onClick={share} aria-label="share room link" title="share room link">
           <Icon name="share" />
         </button>
-        <button className="hud__btn" onClick={() => location.assign(LEADERBOARDS_URL)} aria-label="leaderboards" title="Ranking">
+        <button
+          ref={trophy}
+          className={`hud__btn ${boardsOpen ? 'hud__btn--on' : ''}`}
+          onClick={() => setBoardsOpen(true)}
+          aria-label="leaderboards"
+          aria-haspopup="dialog"
+          aria-expanded={boardsOpen}
+          title="Ranking"
+        >
           <Icon name="trophy" />
         </button>
         <i className="tray__sep" />
@@ -135,6 +148,16 @@ export function RoomBar() {
           <Icon name="dice" />
         </button>
       </div>
+      {boardsOpen && (
+        <Suspense fallback={null}>
+          <LeaderboardPopup
+            onClose={() => {
+              setBoardsOpen(false);
+              trophy.current?.focus();
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

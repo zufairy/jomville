@@ -6,6 +6,7 @@ import { friends, useFriends } from '../friends';
 import { StakePicker } from './duel/StakePicker';
 import { isBotUser } from './duel/stakes';
 import { trade, useTrade } from '../trade';
+import './profile.css';
 
 /** Tap-on-avatar popover: who they are, what you can do with them, and how to get away from them. */
 export function ProfileSheet() {
@@ -54,17 +55,17 @@ export function ProfileSheet() {
 
   if (reporting) {
     return (
-      <div className="sheet profile" role="dialog" aria-label={`report ${handle}`}>
+      <div className="sheet profile pf" role="dialog" aria-label={`report ${handle}`}>
         <div className="profile__head">
           <span className="profile__name">report {handle}</span>
-          <button className="btn" onClick={() => setReporting(false)}>
-            back
+          <button className="pf-btn pf-btn--sm" onClick={() => setReporting(false)}>
+            ← Back
           </button>
         </div>
         <p className="profile__note">what happened? a moderator reads every report.</p>
         <div className="reasons">
           {REPORT_REASONS.map((r) => (
-            <button key={r.id} className={`reason ${reason === r.id ? 'reason--on' : ''}`} onClick={() => setReason(r.id)}>
+            <button key={r.id} className={`pf-chip ${reason === r.id ? 'pf-chip--on' : ''}`} aria-pressed={reason === r.id} onClick={() => setReason(r.id)}>
               {r.label}
             </button>
           ))}
@@ -78,18 +79,18 @@ export function ProfileSheet() {
           aria-label="extra detail"
         />
         <div className="profile__actions">
-          <button className="btn btn--danger" disabled={!reason} onClick={sendReport}>
-            send report
+          <button className="pf-btn pf-btn--red" disabled={!reason} onClick={sendReport}>
+            🚩 Send report
           </button>
           <button
-            className="btn btn--danger"
+            className="pf-btn pf-btn--red"
             disabled={!reason}
             onClick={() => {
               actions?.block(sessionId, true);
               sendReport();
             }}
           >
-            report and block
+            🚫 Report and block
           </button>
         </div>
       </div>
@@ -98,7 +99,7 @@ export function ProfileSheet() {
 
   if (staking) {
     return (
-      <div className="sheet profile" role="dialog" aria-label={`duel ${handle}`}>
+      <div className="sheet profile pf" role="dialog" aria-label={`duel ${handle}`}>
         <StakePicker
           handle={handle}
           balance={coins}
@@ -114,12 +115,9 @@ export function ProfileSheet() {
   }
 
   return (
-    <div className="sheet profile" role="dialog" aria-label={handle}>
+    <div className="sheet profile pf" role="dialog" aria-label={handle}>
       <div className="profile__head">
         <span className="profile__name">{handle}</span>
-        <button className="btn" onClick={close}>
-          close
-        </button>
       </div>
 
       {isBlocked ? (
@@ -129,50 +127,50 @@ export function ProfileSheet() {
           {userId && !userId.startsWith('bot:') && sessionId !== mySession && (
             <div className="profile__actions">
               {friendState === 'friends' ? (
-                <button className="btn" disabled>
-                  👥 friends ✓
+                <button className="pf-btn pf-btn--soft pf-btn--full" disabled>
+                  👥 Friends ✓
                 </button>
               ) : friendState === 'sent' ? (
-                <button className="btn" disabled>
-                  👥 requested…
+                <button className="pf-btn pf-btn--soft pf-btn--full" disabled>
+                  👥 Requested…
                 </button>
               ) : friendState === 'incoming' ? (
-                <button className="btn btn--primary" onClick={() => void friends.respond(userId, true)}>
-                  👥 accept friend request
+                <button className="pf-btn pf-btn--green pf-btn--full" onClick={() => void friends.respond(userId, true)}>
+                  👥 Accept friend request
                 </button>
               ) : (
-                <button className="btn btn--primary" onClick={() => void friends.request(userId)}>
-                  👥 add friend
+                <button className="pf-btn pf-btn--green pf-btn--full" onClick={() => void friends.request(userId)}>
+                  ➕ Add friend
                 </button>
               )}
             </div>
           )}
           <div className="profile__actions">
-            <button className="btn btn--primary" disabled={busy} onClick={() => start(false)}>
-              🎙 voice call
+            <button className="pf-btn pf-btn--blue" disabled={busy} onClick={() => start(false)}>
+              🎙 Voice call
             </button>
-            <button className="btn btn--primary" disabled={busy} onClick={() => start(true)}>
-              📹 video call
+            <button className="pf-btn pf-btn--blue" disabled={busy} onClick={() => start(true)}>
+              📹 Video call
             </button>
           </div>
           <div className="profile__actions">
             <button
-              className="btn btn--duel"
+              className="pf-btn pf-btn--orange"
               disabled={duel.phase !== 'idle'}
               onClick={() => setStaking(true)}
             >
-              ⚔️ challenge to a duel
+              ⚔️ Duel
             </button>
             {userId && !userId.startsWith('bot:') && (
               <button
-                className="btn btn--duel"
+                className="pf-btn pf-btn--purple"
                 disabled={tradePhase !== 'idle'}
                 onClick={() => {
                   trade.invite(sessionId, handle);
                   close();
                 }}
               >
-                🤝 trade
+                🤝 Trade
               </button>
             )}
           </div>
@@ -180,19 +178,22 @@ export function ProfileSheet() {
       )}
 
       <div className="profile__safety">
-        <button className={`safety ${isMuted ? 'safety--on' : ''}`} onClick={() => useAppStore.getState().toggleMute(sessionId)}>
-          {isMuted ? '🔈 unmute' : '🔇 mute'}
+        <button className={`pf-pill ${isMuted ? 'pf-pill--on' : ''}`} aria-pressed={isMuted} onClick={() => useAppStore.getState().toggleMute(sessionId)}>
+          {isMuted ? '🔈 Unmute' : '🔇 Mute'}
         </button>
-        <button className="safety" onClick={() => actions?.block(sessionId, !isBlocked)}>
-          {isBlocked ? '↩️ unblock' : '🚫 block'}
+        <button className={`pf-pill ${isBlocked ? '' : 'pf-pill--danger'}`} onClick={() => actions?.block(sessionId, !isBlocked)}>
+          {isBlocked ? '↩️ Unblock' : '🚫 Block'}
         </button>
-        <button className="safety safety--report" onClick={() => setReporting(true)}>
-          🚩 report
+        <button className="pf-pill pf-pill--danger" onClick={() => setReporting(true)}>
+          🚩 Report
         </button>
       </div>
       <p className="profile__note">
         mute hides their messages for you. block also stops calls, both ways. reports go to a human.
       </p>
+      <button className="pf-btn pf-close" onClick={close}>
+        Close
+      </button>
     </div>
   );
 }
