@@ -14,7 +14,8 @@ export type IconName =
   | 'tree'
   | 'home'
   | 'friends'
-  | 'pencil';
+  | 'pencil'
+  | 'trophy';
 
 const PATHS: Record<IconName, JSX.Element> = {
   mic: (
@@ -85,6 +86,13 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   pencil: <path d="M15.5 4.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />,
+  trophy: (
+    <>
+      <path d="M7.5 3.5h9V9a4.5 4.5 0 0 1-9 0Z" />
+      <path d="M7.5 5.5h-3a3 3 0 0 0 3 4.5M16.5 5.5h3a3 3 0 0 1-3 4.5" />
+      <path d="M12 13.5v3.5M8 20.5h8M9.5 20.5l.5-3.5h4l.5 3.5" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
