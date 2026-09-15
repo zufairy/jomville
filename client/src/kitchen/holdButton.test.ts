@@ -38,3 +38,29 @@ describe('Chop hold button', () => {
     expect(b.controls.next().use).toBe(false);
   });
 });
+
+describe('Chop hold button with two fingers on it', () => {
+  it('stays held until every finger that pressed it is gone', () => {
+    const b = chopButton();
+    b.h.onPointerDown(b.ev(1));
+    b.h.onPointerDown(b.ev(2));
+    b.h.onPointerUp(b.ev(2));
+    expect(b.controls.next().use).toBe(true);
+    b.h.onPointerUp(b.ev(1));
+    expect(b.controls.next().use).toBe(false);
+    expect(b.states).toEqual([true, false]);
+  });
+
+  it('cancel and lost capture each end only their own finger', () => {
+    const b = chopButton();
+    b.h.onPointerDown(b.ev(1));
+    b.h.onPointerDown(b.ev(2));
+    b.h.onPointerCancel(b.ev(1));
+    expect(b.controls.next().use).toBe(true);
+    b.h.onLostPointerCapture(b.ev(1)); // repeat for an id already gone: no-op
+    expect(b.controls.next().use).toBe(true);
+    b.h.onLostPointerCapture(b.ev(2));
+    expect(b.controls.next().use).toBe(false);
+    expect(b.states).toEqual([true, false]);
+  });
+});

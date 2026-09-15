@@ -89,6 +89,16 @@ describe('CrewBook', () => {
     expect(b.padForRoom('room1')).toBe(-1);
   });
 
+  it('someone arriving on the rug after a round started cannot play again into it (by design)', () => {
+    const { b } = book();
+    b.sync([['a', 'b'], [], [], []]);
+    b.start('a');
+    b.began(0, 'r');
+    b.sync([['a', 'b', 'c'], [], [], []]); // cooking crews keep their roster, so c is not a member
+    expect(b.start('c', true)).toEqual([{ type: 'error', to: 'c', code: 'not_in_crew' }]);
+    expect(b.start('b', true)).toEqual([]); // already in that round: no error, no second round
+  });
+
   it('times out a cooking crew that never reported back', () => {
     const { b, advance } = book();
     b.sync([['a'], [], [], []]);

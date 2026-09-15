@@ -29,6 +29,7 @@ function roundSeconds(): number | undefined {
 export class KitchenLobby {
   private onDone = (roomId: string) => this.dispatch(this.book.closed(roomId));
   private onEnded = (roomId: string) => this.dispatch(this.book.ended(roomId));
+  // if the user already left the world (no session to map to), sync() prunes them from the crew and its results
   private onLeft = (roomId: string, userId: string) => {
     for (const p of this.host.players()) if (p.userId === userId) this.book.left(roomId, p.sessionId);
   };

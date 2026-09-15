@@ -107,6 +107,7 @@ export class CrewBook {
     if (!c) return [{ type: 'error', to: member, code: 'not_in_crew' }];
     c.results = c.results.filter((m) => m !== member);
     if (c.phase === 'cooking') {
+      // members are frozen while cooking (sync skips), so this only guards against a stale/odd member list
       if (!c.eligible.includes(member)) return [{ type: 'error', to: member, code: 'already_cooking' }];
       if (c.round.includes(member)) return [];
       c.round.push(member);
