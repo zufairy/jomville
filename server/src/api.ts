@@ -40,6 +40,8 @@ export function buildApi(repo: Repo) {
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
   const meJson = async (user: User) => ({
+    // stable identity: lets the client tell a Google link that switched accounts
+    id: user.id,
     handle: user.handle,
     home: await repo.homeRoom(user.id),
     lobby: SYSTEM_ROOMS[0].slug,

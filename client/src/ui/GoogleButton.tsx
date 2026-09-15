@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { googleSignIn } from '../api';
+import { afterGoogleLink } from '../googleLink';
+import { navigate } from '../router';
 import { useAppStore } from '../store';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -55,11 +57,19 @@ export function GoogleButton({ onDone }: { onDone?: () => void }) {
           callback: async ({ credential }) => {
             setState('busy');
             try {
+              // the user the open room connection joined as
+              const prevId = useAppStore.getState().me?.id;
               const me = await googleSignIn(credential);
               adoptMe(me);
-              // show the linked account's look on my sprite in the open room without a reload
-              const s = useAppStore.getState();
-              if (me.avatar) s.actions?.setAvatar(s.avatar);
+              afterGoogleLink(prevId, me, {
+                // same account: show the adopted look on my sprite without a reload
+                resend: () => {
+                  const s = useAppStore.getState();
+                  s.actions?.setAvatar(s.avatar);
+                },
+                // switched account: rejoin as the linked user
+                rejoin: () => void navigate(location.pathname + location.search),
+              });
               flash(`hi ${me.handle}!`);
               onDone?.();
             } catch (e) {

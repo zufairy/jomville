@@ -30,6 +30,8 @@ export interface RoomPreview {
 const base = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
 
 export interface Me {
+  /** the user id this device token resolves to */
+  id?: string;
   handle: string;
   home: string;
   lobby: string;
