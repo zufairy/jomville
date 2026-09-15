@@ -11,6 +11,7 @@ import { onAdultRequired } from './adultGate';
 import { fetchInventory } from './api';
 import { onTradeDone, onTradeIncoming, onTradeState, onTradeSys, onTradeWaiting, tradeSysText } from './trade';
 import { CrewInfo, useKitchen } from './kitchen/store';
+import { playChat } from './roomSounds';
 
 export interface RemotePlayer {
   handle: string;
@@ -293,7 +294,10 @@ export class Net {
       });
     };
     room.onMessage('inventory_refresh', refreshInventory);
-    room.onMessage('chat', (m: { id: string; text: string }) => events.onChat(m.id, m.text));
+    room.onMessage('chat', (m: { id: string; text: string }) => {
+      events.onChat(m.id, m.text);
+      playChat(m.id, room.sessionId);
+    });
     room.onMessage('roll', (m: { id: string; text: string }) => events.onChat(m.id, m.text, true));
     room.onMessage('emote', (m: { id: string; i: number }) => events.onEmote(m.id, m.i));
     room.onMessage('gear_use', (m: { id: string }) => events.onGearUse(m.id));

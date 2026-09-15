@@ -65,6 +65,7 @@ import { bindFriendSender, useFriends } from '../friends';
 import { bindFriendCallSender, friendCall } from '../friendCall';
 import { useAppStore } from '../store';
 import { RoomReveal } from './roomReveal';
+import { installUiSounds, playEnterRoom } from '../roomSounds';
 
 function waitForActivation(): Promise<void> {
   const d = document as Document & { prerendering?: boolean };
@@ -183,6 +184,7 @@ export class Game {
   private lender: StageLender<Container> | null = null;
   /** frosted blur-to-sharp overlay while a room loads */
   private reveal = new RoomReveal();
+  private uninstallSounds: (() => void) | null = null;
 
   async mount(el: HTMLElement) {
     await this.app.init({
@@ -201,7 +203,9 @@ export class Game {
     atlas.bind(this.app.renderer);
     el.appendChild(this.app.canvas);
     this.reveal.attach(el);
+    this.reveal.onStart = playEnterRoom;
     this.reveal.begin();
+    this.uninstallSounds = installUiSounds();
     // Pixi's full types don't line up with the lender's minimal structural interface (DOM/ticker generics)
     this.lender = new StageLender<Container>(this.app as unknown as LeaseApp<Container>);
     if (import.meta.env.DEV) {
@@ -1436,6 +1440,7 @@ export class Game {
     window.removeEventListener('pagehide', this.onPageHide);
     window.removeEventListener('pageshow', this.onPageShow);
     this.reveal.dispose();
+    this.uninstallSounds?.();
     this.net.leave();
     if (this.initialised) {
       atlas.clear();
