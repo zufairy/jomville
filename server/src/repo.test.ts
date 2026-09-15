@@ -33,6 +33,14 @@ describe('Repo', () => {
     expect(await repo.setHandle(u.id, 'BAD NAME')).toBe(false);
   });
 
+  it('stores onboarding profile fields', async () => {
+    const u = (await repo.userByToken(TOKEN))!;
+    expect(await repo.setOnboarded(u.id)).toBe(false);
+    await repo.setProfile(u.id, { state: 'Overseas', birthdate: '1999-12-31' });
+    expect(await repo.setOnboarded(u.id)).toBe(true);
+    expect(await repo.userById(u.id)).toMatchObject({ state: 'Overseas', birthdate: '1999-12-31', onboarded: true });
+  });
+
   it('persists layout and room metadata', async () => {
     const u = await repo.userByToken(TOKEN);
     const slug = (await repo.homeRoom(u!.id))!;

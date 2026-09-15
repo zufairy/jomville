@@ -17,7 +17,17 @@ const mem = new Map<string, string>();
 } as Storage;
 
 const saved = normalizeAvatar({ ...DEFAULT_AVATAR, body: 'female', torsoColour: 'red', hat: 'none' });
-const me = (avatar: unknown): Me => ({ handle: 'mia', home: 'abcd1234', lobby: 'lobby', onboarded: true, linked: false, googleEnabled: false, avatar });
+const me = (avatar: unknown): Me => ({
+  handle: 'mia',
+  home: 'abcd1234',
+  lobby: 'lobby',
+  onboarded: true,
+  linked: false,
+  googleEnabled: false,
+  state: 'Selangor',
+  birthdate: '2000-01-01',
+  avatar,
+});
 
 async function freshPageLoad() {
   vi.resetModules();

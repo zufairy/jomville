@@ -878,9 +878,17 @@ html, body, #root {
 .onboard__card h2 { margin: 6px 0 4px; font-size: 24px; font-weight: 900; letter-spacing: -0.02em; }
 .onboard__p { margin: 0 0 14px; font-weight: 600; opacity: 0.75; line-height: 1.4; }
 .onboard__form { display: flex; flex-direction: column; gap: 10px; }
+.onboard__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 900;
+  color: rgba(59, 42, 42, 0.78);
+}
 .onboard__input {
   font: inherit;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   border: 3px solid var(--ink);
   border-radius: 16px;
@@ -888,7 +896,11 @@ html, body, #root {
   background: #fff;
   color: var(--ink);
   outline: none;
+  min-height: 52px;
+  width: 100%;
+  box-sizing: border-box;
 }
+.onboard__select { appearance: auto; }
 .onboard__err { color: #e0553d; font-weight: 700; font-size: 13px; }
 .onboard__cust .cust { position: static; transform: none; max-width: none; border: 0; box-shadow: none; background: transparent; padding: 0; animation: none; }
 .onboard__cust .cust__body { max-height: 40vh; }

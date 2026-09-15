@@ -152,6 +152,8 @@ const COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: 'users', column: 'google_sub', ddl: 'alter table users add column google_sub text unique' },
   { table: 'users', column: 'email', ddl: 'alter table users add column email text' },
   { table: 'users', column: 'display_name', ddl: 'alter table users add column display_name text' },
+  { table: 'users', column: 'state', ddl: 'alter table users add column state text' },
+  { table: 'users', column: 'birthdate', ddl: 'alter table users add column birthdate date' },
   { table: 'users', column: 'onboarded', ddl: 'alter table users add column onboarded boolean not null default false' },
   { table: 'users', column: 'coins', ddl: 'alter table users add column coins int not null default 1500' },
   { table: 'users', column: 'play_week', ddl: 'alter table users add column play_week int not null default 0' },

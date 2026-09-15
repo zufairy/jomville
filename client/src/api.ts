@@ -38,6 +38,8 @@ export interface Me {
   onboarded: boolean;
   linked: boolean;
   googleEnabled: boolean;
+  state: string | null;
+  birthdate: string | null;
   /** the server-saved look (AvatarConfig JSON); normalize before use */
   avatar?: unknown;
 }
@@ -50,7 +52,7 @@ export async function fetchMe(): Promise<Me> {
   return r.json();
 }
 
-export async function patchMe(patch: { handle?: string; onboarded?: boolean }): Promise<Me | { error: string }> {
+export async function patchMe(patch: { handle?: string; state?: string; birthdate?: string; onboarded?: boolean }): Promise<Me | { error: string }> {
   const r = await fetch(`${base}/api/me`, { ...json({ token: deviceToken(), ...patch }), method: 'PATCH' });
   return r.json();
 }

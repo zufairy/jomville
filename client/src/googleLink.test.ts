@@ -10,6 +10,8 @@ const me = (id: string | undefined, avatar: unknown = { body: 'female' }): Me =>
   onboarded: true,
   linked: true,
   googleEnabled: true,
+  state: 'Selangor',
+  birthdate: '2000-01-01',
   avatar,
 });
 

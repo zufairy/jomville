@@ -16,6 +16,36 @@ const tokenOf = (body: unknown): string => {
   return typeof t === 'string' && t.length >= 16 && t.length <= 128 ? t : '';
 };
 
+const MALAYSIA_STATES = new Set([
+  'Johor',
+  'Kedah',
+  'Kelantan',
+  'Melaka',
+  'Negeri Sembilan',
+  'Pahang',
+  'Penang',
+  'Perak',
+  'Perlis',
+  'Sabah',
+  'Sarawak',
+  'Selangor',
+  'Terengganu',
+  'Kuala Lumpur',
+  'Labuan',
+  'Putrajaya',
+  'Overseas',
+]);
+
+const birthdateOf = (v: unknown): string | null => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v) return null;
+  const now = new Date();
+  const min = new Date(Date.UTC(now.getUTCFullYear() - 100, now.getUTCMonth(), now.getUTCDate()));
+  const max = new Date(Date.UTC(now.getUTCFullYear() - 13, now.getUTCMonth(), now.getUTCDate()));
+  return d >= min && d <= max ? v : null;
+};
+
 /**
  * Small HTTP API next to the Colyseus endpoint.
  *   GET /api/me?token=          -> { handle, home }   (creates the user on first sight)
@@ -50,6 +80,8 @@ export function buildApi(repo: Repo) {
     onboarded: user.onboarded,
     linked: user.linked,
     googleEnabled: !!oauth,
+    state: user.state,
+    birthdate: user.birthdate,
   });
 
   app.post('/api/me', async (req, res) => {
@@ -69,7 +101,18 @@ export function buildApi(repo: Repo) {
       const h = req.body.handle.trim().toLowerCase();
       if (!(await repo.setHandle(user.id, h))) return res.status(409).json({ error: 'handle taken or invalid' });
     }
-    if (req.body?.onboarded === true) await repo.setOnboarded(user.id);
+    const profile: { state?: string; birthdate?: string } = {};
+    if (req.body?.state !== undefined) {
+      if (typeof req.body.state !== 'string' || !MALAYSIA_STATES.has(req.body.state)) return res.status(400).json({ error: 'choose a valid state' });
+      profile.state = req.body.state;
+    }
+    if (req.body?.birthdate !== undefined) {
+      const birthdate = birthdateOf(req.body.birthdate);
+      if (!birthdate) return res.status(400).json({ error: 'enter a valid birthdate' });
+      profile.birthdate = birthdate;
+    }
+    await repo.setProfile(user.id, profile);
+    if (req.body?.onboarded === true && !(await repo.setOnboarded(user.id))) return res.status(400).json({ error: 'finish your profile first' });
     if (typeof req.body?.hideRank === 'boolean' && hideRankLimit.allow(user.id)) {
       // Only bust the leaderboard cache when the flag actually flipped; a repeated
       // no-op toggle (or a client re-sending the same value) shouldn't force a reload.

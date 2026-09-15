@@ -49,17 +49,29 @@ export interface User {
   avatar: AvatarConfig;
   onboarded: boolean;
   linked: boolean; // has a Google account attached
+  state: string | null;
+  birthdate: string | null;
 }
 
-type UserRow = { id: string; handle: string; avatar: unknown; onboarded: boolean; google_sub: string | null };
+type UserRow = {
+  id: string;
+  handle: string;
+  avatar: unknown;
+  onboarded: boolean;
+  google_sub: string | null;
+  state: string | null;
+  birthdate: Date | string | null;
+};
 const toUser = (r: UserRow): User => ({
   id: r.id,
   handle: r.handle,
   avatar: normalizeAvatar(r.avatar),
   onboarded: r.onboarded,
   linked: !!r.google_sub,
+  state: r.state ?? null,
+  birthdate: r.birthdate ? new Date(r.birthdate).toISOString().slice(0, 10) : null,
 });
-const USER_COLS = 'id, handle, avatar, onboarded, google_sub';
+const USER_COLS = 'id, handle, avatar, onboarded, google_sub, state, birthdate';
 
 export interface RoomRow {
   id: string;
@@ -202,7 +214,8 @@ export class Repo {
     const rows = await this.db.query<UserRow>(
       `select ${USER_COLS} from users where token_hash = $1
        union all
-       select u.id, u.handle, u.avatar, u.onboarded, u.google_sub from device_tokens d join users u on u.id = d.user_id where d.token_hash = $1
+       select u.id, u.handle, u.avatar, u.onboarded, u.google_sub, u.state, u.birthdate
+       from device_tokens d join users u on u.id = d.user_id where d.token_hash = $1
        limit 1`,
       [h],
     );
@@ -214,8 +227,27 @@ export class Repo {
     return rows.length ? toUser(rows[0]) : null;
   }
 
-  async setOnboarded(userId: string) {
-    await this.db.query('update users set onboarded = true where id = $1', [userId]);
+  async setProfile(userId: string, profile: { state?: string; birthdate?: string }) {
+    const sets: string[] = [];
+    const params: unknown[] = [userId];
+    if (profile.state !== undefined) {
+      params.push(profile.state);
+      sets.push(`state = $${params.length}`);
+    }
+    if (profile.birthdate !== undefined) {
+      params.push(profile.birthdate);
+      sets.push(`birthdate = $${params.length}`);
+    }
+    if (!sets.length) return;
+    await this.db.query(`update users set ${sets.join(', ')} where id = $1`, params);
+  }
+
+  async setOnboarded(userId: string): Promise<boolean> {
+    const rows = await this.db.query<{ id: string }>(
+      'update users set onboarded = true where id = $1 and state is not null and birthdate is not null returning id',
+      [userId],
+    );
+    return rows.length > 0;
   }
 
   /**
@@ -256,7 +288,7 @@ export class Repo {
       JSON.stringify(normalizeAvatar(avatar)),
     ]);
     await this.createRoom(id, `${handle}'s room`);
-    return { id, handle, avatar: normalizeAvatar(avatar), onboarded: false, linked: false };
+    return { id, handle, avatar: normalizeAvatar(avatar), onboarded: false, linked: false, state: null, birthdate: null };
   }
 
   async setAvatar(userId: string, avatar: AvatarConfig) {
