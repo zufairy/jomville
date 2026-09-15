@@ -39,6 +39,8 @@ export interface NetEvents {
   onReset: () => void;
   /** a (re)join finished; sessionId is valid */
   onJoined: (sessionId: string) => void;
+  /** the first full state of this join (players and furniture) has been applied */
+  onSynced: () => void;
   onAdd: (id: string, p: RemotePlayer) => void;
   onChange: (id: string, p: RemotePlayer) => void;
   onRemove: (id: string) => void;
@@ -356,6 +358,10 @@ export class Net {
       events.onReset();
       this.retry(0);
     });
+    // the initial furniture batch is in once the first full state has been decoded (onAdd already
+    // fired for every item); a state that somehow landed before this line counts as synced
+    if ((room.state as { players?: { size: number } }).players?.size) events.onSynced();
+    else room.onStateChange.once(() => events.onSynced());
     store.setStatus('connected');
     store.setSessionId(room.sessionId);
     events.onJoined(room.sessionId);

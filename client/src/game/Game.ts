@@ -64,6 +64,7 @@ import { bindTradeSender, useTrade } from '../trade';
 import { bindFriendSender, useFriends } from '../friends';
 import { bindFriendCallSender, friendCall } from '../friendCall';
 import { useAppStore } from '../store';
+import { RoomReveal } from './roomReveal';
 
 function waitForActivation(): Promise<void> {
   const d = document as Document & { prerendering?: boolean };
@@ -180,6 +181,8 @@ export class Game {
   private rides = new RideSystem(this.actorLayer);
   /** lends this app to full-screen scenes (kitchen rounds) instead of a second Pixi app */
   private lender: StageLender<Container> | null = null;
+  /** frosted blur-to-sharp overlay while a room loads */
+  private reveal = new RoomReveal();
 
   async mount(el: HTMLElement) {
     await this.app.init({
@@ -197,6 +200,8 @@ export class Game {
     }
     atlas.bind(this.app.renderer);
     el.appendChild(this.app.canvas);
+    this.reveal.attach(el);
+    this.reveal.begin();
     // Pixi's full types don't line up with the lender's minimal structural interface (DOM/ticker generics)
     this.lender = new StageLender<Container>(this.app as unknown as LeaseApp<Container>);
     if (import.meta.env.DEV) {
@@ -358,8 +363,13 @@ export class Game {
 
     await this.net.connect(
       {
-        onReset: () => this.resetWorld(),
+        onReset: () => {
+          this.reveal.begin();
+          this.resetWorld();
+        },
+        onSynced: () => this.reveal.synced(),
         onJoined: () => {
+          this.reveal.joined();
           this.ensureSelf();
           this.voice.rejoin();
           void useFriends.getState().load();
@@ -816,6 +826,7 @@ export class Game {
   private onPlayerAdd(id: string, p: RemotePlayer) {
     const avatar = new Avatar(p.x, p.y, parseAvatar(p.avatar), p.handle);
     this.actorLayer.addChild(avatar);
+    this.reveal.addAvatar(avatar);
     this.actors.set(id, { avatar, target: p });
     this.ensureSelf();
   }
@@ -858,6 +869,8 @@ export class Game {
     if (this.gestures.consumeTap()) return;
     // browsers only play nearby voices once the page has had a gesture
     unlockAudio();
+    // a half-loaded room behind the frost takes no walks or uses
+    if (!this.reveal.inputOpen) return;
     if (!this.mover) return;
     const local = this.world.toLocal(e.global);
     const t = screenToTileIndex(local.x, local.y);
@@ -993,6 +1006,7 @@ export class Game {
     const f = new FurnitureSprite(p);
     this.furniture.set(p.id, f);
     this.actorLayer.addChild(f);
+    this.reveal.addFurniture(f);
     this.rebuildGrid();
   }
 
@@ -1204,6 +1218,7 @@ export class Game {
   }
 
   private update(dtMs: number) {
+    this.reveal.tick(performance.now());
     this.ensureSelf();
 
     this.markerAge += dtMs;
@@ -1420,6 +1435,7 @@ export class Game {
     useAppStore.getState().setActions(null);
     window.removeEventListener('pagehide', this.onPageHide);
     window.removeEventListener('pageshow', this.onPageShow);
+    this.reveal.dispose();
     this.net.leave();
     if (this.initialised) {
       atlas.clear();
