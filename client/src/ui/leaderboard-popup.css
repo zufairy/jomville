@@ -53,7 +53,8 @@
 }
 .lbp--closing .lbp__card { animation: lbp-pop-out 0.15s ease-in both; }
 
-.lbp button { font: inherit; -webkit-tap-highlight-color: transparent; }
+/* :where keeps this at (0,1,0) so the later .lbp-tab / .lbp-btn size and weight win over the font shorthand */
+.lbp :where(button) { font: inherit; -webkit-tap-highlight-color: transparent; }
 .lbp button:focus-visible { outline: 3px solid #84d8ff; outline-offset: 2px; }
 
 /* ---- header ---- */
