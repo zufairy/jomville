@@ -1,8 +1,8 @@
 import { Graphics } from 'pixi.js';
-import { FurnitureDef, ROLLING, tileToScreen } from '@dovey/shared';
+import { FurnitureDef, Placement, ROLLING, footprint, furnitureDef, tileToScreen } from '@dovey/shared';
 import type { ArtCtx } from './furnitureArt';
 import { HOLO_IDLE_FRAMES, casinoMap, holoKey } from './casinoPixels';
-import { PixelMap, drawPixelMap } from './pixelArt';
+import { PX, PixelMap, drawPixelMap } from './pixelArt';
 
 /**
  * Casino and Trading Room furniture, drawn as crisp pixel art (see casinoPixels
@@ -59,6 +59,33 @@ function hang(g: Graphics, c: ArtCtx, map: PixelMap, flatTop: number) {
   // the shear drops the centre column by w/4 art rows
   // never mirror: wall pieces carry lettering that must read left-to-right on either wall
   drawPixelMap(g, map, mid.x, mid.y - flatTop - Math.floor(w / 4) * 2 + map.rows.length * 2, false);
+}
+
+/**
+ * Whether a world point (room coordinates, like the sprite's position space)
+ * lands on a drawn, non-transparent pixel of a placed casino floor sprite.
+ * Mirrors sprite()'s anchoring and odd-rotation flip. Used for taps: the glass
+ * cube of a holodice (and other tall chance furni) is drawn over walkable floor
+ * tiles, so the tile under the finger alone can't find it.
+ */
+export function casinoArtHit(p: Placement, wx: number, wy: number): boolean {
+  const def = furnitureDef(p.def);
+  // wall pieces hang elsewhere and are never tap targets
+  if (!def || !CASINO_PAINTERS[def.kind] || def.kind === 'neon_casino' || def.kind === 'trading_banner') return false;
+  const map = casinoMap({ kind: def.kind, state: artStateKey(def, p.state), frame: 0, on: p.on ?? true, rot: p.rot });
+  if (!map) return false;
+  const { w, h } = footprint(def, p.rot);
+  const origin = tileToScreen(p.x, p.y);
+  const centre = tileToScreen(w / 2, h / 2);
+  const flip = p.rot % 2 === 1;
+  const cols = map.rows[0].length;
+  const col = map.anchorX ?? cols / 2;
+  const left = Math.round(origin.x + centre.x - (flip ? cols - col : col) * PX);
+  const top = Math.round(origin.y + centre.y + (map.foot ?? 0) * PX - map.rows.length * PX);
+  const ax = Math.floor((wx - left) / PX);
+  const row = map.rows[Math.floor((wy - top) / PX)];
+  if (!row || ax < 0 || ax >= cols) return false;
+  return row[flip ? cols - 1 - ax : ax] !== '.';
 }
 
 export const CASINO_PAINTERS: Record<string, Painter> = {

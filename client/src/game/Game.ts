@@ -56,6 +56,7 @@ import { LabBots } from './labBots';
 import { AmbientActors } from './ambient';
 import { RideSystem } from './rides';
 import { RIDE_SEAT_Z, seatPose } from './seats';
+import { casinoArtHit } from './casinoArt';
 import { BEACH_CRITTERS, DREAM_CRITTERS, WONDER_CRITTERS } from '@dovey/shared';
 import { bindLoveSender, love } from '../love';
 import { bindTableSender, useTables } from '../tableGames';
@@ -894,6 +895,15 @@ export class Game {
       spriteHit: () => {
         const item = this.itemAt(local.x, local.y, (d) => d.use || d.sit);
         return item ? { item, sit: !!furnitureDef(item.def)?.sit } : null;
+      },
+      artHit: () => {
+        // exact pixel hit on usable casino art (tall chance furni drawn over walkable floor)
+        let best: { item: Placement; z: number } | null = null;
+        for (const f of this.furniture.values()) {
+          if (!furnitureDef(f.placement.def)?.use || !casinoArtHit(f.placement, local.x, local.y)) continue;
+          if (!best || f.zIndex > best.z) best = { item: f.placement, z: f.zIndex };
+        }
+        return best ? { item: best.item, sit: false } : null;
       },
     });
     if (action.kind === 'walk') this.walkTo(action.x, action.y);
