@@ -2317,17 +2317,20 @@ html, body, #root {
   right: max(18px, env(safe-area-inset-right));
   bottom: calc(92px + var(--safe-bottom));
   z-index: 45;
-  width: min(560px, calc(100vw - 24px));
-  max-height: min(820px, calc(100vh - 120px));
+  width: min(600px, calc(100vw - 24px));
+  max-height: min(860px, calc(100vh - 120px));
   overflow: auto;
   padding: 20px;
   border: 3px solid rgba(255,255,255,.34);
   border-radius: 32px;
   background:
+    linear-gradient(90deg, rgba(255,255,255,.13) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,.08) 1px, transparent 1px),
     radial-gradient(circle at 18% 0%, rgba(255, 230, 120, .34), transparent 34%),
     radial-gradient(circle at 88% 8%, rgba(255, 53, 116, .42), transparent 34%),
     radial-gradient(circle at 50% 112%, rgba(83, 236, 255, .28), transparent 38%),
     linear-gradient(145deg, #25103a 0%, #4d1646 46%, #180d2d 100%);
+  background-size: 34px 34px, 34px 34px, auto, auto, auto, auto;
   color: #fff8e8;
   box-shadow: 0 28px 90px rgba(20, 8, 30, .52), 0 10px 0 rgba(59, 42, 42, .26), inset 0 1px 0 rgba(255,255,255,.2);
   isolation: isolate;
@@ -2378,7 +2381,7 @@ html, body, #root {
   position: relative;
   display: grid;
   place-items: center;
-  height: 244px;
+  height: 250px;
   margin: 20px 0 16px;
   overflow: hidden;
   border: 3px solid rgba(255,255,255,.2);
@@ -2388,13 +2391,32 @@ html, body, #root {
     radial-gradient(circle at 50% 42%, #3c1d62 0%, #170f2d 64%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -24px 55px rgba(0,0,0,.18);
 }
-.jukebox-deck iframe {
+.jukebox-deck__meter {
   position: absolute;
-  width: 2px;
-  height: 2px;
-  opacity: .01;
-  pointer-events: none;
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 38px;
+  padding: 8px;
+  border: 2px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  background: rgba(8, 6, 18, .34);
 }
+.jukebox-deck__meter i {
+  display: block;
+  width: 7px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(#9ff8ff, #ffcf66, #ff5fa2);
+  opacity: .48;
+}
+.jukebox-deck--on .jukebox-deck__meter i { animation: jukebox-bars .72s ease-in-out infinite; opacity: 1; }
+.jukebox-deck--on .jukebox-deck__meter i:nth-child(2) { animation-delay: .08s; }
+.jukebox-deck--on .jukebox-deck__meter i:nth-child(3) { animation-delay: .16s; }
+.jukebox-deck--on .jukebox-deck__meter i:nth-child(4) { animation-delay: .24s; }
+.jukebox-deck--on .jukebox-deck__meter i:nth-child(5) { animation-delay: .32s; }
 .jukebox-deck__halo {
   position: absolute;
   width: 188px;
@@ -2465,6 +2487,49 @@ html, body, #root {
 @keyframes jukebox-spin { to { transform: rotate(360deg); } }
 @keyframes jukebox-sweep { 50% { transform: rotate(28deg) translateX(42px); opacity: .72; } }
 @keyframes jukebox-glow { 50% { transform: scale(1.035); opacity: .84; } }
+@keyframes jukebox-bars { 50% { height: 30px; transform: translateY(-3px); } }
+.jukebox-player {
+  position: relative;
+  height: 118px;
+  margin: -4px 0 14px;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,.24);
+  border-radius: 22px;
+  background: rgba(8, 6, 18, .62);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 14px 30px rgba(0,0,0,.2);
+}
+.jukebox-player iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.jukebox-player__badge {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  z-index: 1;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(13, 9, 28, .72);
+  color: #9ff8ff;
+  font-size: 10px;
+  font-weight: 1000;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.jukebox-alert {
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border: 2px solid rgba(255,207,102,.34);
+  border-radius: 16px;
+  background: rgba(255, 207, 102, .12);
+  color: #ffe89b;
+  font-size: 12px;
+  font-weight: 900;
+}
 .jukebox-now {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2527,6 +2592,7 @@ html, body, #root {
 @media (max-width: 560px) {
   .jukebox-sheet { left: 12px; right: 12px; bottom: calc(76px + var(--safe-bottom)); padding: 16px; }
   .jukebox-deck { height: 218px; }
+  .jukebox-player { height: 106px; }
   .jukebox-now,
   .jukebox-list,
   .jukebox-volume { grid-template-columns: 1fr; }
