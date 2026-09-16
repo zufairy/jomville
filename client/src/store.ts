@@ -85,6 +85,8 @@ export interface GameActions {
   duelEnd: () => void;
   /** vending */
   vend: () => void;
+  /** room jukebox */
+  setJukebox: (trackId: string, playing: boolean) => void;
   /** safety */
   block: (sessionId: string, on: boolean) => void;
   report: (sessionId: string, reason: string, note?: string) => void;
@@ -165,10 +167,18 @@ interface AppState {
   duel: DuelInfo;
   setDuel: (d: DuelInfo | ((prev: DuelInfo) => DuelInfo)) => void;
   vending: boolean;
+  jukeboxOpen: boolean;
+  jukebox: { trackId: string; playing: boolean; updatedAt: number };
+  jukeboxVolume: number;
+  jukeboxMuted: boolean;
   credits: number | null;
   wardrobe: string[] | null; // owned cosmetic ids
   vendResult: import('./ui/VendingSheet').VendResultView | null;
   setVending: (v: boolean) => void;
+  setJukeboxOpen: (v: boolean) => void;
+  setJukeboxState: (s: { trackId: string; playing: boolean; updatedAt: number }) => void;
+  setJukeboxVolume: (n: number) => void;
+  setJukeboxMuted: (v: boolean) => void;
   setCredits: (n: number) => void;
   setWardrobe: (ids: string[]) => void;
   setVendResult: (r: import('./ui/VendingSheet').VendResultView | null) => void;
@@ -253,10 +263,18 @@ export const useAppStore = create<AppState>((set) => ({
   duel: IDLE_DUEL,
   setDuel: (d) => set((s) => ({ duel: typeof d === 'function' ? d(s.duel) : d })),
   vending: false,
+  jukeboxOpen: false,
+  jukebox: { trackId: 'lofi-live', playing: false, updatedAt: 0 },
+  jukeboxVolume: 70,
+  jukeboxMuted: false,
   credits: null,
   wardrobe: null,
   vendResult: null,
   setVending: (vending) => set({ vending }),
+  setJukeboxOpen: (jukeboxOpen) => set({ jukeboxOpen }),
+  setJukeboxState: (jukebox) => set({ jukebox }),
+  setJukeboxVolume: (jukeboxVolume) => set({ jukeboxVolume }),
+  setJukeboxMuted: (jukeboxMuted) => set({ jukeboxMuted }),
   // credits and coins are one wallet on the server; keep both views in sync
   setCredits: (credits) => set({ credits, coins: credits }),
   setWardrobe: (wardrobe) =>

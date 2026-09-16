@@ -53,8 +53,11 @@ export function ItemInfo() {
         {(def.use || def.interaction) && (
           <div className="iteminfo__actions">
             {def.use && (
-              <button className="iteminfo__btn iteminfo__btn--use" onClick={() => actions?.useFurniture(p.id)}>
-                Use
+              <button
+                className="iteminfo__btn iteminfo__btn--use"
+                onClick={() => (def.id === 'jukebox' ? useAppStore.getState().setJukeboxOpen(true) : actions?.useFurniture(p.id))}
+              >
+                {def.id === 'jukebox' ? 'Open jukebox' : 'Use'}
               </button>
             )}
             {def.interaction && (

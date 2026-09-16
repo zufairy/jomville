@@ -22,6 +22,12 @@ export class Furniture extends Schema {
   @type('uint16') serial = 0; // LTD serial, 0 = none
 }
 
+export class JukeboxState extends Schema {
+  @type('string') trackId = 'lofi-live';
+  @type('boolean') playing = false;
+  @type('number') updatedAt = 0;
+}
+
 export class WorldState extends Schema {
   @type('string') slug = '';
   @type('string') name = '';
@@ -34,4 +40,5 @@ export class WorldState extends Schema {
   @type('string') ownerHandle = '';
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: Furniture }) furniture = new MapSchema<Furniture>();
+  @type(JukeboxState) jukebox = new JukeboxState();
 }

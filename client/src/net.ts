@@ -194,6 +194,7 @@ export class Net {
         style: string;
         ownerId: string;
         ownerHandle: string;
+        jukebox: { trackId: string; playing: boolean; updatedAt: number };
       };
       const me = room.state.players.get(room.sessionId) as RemotePlayer | undefined;
       store.setRoom({
@@ -223,6 +224,13 @@ export class Net {
     $(room.state).listen('name', syncRoom);
     $(room.state).listen('category', syncRoom);
     $(room.state).listen('ownerHandle', syncRoom);
+    const syncJukebox = () => {
+      const j = (room.state as { jukebox?: { trackId: string; playing: boolean; updatedAt: number } }).jukebox;
+      if (j) store.setJukeboxState({ trackId: j.trackId, playing: j.playing, updatedAt: j.updatedAt });
+    };
+    syncJukebox();
+    const jukeboxState = (room.state as { jukebox?: { trackId: string; playing: boolean; updatedAt: number } }).jukebox;
+    if (jukeboxState) $(jukeboxState).onChange(syncJukebox);
 
     $(room.state).players.onAdd((p: RemotePlayer, id: string) => {
       events.onAdd(id, p);
@@ -247,6 +255,9 @@ export class Net {
     $(room.state).furniture.onRemove((_f: FurnitureState, id: string) => events.onFurnitureRemove(id));
 
     room.onMessage('vend_result', (r: unknown) => events.onVendResult(r));
+    room.onMessage('jukebox_toast', (m: { handle?: string; track?: string; playing?: boolean }) => {
+      if (m.playing) store.flash(`🎵 ${m.handle ?? 'someone'} played ${m.track ?? 'music'}`);
+    });
     room.onMessage('duel_incoming', (m: { from: string; handle: string; stake?: number }) => events.onDuelIncoming(m.from, m.handle, m.stake ?? 0));
     room.onMessage('duel_ringing', () => {});
     room.onMessage('duel_wait', () => {});

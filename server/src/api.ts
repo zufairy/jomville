@@ -102,8 +102,9 @@ export function buildApi(repo: Repo) {
   app.post('/api/me', async (req, res) => {
     const token = tokenOf(req.body);
     if (!token) return res.status(400).json({ error: 'bad token' });
-    let user = await repo.userByToken(token);
-    if (!user) user = await repo.createUser(token, req.body?.avatar);
+    const user = await repo.userByToken(token);
+    if (!user) return res.status(401).json({ error: 'google required' });
+    if (!user.linked) return res.status(401).json({ error: 'google required' });
     res.json(await meJson(user));
   });
 

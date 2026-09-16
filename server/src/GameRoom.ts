@@ -13,6 +13,7 @@ import {
   RoomMask,
   distanceTo,
   furnitureDef,
+  jukeboxTrack,
   tilesOf,
   MAX_PLAYERS,
   PLACEMENT_ID,
@@ -162,6 +163,7 @@ export class GameRoom extends Room<WorldState> {
       f.serial = p.serial ?? 0;
       this.state.furniture.set(p.id, f);
     }
+    this.ensureRoomJukebox();
     this.rebuildGrid();
     if (dropped) this.markDirty();
     if (row.id === LOVE_ROOM.slug) this.setupLove();
@@ -203,6 +205,18 @@ export class GameRoom extends Room<WorldState> {
         // a dedicated message, so a typed look-alike in chat can never pass for a real roll
         if (this.state.players.has(roller)) this.sayTo(roller, text, 'roll');
       }, INTERACTIONS[kind].rollMs);
+    });
+
+    this.onMessage('jukebox', (client, msg: { trackId?: unknown; playing?: unknown }) => {
+      const me = this.state.players.get(client.sessionId);
+      if (!me) return;
+      const track = msg?.trackId === undefined ? jukeboxTrack(this.state.jukebox.trackId) : jukeboxTrack(msg.trackId);
+      if (!track) return this.reject(client, 'bad_track');
+      if (!this.useLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
+      this.state.jukebox.trackId = track.id;
+      if (typeof msg?.playing === 'boolean') this.state.jukebox.playing = msg.playing;
+      this.state.jukebox.updatedAt = Date.now();
+      this.broadcast('jukebox_toast', { handle: (client.auth as User).handle, track: track.title, playing: this.state.jukebox.playing });
     });
 
     this.onMessage('furn_close', (client, msg: { id?: unknown }) => {
@@ -797,16 +811,41 @@ export class GameRoom extends Room<WorldState> {
     }, TICK_MS);
   }
 
+
+  /** Every room gets a shared jukebox near the capsule machine, even old user rooms. */
+  private ensureRoomJukebox() {
+    let hasJukebox = false;
+    let vending: Furniture | null = null;
+    this.state.furniture.forEach((f) => {
+      if (f.def === 'jukebox') hasJukebox = true;
+      if (!vending && f.def === 'vending') vending = f;
+    });
+    if (hasJukebox || !vending) return;
+    const v: Furniture = vending;
+    const candidates = [
+      { x: Math.max(0, v.x - 1), y: v.y },
+      { x: Math.min(this.size - 1, v.x + 1), y: v.y },
+      { x: v.x, y: Math.min(this.size - 1, v.y + 1) },
+      { x: v.x, y: Math.max(0, v.y - 1) },
+    ];
+    const occupied = new Set<string>();
+    this.state.furniture.forEach((f) => occupied.add(`${f.x},${f.y}`));
+    const spot = candidates.find((c) => !occupied.has(`${c.x},${c.y}`)) ?? { x: Math.min(this.size - 1, v.x + 1), y: v.y };
+    const f = new Furniture();
+    f.def = 'jukebox';
+    f.x = spot.x;
+    f.y = spot.y;
+    f.rot = v.rot;
+    f.on = true;
+    this.state.furniture.set('system_jukebox', f);
+  }
+
   /** Resolve the device token to a Google-linked, onboarded player. */
   async onAuth(_client: Client, options: JoinOptions, ctx: AuthContext): Promise<User> {
     const repo = GameRoom.repo;
     const token = typeof options?.token === 'string' ? options.token : '';
-    let user = await repo.userByToken(token);
-    if (!user) {
-      if (token.length < 16 || token.length > 128) throw new ServerError(400, 'bad token');
-      // the client's look only seeds a brand-new user
-      user = await repo.createUser(token, normalizeAvatar(options?.avatar));
-    }
+    const user = await repo.userByToken(token);
+    if (!user) throw new ServerError(403, 'google_required');
     if (!user.linked) throw new ServerError(403, 'google_required');
     if (!user.onboarded) throw new ServerError(403, 'onboarding_required');
     if (process.env.DOVEY_DEBUG) console.log('[auth]', user.handle, ctx.ip);

@@ -280,6 +280,7 @@ export class Game {
         this.fixtures.rattle();
         this.net.send('vend');
       },
+      setJukebox: (trackId, playing) => this.net.send('jukebox', { trackId, playing }),
       block: (sessionId, on) => {
         this.net.sendBlock(sessionId, on);
         if (on) {

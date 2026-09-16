@@ -13,6 +13,7 @@ export * from './lobby';
 export * from './harbor';
 export * from './systemRooms';
 export * from './vending';
+export * from './jukebox';
 export * from './loveMeter';
 export * from './loveRoom';
 export * from './rocketLab';

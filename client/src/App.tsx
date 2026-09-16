@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { furnitureDef } from '@dovey/shared';
+import { RARITY_LABEL, furnitureDef, itemDef } from '@dovey/shared';
 import { attachGame, detachGame } from './game/instance';
 import { useAppStore } from './store';
 import { ChatBar } from './ui/ChatBar';
@@ -26,6 +26,7 @@ import { KitchenRoundUI } from './ui/KitchenRound';
 import { Landing } from './ui/Landing';
 import { Onboarding } from './ui/Onboarding';
 import { VendingSheet } from './ui/VendingSheet';
+import { JukeboxSheet } from './ui/JukeboxSheet';
 import { CoinIcon, Icon } from './ui/Icon';
 import { routeFromPath } from './router';
 import { useFriends } from './friends';
@@ -34,6 +35,7 @@ import { FriendInvitePopup } from './ui/FriendInvitePopup';
 import { GoogleButton } from './ui/GoogleButton';
 import { AvatarPreview } from './ui/AvatarPreview';
 import { confirmCreditPurchase, fetchInventory, fetchMe, fetchWardrobe } from './api';
+import { clearDeviceToken } from './identity';
 
 const ROUTE = routeFromPath();
 /** credits pill is hidden until the economy is ready to show */
@@ -205,6 +207,7 @@ function GameShell() {
       <KitchenLobby />
       <KitchenRoundUI />
       <VendingSheet />
+      <JukeboxSheet />
       <FriendInvitePopup />
       {needsOnboarding && <Onboarding />}
       {profile ? (
@@ -288,10 +291,30 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
 
   const itemTotal = Object.values(inventory).reduce((sum, n) => sum + n, 0) + instances.length;
   const online = friends.filter((f) => f.online);
+  const rarityRank: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1, starter: 0 };
   const topItems = [
-    ...Object.entries(inventory).map(([def, qty]) => ({ id: def, label: furnitureDef(def)?.name ?? def, qty })),
-    ...instances.slice(0, 6).map((item) => ({ id: item.id, label: furnitureDef(item.def)?.name ?? item.def, qty: 1 })),
-  ].slice(0, 6);
+    ...(wardrobe ?? [])
+      .filter((id) => itemDef(id)?.rarity !== 'starter')
+      .map((id) => {
+        const def = itemDef(id);
+        return { id: `wardrobe:${id}`, label: def?.name ?? id, qty: 1, kind: 'wardrobe', rarity: def?.rarity ?? 'common' };
+      }),
+    ...Object.entries(inventory).map(([def, qty]) => {
+      const f = furnitureDef(def);
+      return { id: `furni:${def}`, label: f?.name ?? def, qty, kind: 'furniture', rarity: f?.rarity ?? 'common' };
+    }),
+    ...instances.map((item) => {
+      const f = furnitureDef(item.def);
+      return { id: `item:${item.id}`, label: f?.name ?? item.def, qty: 1, kind: 'furniture', rarity: f?.rarity ?? 'common' };
+    }),
+  ].sort((a, b) => (rarityRank[b.rarity] ?? 0) - (rarityRank[a.rarity] ?? 0) || a.label.localeCompare(b.label))
+    .slice(0, 3);
+
+  const logout = () => {
+    clearDeviceToken();
+    useAppStore.getState().setMe(null);
+    location.assign('/play');
+  };
 
   return (
     <div className="profile-home">
@@ -304,8 +327,13 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
             {me.birthdate ? ` · born ${me.birthdate}` : ''}
           </p>
         </div>
-        <div className="profile-home__avatar" aria-label="your avatar">
-          <AvatarPreview cfg={avatar} scale={5} animate />
+        <div className="profile-home__actions">
+          <button className="profile-home__logout" type="button" onClick={logout}>
+            Logout
+          </button>
+          <div className="profile-home__avatar" aria-label="your avatar">
+            <AvatarPreview cfg={avatar} scale={5} animate />
+          </div>
         </div>
       </header>
 
@@ -339,9 +367,12 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
           <div className="profile-home__items">
             {topItems.length ? (
               topItems.map((item) => (
-                <span key={item.id}>
-                  {item.label}
-                  {item.qty > 1 ? ` x${item.qty}` : ''}
+                <span key={item.id} className={`profile-home__thing profile-home__thing--${item.rarity}`}>
+                  <b>{item.label}</b>
+                  <small>
+                    {RARITY_LABEL[item.rarity as keyof typeof RARITY_LABEL] ?? item.rarity}
+                    {item.qty > 1 ? ` · x${item.qty}` : ''}
+                  </small>
                 </span>
               ))
             ) : (

@@ -28,3 +28,13 @@ export function storedToken(): string | null {
     return null;
   }
 }
+
+
+/** Forget this browser's Leypark session so the next visit starts at Google sign-in. */
+export function clearDeviceToken() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* ignore */
+  }
+}
