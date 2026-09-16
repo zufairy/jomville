@@ -522,12 +522,12 @@ export function Landing() {
             <div className="lk-join-actions">
               {GOOGLE_ON && <GoogleButton onDone={goPlay} />}
               <button className="lk-btn" onClick={goPlay}>
-                {GOOGLE_ON ? "Or explore as a guest" : "Start playing free"}{" "}
+                {GOOGLE_ON ? "Continue to sign in" : "Set up Google login"}{" "}
                 <span aria-hidden="true">↗</span>
               </button>
             </div>
             <span className="lk-note">
-              Free in your browser. Come as you are.
+              Free in your browser. Google login keeps your account safe.
             </span>
           </div>
         </section>

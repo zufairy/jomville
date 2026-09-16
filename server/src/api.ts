@@ -10,6 +10,7 @@ import { LeaderboardCache, klMonday } from './leaderboards';
 import { DAILY_CREDITS } from '@dovey/shared';
 import { iceServersFromEnv } from './ice';
 import { friendCalls } from './social-calls';
+import { awardCreditsFromSession, createCreditCheckout, creditPack, retrieveCheckoutSession, verifyStripeEvent } from './payments';
 
 const tokenOf = (body: unknown): string => {
   const t = (body as { token?: unknown })?.token;
@@ -59,6 +60,20 @@ export function buildApi(repo: Repo) {
   const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
   const oauth = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
   const app = express();
+
+  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    try {
+      const event = verifyStripeEvent(req.body as Buffer, req.get('stripe-signature'));
+      if (event.type === 'checkout.session.completed' && event.data?.object) {
+        await awardCreditsFromSession(repo, event.data.object);
+      }
+      res.json({ received: true });
+    } catch (e) {
+      console.error('[stripe webhook]', e);
+      res.status(400).json({ error: 'webhook failed' });
+    }
+  });
+
   app.use(express.json({ limit: '16kb' }));
 
   /** leaderboards are recomputed at most once a minute */
@@ -287,6 +302,40 @@ export function buildApi(repo: Repo) {
     if (!user) return res.status(401).json({ error: 'unknown' });
     res.set('cache-control', 'no-store');
     res.json({ iceServers: iceServersFromEnv() });
+  });
+
+  app.post('/api/credits/checkout', async (req, res) => {
+    const user = await userOf(req.body);
+    if (!user || !user.linked || !user.onboarded) return res.status(401).json({ error: 'sign in first' });
+    const pack = creditPack(req.body?.packId);
+    if (!pack) return res.status(400).json({ error: 'bad pack' });
+    const fallbackOrigin = `${req.protocol}://${req.get('host')}`;
+    const requestOrigin = req.get('origin');
+    const publicOrigin = process.env.PUBLIC_URL ?? requestOrigin ?? fallbackOrigin;
+    try {
+      const session = await createCreditCheckout({ userId: user.id, packId: pack.id, origin: publicOrigin });
+      if (!session.url) return res.status(502).json({ error: 'checkout unavailable' });
+      res.json({ url: session.url });
+    } catch (e) {
+      console.error('[stripe checkout]', e);
+      res.status(503).json({ error: 'payment unavailable' });
+    }
+  });
+
+  app.post('/api/credits/confirm', async (req, res) => {
+    const user = await userOf(req.body);
+    if (!user) return res.status(401).json({ error: 'unknown' });
+    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+    try {
+      const session = await retrieveCheckoutSession(sessionId);
+      if (session.metadata?.user_id !== user.id) return res.status(403).json({ error: 'wrong account' });
+      const result = await awardCreditsFromSession(repo, session);
+      if (!result) return res.status(400).json({ error: 'payment not complete' });
+      res.json(result);
+    } catch (e) {
+      console.error('[stripe confirm]', e);
+      res.status(400).json({ error: 'could not confirm payment' });
+    }
   });
 
   /** One-time 18+ confirmation, needed before calling someone who is not a friend. */

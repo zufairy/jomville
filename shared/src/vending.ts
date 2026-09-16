@@ -5,10 +5,10 @@ import { ITEMS, ItemDef } from './avatar';
  * Pulls cost credits; the room owner earns a cut; contents are cosmetics only.
  * Never gameplay advantage, never currency.
  */
-export const VEND_COST = 50;
+export const VEND_COST = 100;
 export const OWNER_CUT = 0.1;
-export const DAILY_CREDITS = 120;
-export const STARTING_CREDITS = 300;
+export const DAILY_CREDITS = 0;
+export const STARTING_CREDITS = 200;
 
 export type VendRarity = 'common' | 'rare' | 'epic' | 'legendary';
 export const RARITY_WEIGHT: Record<VendRarity, number> = { common: 62, rare: 26, epic: 10, legendary: 2 };

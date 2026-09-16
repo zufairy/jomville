@@ -56,7 +56,7 @@ export class KitchenRoom extends Room {
 
   async onAuth(_client: Client, options: { token?: unknown }): Promise<User> {
     const user = await KitchenRoom.repo.userByToken(options?.token);
-    if (!user || !this.allowed.has(user.id)) throw new ServerError(403, 'not in this crew');
+    if (!user || !user.linked || !user.onboarded || !this.allowed.has(user.id)) throw new ServerError(403, 'not in this crew');
     return user;
   }
 

@@ -31,7 +31,7 @@ describe('casino items', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.item.serial).toBeNull();
-    expect(r.coins).toBe(1_000_000 + 1500 - 8000);
+    expect(r.coins).toBe(1_000_000 + 200 - 8000);
     const inv = await repo.inventory(rich);
     expect(inv.instances.map((i) => i.def)).toContain('dicemaster');
     expect(inv.items.dicemaster).toBeUndefined();

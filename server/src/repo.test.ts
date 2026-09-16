@@ -41,6 +41,20 @@ describe('Repo', () => {
     expect(await repo.userById(u.id)).toMatchObject({ state: 'Overseas', birthdate: '1999-12-31', onboarded: true });
   });
 
+  it('maps repeat Google logins to the same user from a new device token', async () => {
+    const firstToken = 'google-first-device-token-000001';
+    const secondToken = 'google-second-device-token-00002';
+    const first = await repo.createUser(firstToken, DEFAULT_AVATAR);
+    const linked = await repo.linkGoogle(firstToken, first, { sub: 'google-sub-1', email: 'mia@example.com', name: 'Mia' });
+    expect(linked.id).toBe(first.id);
+    expect(linked.linked).toBe(true);
+
+    const otherDevice = await repo.createUser(secondToken, DEFAULT_AVATAR);
+    const sameGoogle = await repo.linkGoogle(secondToken, otherDevice, { sub: 'google-sub-1', email: 'mia@example.com', name: 'Mia' });
+    expect(sameGoogle.id).toBe(first.id);
+    expect((await repo.userByToken(secondToken))?.id).toBe(first.id);
+  });
+
   it('persists layout and room metadata', async () => {
     const u = await repo.userByToken(TOKEN);
     const slug = (await repo.homeRoom(u!.id))!;
@@ -110,15 +124,15 @@ describe('economy', () => {
   it('buys into inventory, refuses when broke, moves items in and out', async () => {
     const u = (await repo.userByToken(TOKEN))!;
     const inv0 = await repo.inventory(u.id);
-    expect(inv0.coins).toBe(1500);
-    expect(await repo.buy(u.id, 'chair', 2)).toEqual({ ok: true, coins: 1500 - 80 });
+    expect(inv0.coins).toBe(200);
+    expect(await repo.buy(u.id, 'chair', 2)).toEqual({ ok: true, coins: 200 - 80 });
     expect((await repo.buy(u.id, 'nope', 1)).ok).toBe(false);
     expect((await repo.buy(u.id, 'hottub', 5)).ok).toBe(false); // 4500 > balance
     expect((await repo.inventory(u.id)).items).toEqual({ chair: 2 });
     expect(await repo.addItem(u.id, 'chair', -1)).toBe(true);
     expect(await repo.addItem(u.id, 'chair', -5)).toBe(false);
     expect(await repo.addItem(u.id, 'lamp', -1)).toBe(false);
-    expect(await repo.creditCoins(u.id, 5)).toBe(1425);
+    expect(await repo.creditCoins(u.id, 5)).toBe(125);
   });
 
   it('seeds the harbor with a mask', async () => {

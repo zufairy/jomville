@@ -28,6 +28,7 @@ import {
   FRIEND_LIMIT,
   FRIEND_PENDING_LIMIT,
   serializeAvatar,
+  STARTING_CREDITS,
 } from '@dovey/shared';
 import { Db } from './db';
 import {
@@ -212,10 +213,10 @@ export class Repo {
     if (typeof token !== 'string' || token.length < 16 || token.length > 128) return null;
     const h = hashToken(token);
     const rows = await this.db.query<UserRow>(
-      `select ${USER_COLS} from users where token_hash = $1
-       union all
-       select u.id, u.handle, u.avatar, u.onboarded, u.google_sub, u.state, u.birthdate
+      `select u.id, u.handle, u.avatar, u.onboarded, u.google_sub, u.state, u.birthdate
        from device_tokens d join users u on u.id = d.user_id where d.token_hash = $1
+       union all
+       select ${USER_COLS} from users where token_hash = $1
        limit 1`,
       [h],
     );
@@ -281,11 +282,12 @@ export class Repo {
       if (!clash.length) break;
       handle = randomHandle();
     }
-    await this.db.query('insert into users (id, token_hash, handle, avatar) values ($1, $2, $3, $4)', [
+    await this.db.query('insert into users (id, token_hash, handle, avatar, coins) values ($1, $2, $3, $4, $5)', [
       id,
       hashToken(token),
       handle,
       JSON.stringify(normalizeAvatar(avatar)),
+      STARTING_CREDITS,
     ]);
     await this.createRoom(id, `${handle}'s room`);
     return { id, handle, avatar: normalizeAvatar(avatar), onboarded: false, linked: false, state: null, birthdate: null };
@@ -559,6 +561,21 @@ export class Repo {
   async creditCoins(userId: string, amount: number): Promise<number> {
     const r = await this.db.query<{ coins: number }>('update users set coins = coins + $2::int where id = $1 returning coins', [userId, amount]);
     return r[0]?.coins ?? 0;
+  }
+
+  async recordCreditPurchase(input: { sessionId: string; userId: string; packId: string; credits: number; amountSen: number }): Promise<{ granted: boolean; coins: number }> {
+    return this.db.transaction(async (tx) => {
+      const row = await tx.query<{ stripe_session_id: string }>(
+        'insert into credit_purchases (stripe_session_id, user_id, pack_id, credits, amount_sen) values ($1, $2, $3, $4, $5) on conflict do nothing returning stripe_session_id',
+        [input.sessionId, input.userId, input.packId, input.credits, input.amountSen],
+      );
+      if (!row.length) {
+        const coins = await tx.query<{ coins: number }>('select coins from users where id = $1', [input.userId]);
+        return { granted: false, coins: coins[0]?.coins ?? 0 };
+      }
+      const credited = await tx.query<{ coins: number }>('update users set coins = coins + $2::int where id = $1 returning coins', [input.userId, input.credits]);
+      return { granted: true, coins: credited[0]?.coins ?? 0 };
+    });
   }
 
   /** Atomic debit; null when the balance is too low. */

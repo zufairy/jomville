@@ -3,6 +3,7 @@ import { RARITY_LABEL, VEND_COST, VendRarity, isGearSlot, itemDef, vendingPool }
 import { useAppStore } from '../store';
 import { wearPatch } from '../wear';
 import { sfx } from '../audio';
+import { CREDIT_PACKS, CreditPackId, createCreditCheckout } from '../api';
 import { FRAME, composite, dirRow, findPart, loadManifest, sheetFor } from '../game/lpc';
 import { GEAR_FRAMES, GEAR_FRAME_MS, paintGear } from '../game/gearArt';
 
@@ -118,6 +119,8 @@ export function VendingSheet() {
   const result = useAppStore((s) => s.vendResult);
   const setVendResult = useAppStore((s) => s.setVendResult);
   const [phase, setPhase] = useState<Phase>('idle');
+  const [buying, setBuying] = useState<CreditPackId | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
@@ -170,6 +173,18 @@ export function VendingSheet() {
     setPhase('idle');
     setVendResult(null);
     sfx.tap();
+  };
+
+  const buyCredits = async (packId: CreditPackId) => {
+    setBuying(packId);
+    setPayError(null);
+    const r = await createCreditCheckout(packId);
+    if (r.url) {
+      location.assign(r.url);
+      return;
+    }
+    setPayError(r.error ?? 'payment unavailable');
+    setBuying(null);
   };
 
   return (
@@ -240,11 +255,26 @@ export function VendingSheet() {
           </div>
         ) : (
           <>
+            <div className="vend__economy">
+              <span>New players start with 200 credits.</span>
+              <strong>Each capsule costs {VEND_COST}.</strong>
+            </div>
             <button className={`btn btn--primary vend__pull ${phase !== 'idle' ? 'vend__pull--busy' : ''}`} onClick={pull} disabled={!can}>
               {phase === 'idle' ? `pull · 🪙 ${VEND_COST}` : phase === 'coin' ? 'clink…' : 'rattling…'}
             </button>
+            <div className="credit-shop" aria-label="buy credits">
+              {CREDIT_PACKS.map((pack) => (
+                <button key={pack.id} className="credit-pack" onClick={() => void buyCredits(pack.id)} disabled={!!buying || phase !== 'idle'}>
+                  <span>{pack.label}</span>
+                  <strong>{pack.price}</strong>
+                  <em>{pack.credits.toLocaleString()} credits</em>
+                  {buying === pack.id && <small>opening Stripe…</small>}
+                </button>
+              ))}
+            </div>
+            {payError && <p className="vend__payerr">{payError}</p>}
             <p className="vend__tease">{vendingPool().length} surprises inside · epic and legendary ones glow</p>
-            <p className="vend__fine">cosmetics only. room owner earns 10%. duplicates refund credits.</p>
+            <p className="vend__fine">Secure card checkout by Stripe. Cosmetics only. Duplicates refund credits.</p>
           </>
         )}
       </div>

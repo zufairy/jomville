@@ -797,7 +797,7 @@ export class GameRoom extends Room<WorldState> {
     }, TICK_MS);
   }
 
-  /** Resolve the anonymous device token to a user, creating one (plus a home room) on first sight. */
+  /** Resolve the device token to a Google-linked, onboarded player. */
   async onAuth(_client: Client, options: JoinOptions, ctx: AuthContext): Promise<User> {
     const repo = GameRoom.repo;
     const token = typeof options?.token === 'string' ? options.token : '';
@@ -807,6 +807,8 @@ export class GameRoom extends Room<WorldState> {
       // the client's look only seeds a brand-new user
       user = await repo.createUser(token, normalizeAvatar(options?.avatar));
     }
+    if (!user.linked) throw new ServerError(403, 'google_required');
+    if (!user.onboarded) throw new ServerError(403, 'onboarding_required');
     if (process.env.DOVEY_DEBUG) console.log('[auth]', user.handle, ctx.ip);
     return { ...user, avatar: await joinLook(repo, user, options) };
   }

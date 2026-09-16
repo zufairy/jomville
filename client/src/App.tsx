@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { furnitureDef } from '@dovey/shared';
 import { attachGame, detachGame } from './game/instance';
 import { useAppStore } from './store';
 import { ChatBar } from './ui/ChatBar';
@@ -30,6 +31,9 @@ import { routeFromPath } from './router';
 import { useFriends } from './friends';
 import { FriendsSheet } from './ui/FriendsSheet';
 import { FriendInvitePopup } from './ui/FriendInvitePopup';
+import { GoogleButton } from './ui/GoogleButton';
+import { AvatarPreview } from './ui/AvatarPreview';
+import { confirmCreditPurchase, fetchInventory, fetchMe, fetchWardrobe } from './api';
 
 const ROUTE = routeFromPath();
 /** credits pill is hidden until the economy is ready to show */
@@ -41,6 +45,52 @@ export function App() {
 }
 
 function Play() {
+  const [entered, setEntered] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const me = useAppStore((s) => s.me);
+  const adoptMe = useAppStore((s) => s.adoptMe);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchMe()
+      .then((m) => {
+        if (alive) adoptMe(m);
+      })
+      .finally(() => {
+        if (alive) setChecking(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [adoptMe]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sessionId = params.get('session_id');
+    if (params.get('credits') !== 'success' || !sessionId) return;
+    let alive = true;
+    void confirmCreditPurchase(sessionId).then((r) => {
+      if (!alive) return;
+      if ('error' in r) useAppStore.getState().flash(r.error);
+      else {
+        useAppStore.getState().setCredits(r.coins);
+        useAppStore.getState().flash(r.granted ? 'credits added' : 'credits already added');
+      }
+      history.replaceState(null, '', location.pathname);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (checking && !me) return <PlayBoot />;
+  if (!me?.linked) return <GoogleGate />;
+  if (!me.onboarded) return <Onboarding />;
+  if (!entered) return <ProfileLobby onEnter={() => setEntered(true)} />;
+  return <GameShell />;
+}
+
+function GameShell() {
   const ref = useRef<HTMLDivElement>(null);
   const status = useAppStore((s) => s.status);
   const toast = useAppStore((s) => s.toast);
@@ -182,5 +232,128 @@ function Play() {
         </div>
       )}
     </>
+  );
+}
+
+function PlayBoot() {
+  return (
+    <div className="playgate">
+      <div className="playgate__panel">
+        <div className="boot__mark" />
+        <h1>Opening Leypark…</h1>
+      </div>
+    </div>
+  );
+}
+
+function GoogleGate() {
+  return (
+    <div className="playgate">
+      <div className="playgate__panel playgate__panel--signin">
+        <span className="playgate__eyebrow">Leypark account</span>
+        <h1>Sign in with Google to play</h1>
+        <p>Your avatar, room, friends, wardrobe and items stay with the same email every time you log in.</p>
+        <GoogleButton />
+      </div>
+    </div>
+  );
+}
+
+function ProfileLobby({ onEnter }: { onEnter: () => void }) {
+  const me = useAppStore((s) => s.me)!;
+  const avatar = useAppStore((s) => s.avatar);
+  const inventory = useAppStore((s) => s.inventory);
+  const instances = useAppStore((s) => s.instances);
+  const wardrobe = useAppStore((s) => s.wardrobe);
+  const coins = useAppStore((s) => s.coins);
+  const friends = useFriends((s) => s.friends);
+  const incoming = useFriends((s) => s.incoming.length);
+
+  useEffect(() => {
+    void useFriends.getState().load();
+    void fetchInventory().then((inv) => {
+      if (!inv) return;
+      const st = useAppStore.getState();
+      st.setInventory(inv.items);
+      st.setInstances(inv.instances);
+      st.setCoins(inv.coins);
+    });
+    void fetchWardrobe().then((w) => {
+      if (!w) return;
+      const st = useAppStore.getState();
+      st.setWardrobe(w.owned);
+      st.setCredits(w.credits);
+    });
+  }, []);
+
+  const itemTotal = Object.values(inventory).reduce((sum, n) => sum + n, 0) + instances.length;
+  const online = friends.filter((f) => f.online);
+  const topItems = [
+    ...Object.entries(inventory).map(([def, qty]) => ({ id: def, label: furnitureDef(def)?.name ?? def, qty })),
+    ...instances.slice(0, 6).map((item) => ({ id: item.id, label: furnitureDef(item.def)?.name ?? item.def, qty: 1 })),
+  ].slice(0, 6);
+
+  return (
+    <div className="profile-home">
+      <header className="profile-home__hero">
+        <div>
+          <span className="playgate__eyebrow">Welcome back</span>
+          <h1>{me.handle}</h1>
+          <p>
+            {me.state}
+            {me.birthdate ? ` · born ${me.birthdate}` : ''}
+          </p>
+        </div>
+        <div className="profile-home__avatar" aria-label="your avatar">
+          <AvatarPreview cfg={avatar} scale={5} animate />
+        </div>
+      </header>
+
+      <section className="profile-home__grid">
+        <div className="profile-home__card profile-home__card--wide">
+          <span className="profile-home__label">Friends online</span>
+          <h2>{online.length ? `${online.length} ready to lepak` : 'No friends online yet'}</h2>
+          <div className="profile-home__friends">
+            {online.slice(0, 4).map((f) => (
+              <span key={f.id}>{f.handle}</span>
+            ))}
+            {!online.length && <span>Enter the lobby and meet someone new.</span>}
+          </div>
+          {incoming > 0 && <p className="profile-home__note">{incoming} friend request waiting</p>}
+        </div>
+
+        <div className="profile-home__card">
+          <span className="profile-home__label">Wardrobe</span>
+          <h2>{wardrobe ? wardrobe.length : 0}</h2>
+          <p>looks unlocked</p>
+        </div>
+
+        <div className="profile-home__card">
+          <span className="profile-home__label">Items</span>
+          <h2>{itemTotal}</h2>
+          <p>{coins ?? 0} credits</p>
+        </div>
+
+        <div className="profile-home__card profile-home__card--wide">
+          <span className="profile-home__label">Your things</span>
+          <div className="profile-home__items">
+            {topItems.length ? (
+              topItems.map((item) => (
+                <span key={item.id}>
+                  {item.label}
+                  {item.qty > 1 ? ` x${item.qty}` : ''}
+                </span>
+              ))
+            ) : (
+              <span>Start with your room, then collect furniture and outfits as you play.</span>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <button className="profile-home__enter" onClick={onEnter}>
+        Enter Leypark
+      </button>
+    </div>
   );
 }

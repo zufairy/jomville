@@ -144,6 +144,15 @@ create table if not exists trades (
 );
 create index if not exists trades_a on trades(a_id, at);
 create index if not exists trades_b on trades(b_id, at);
+create table if not exists credit_purchases (
+  stripe_session_id text primary key,
+  user_id text not null references users(id),
+  pack_id text not null,
+  credits int not null,
+  amount_sen int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists credit_purchases_user on credit_purchases(user_id, created_at);
 `;
 
 /** Additive column migrations, applied one by one (PGlite chokes on batched ADD COLUMN IF NOT EXISTS). */
@@ -155,7 +164,7 @@ const COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: 'users', column: 'state', ddl: 'alter table users add column state text' },
   { table: 'users', column: 'birthdate', ddl: 'alter table users add column birthdate date' },
   { table: 'users', column: 'onboarded', ddl: 'alter table users add column onboarded boolean not null default false' },
-  { table: 'users', column: 'coins', ddl: 'alter table users add column coins int not null default 1500' },
+  { table: 'users', column: 'coins', ddl: 'alter table users add column coins int not null default 200' },
   { table: 'users', column: 'play_week', ddl: 'alter table users add column play_week int not null default 0' },
   { table: 'users', column: 'play_week_start', ddl: 'alter table users add column play_week_start date' },
   { table: 'users', column: 'hide_rank', ddl: 'alter table users add column hide_rank boolean not null default false' },

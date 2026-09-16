@@ -441,7 +441,7 @@ export const MAX_FURNITURE_PER_ROOM = 120;
 /** system rooms (the lobby) carry a lot more décor */
 export const MAX_FURNITURE_SYSTEM_ROOM = 1400;
 
-export const STARTING_COINS = 1500;
+export const STARTING_COINS = 200;
 export const COINS_PER_MINUTE = 5;
 
 const BY_ID = new Map(FURNITURE.map((f) => [f.id, f]));

@@ -48,7 +48,7 @@ import { resolveTap } from './tapTarget';
 import { arrivalReady } from './useArrival';
 import { Fixtures } from './fixtures';
 import { WALL_HEIGHT } from './walls';
-import { claimDaily, fetchWardrobe } from '../api';
+import { fetchWardrobe } from '../api';
 import { sfx } from '../audio';
 import { EmotePool } from './emotes';
 import { LoveFx } from './loveFx';
@@ -487,11 +487,6 @@ export class Game {
     const st = useAppStore.getState();
     st.setWardrobe(w.owned);
     st.setCredits(w.credits);
-    const d = await claimDaily();
-    if (d?.granted && !this.disposed) {
-      useAppStore.getState().setCredits(d.coins);
-      useAppStore.getState().flash('daily credits +' + (d.coins - w.credits));
-    }
   }
 
   private onVendResult(r: { ok: boolean; reason?: string; credits?: number; itemId?: string; duplicate?: boolean }) {

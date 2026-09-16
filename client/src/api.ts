@@ -124,6 +124,37 @@ export async function claimDaily(): Promise<{ granted: boolean; coins: number } 
   return r.json();
 }
 
+export type CreditPackId = 'rm30' | 'rm50' | 'rm100';
+export interface CreditPack {
+  id: CreditPackId;
+  label: string;
+  price: string;
+  credits: number;
+}
+export const CREDIT_PACKS: CreditPack[] = [
+  { id: 'rm30', label: 'Starter Top Up', price: 'RM30', credits: 500 },
+  { id: 'rm50', label: 'Lepak Stack', price: 'RM50', credits: 1000 },
+  { id: 'rm100', label: 'Legend Stack', price: 'RM100', credits: 2500 },
+];
+
+export async function createCreditCheckout(packId: CreditPackId): Promise<{ url?: string; error?: string }> {
+  try {
+    const r = await fetch(`${base}/api/credits/checkout`, json({ token: deviceToken(), packId, origin: location.origin }));
+    return r.json();
+  } catch {
+    return { error: 'payment unavailable' };
+  }
+}
+
+export async function confirmCreditPurchase(sessionId: string): Promise<{ granted: boolean; coins: number } | { error: string }> {
+  try {
+    const r = await fetch(`${base}/api/credits/confirm`, json({ token: deviceToken(), sessionId }));
+    return r.json();
+  } catch {
+    return { error: 'could not confirm payment' };
+  }
+}
+
 // ---- friends
 export interface FriendRoom {
   slug: string;

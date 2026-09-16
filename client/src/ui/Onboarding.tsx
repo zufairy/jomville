@@ -90,15 +90,15 @@ export function Onboarding() {
             >
               <label className="onboard__field">
                 <span>Name</span>
-              <input
-                autoFocus
-                className="onboard__input"
-                value={handle}
-                maxLength={16}
-                onChange={(e) => setHandle(e.target.value)}
-                aria-label="your name"
-                placeholder="aina_kl"
-              />
+                <input
+                  autoFocus
+                  className="onboard__input"
+                  value={handle}
+                  maxLength={16}
+                  onChange={(e) => setHandle(e.target.value)}
+                  aria-label="your name"
+                  placeholder="aina_kl"
+                />
               </label>
               <label className="onboard__field">
                 <span>State</span>
