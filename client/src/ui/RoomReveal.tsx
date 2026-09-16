@@ -35,7 +35,7 @@ export function RoomReveal() {
     <div className={`room-reveal room-reveal--${phase}`} style={style} aria-hidden={phase !== 'loading'}>
       <div className="room-reveal__frost" />
       <div className="room-reveal__logo" role="status" aria-label="loading Leypark" aria-live="polite">
-        <LeyparkMark size={72} className="room-reveal__mark" />
+        <LeyparkMark size={24} className="room-reveal__mark" />
       </div>
     </div>
   );
