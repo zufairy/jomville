@@ -317,8 +317,15 @@ export class IsoRenderer {
             g.ready.visible = true;
           }
         } else {
-          place(g.ring, ringSprite('cook', (pot.cook / (kitchen.COOK_PER_ING * kitchen.POT_MAX)) * RING_STEPS), c.x, ringY);
-          g.ring.visible = true;
+          const cap = kitchen.COOK_PER_ING * pot.contents.length;
+          const readyForMore = pot.contents.length < kitchen.POT_MAX && pot.cook >= cap;
+          if (readyForMore) {
+            place(g.ready, readySprite(), c.x, ringY + 8);
+            g.ready.visible = true;
+          } else {
+            place(g.ring, ringSprite('cook', (pot.cook / cap) * RING_STEPS), c.x, ringY);
+            g.ring.visible = true;
+          }
         }
       }
       g.box.x = g.shakeUntil > now ? Math.round(Math.sin(now / 22) * 3) : 0;

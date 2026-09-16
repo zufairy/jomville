@@ -52,6 +52,7 @@ export interface User {
   linked: boolean; // has a Google account attached
   state: string | null;
   birthdate: string | null;
+  email: string | null;
 }
 
 type UserRow = {
@@ -62,6 +63,7 @@ type UserRow = {
   google_sub: string | null;
   state: string | null;
   birthdate: Date | string | null;
+  email: string | null;
 };
 const toUser = (r: UserRow): User => ({
   id: r.id,
@@ -71,8 +73,9 @@ const toUser = (r: UserRow): User => ({
   linked: !!r.google_sub,
   state: r.state ?? null,
   birthdate: r.birthdate ? new Date(r.birthdate).toISOString().slice(0, 10) : null,
+  email: r.email ?? null,
 });
-const USER_COLS = 'id, handle, avatar, onboarded, google_sub, state, birthdate';
+const USER_COLS = 'id, handle, avatar, onboarded, google_sub, state, birthdate, email';
 
 export interface RoomRow {
   id: string;
@@ -213,7 +216,7 @@ export class Repo {
     if (typeof token !== 'string' || token.length < 16 || token.length > 128) return null;
     const h = hashToken(token);
     const rows = await this.db.query<UserRow>(
-      `select u.id, u.handle, u.avatar, u.onboarded, u.google_sub, u.state, u.birthdate
+      `select u.id, u.handle, u.avatar, u.onboarded, u.google_sub, u.state, u.birthdate, u.email
        from device_tokens d join users u on u.id = d.user_id where d.token_hash = $1
        union all
        select ${USER_COLS} from users where token_hash = $1
@@ -290,7 +293,7 @@ export class Repo {
       STARTING_CREDITS,
     ]);
     await this.createRoom(id, `${handle}'s room`);
-    return { id, handle, avatar: normalizeAvatar(avatar), onboarded: false, linked: false, state: null, birthdate: null };
+    return { id, handle, avatar: normalizeAvatar(avatar), onboarded: false, linked: false, state: null, birthdate: null, email: null };
   }
 
   async setAvatar(userId: string, avatar: AvatarConfig) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { RARITY_LABEL, furnitureDef, itemDef } from '@dovey/shared';
+import { HANDLE, RARITY_LABEL, furnitureDef, itemDef } from '@dovey/shared';
 import { attachGame, detachGame } from './game/instance';
 import { useAppStore } from './store';
 import { ChatBar } from './ui/ChatBar';
@@ -34,12 +34,32 @@ import { FriendsSheet } from './ui/FriendsSheet';
 import { FriendInvitePopup } from './ui/FriendInvitePopup';
 import { GoogleButton } from './ui/GoogleButton';
 import { AvatarPreview } from './ui/AvatarPreview';
-import { confirmCreditPurchase, fetchInventory, fetchMe, fetchWardrobe } from './api';
+import { confirmCreditPurchase, fetchInventory, fetchMe, fetchWardrobe, patchMe } from './api';
 import { clearDeviceToken } from './identity';
 
 const ROUTE = routeFromPath();
 /** credits pill is hidden until the economy is ready to show */
 const SHOW_COINS = false;
+const PROFILE_STATES = [
+  'Johor',
+  'Kedah',
+  'Kelantan',
+  'Melaka',
+  'Negeri Sembilan',
+  'Pahang',
+  'Penang',
+  'Perak',
+  'Perlis',
+  'Sabah',
+  'Sarawak',
+  'Selangor',
+  'Terengganu',
+  'Kuala Lumpur',
+  'Labuan',
+  'Putrajaya',
+  'Overseas',
+];
+
 
 export function App() {
   if (ROUTE.kind === 'landing') return <Landing />;
@@ -47,7 +67,7 @@ export function App() {
 }
 
 function Play() {
-  const [entered, setEntered] = useState(false);
+  const [entered, setEntered] = useState(ROUTE.kind === 'room');
   const [checking, setChecking] = useState(true);
   const me = useAppStore((s) => s.me);
   const adoptMe = useAppStore((s) => s.adoptMe);
@@ -271,6 +291,12 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
   const coins = useAppStore((s) => s.coins);
   const friends = useFriends((s) => s.friends);
   const incoming = useFriends((s) => s.incoming.length);
+  const setMe = useAppStore((s) => s.setMe);
+  const [editing, setEditing] = useState(false);
+  const [profileName, setProfileName] = useState(me.handle);
+  const [profileState, setProfileState] = useState(me.state ?? '');
+  const [profileBirthdate, setProfileBirthdate] = useState(me.birthdate ?? '');
+  const [profileErr, setProfileErr] = useState<string | null>(null);
 
   useEffect(() => {
     void useFriends.getState().load();
@@ -323,11 +349,14 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
           <span className="playgate__eyebrow">Welcome back</span>
           <h1>{me.handle}</h1>
           <p>
-            {me.state}
+            {me.email ? `${me.email} · ` : ''}{me.state}
             {me.birthdate ? ` · born ${me.birthdate}` : ''}
           </p>
         </div>
         <div className="profile-home__actions">
+          <button className="profile-home__logout" type="button" onClick={() => setEditing(true)}>
+            Edit profile
+          </button>
           <button className="profile-home__logout" type="button" onClick={logout}>
             Logout
           </button>
@@ -336,6 +365,39 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
           </div>
         </div>
       </header>
+
+
+      {editing && (
+        <form
+          className="profile-home__edit"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const h = profileName.trim().toLowerCase();
+            if (!HANDLE.test(h)) return setProfileErr('Name must be 3-16 letters, numbers or _');
+            if (!profileState || !profileBirthdate) return setProfileErr('State and birthdate are required');
+            const r = await patchMe({ handle: h, state: profileState, birthdate: profileBirthdate });
+            if ('error' in r) return setProfileErr(r.error);
+            setMe(r);
+            setProfileErr(null);
+            setEditing(false);
+          }}
+        >
+          <label>Name<input value={profileName} maxLength={16} onChange={(e) => setProfileName(e.currentTarget.value)} /></label>
+          <label>
+            State
+            <select value={profileState} onChange={(e) => setProfileState(e.currentTarget.value)}>
+              <option value="">Choose your state</option>
+              {PROFILE_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label>Birthdate<input type="date" value={profileBirthdate} onChange={(e) => setProfileBirthdate(e.currentTarget.value)} /></label>
+          {profileErr && <span>{profileErr}</span>}
+          <button type="submit">Save profile</button>
+          <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+        </form>
+      )}
 
       <section className="profile-home__grid">
         <div className="profile-home__card profile-home__card--wide">

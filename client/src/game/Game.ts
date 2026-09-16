@@ -257,7 +257,11 @@ export class Game {
       callToggleMic: () => this.calls.toggleMic(),
       callToggleCam: () => this.calls.toggleCam(),
       callVideoEls: () => ({ local: this.calls.localEl, remote: this.calls.remoteEl }),
-      toggleVoice: () => void this.voice.setMic(!this.voice.micOn),
+      toggleVoice: () => {
+        const next = !this.voice.micOn;
+        try { localStorage.setItem('dovey.voice.auto', next ? '1' : '0'); } catch { /* ignore */ }
+        void this.voice.setMic(next);
+      },
       duelInvite: (peer, handle, stake) => {
         this.net.send('duel_invite', { to: peer, stake });
         useAppStore.getState().setDuel({ ...IDLE_DUEL, phase: 'ringing', peer, handle, stake });
@@ -385,6 +389,11 @@ export class Game {
           this.reveal.joined();
           this.ensureSelf();
           this.voice.rejoin();
+          try {
+            if (localStorage.getItem('dovey.voice.auto') !== '0') void this.voice.setMic(true);
+          } catch {
+            void this.voice.setMic(true);
+          }
           void useFriends.getState().load();
           friendCall.resume();
         },
@@ -954,6 +963,11 @@ export class Game {
 
   /** Use an item if in reach, else walk next to it and use it on arrival. Long-press / right-click closes dice. */
   private useItem(item: Placement, close = false) {
+    if (item.def === 'jukebox') {
+      useAppStore.getState().setJukeboxOpen(true);
+      useAppStore.getState().setSelectedItem(item);
+      return;
+    }
     if (!this.mover) return;
     const here = { x: Math.round(this.mover.x), y: Math.round(this.mover.y) };
     const kind = furnitureDef(item.def)?.interaction;

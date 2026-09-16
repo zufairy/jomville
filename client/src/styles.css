@@ -2468,3 +2468,93 @@ html, body, #root {
   .jukebox-list,
   .jukebox-volume { grid-template-columns: 1fr; }
 }
+
+.profile-home__edit {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
+  gap: 10px;
+  margin: 0 0 14px;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255, 252, 244, .96);
+  box-shadow: 0 6px 0 rgba(59, 42, 42, .12);
+}
+.profile-home__edit label { display: grid; gap: 5px; font-size: 12px; font-weight: 1000; text-transform: uppercase; letter-spacing: .06em; }
+.profile-home__edit input,
+.profile-home__edit select {
+  min-width: 0;
+  border: 2px solid rgba(59,42,42,.22);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.profile-home__edit span { align-self: center; color: #aa452f; font-weight: 900; }
+.profile-home__edit button { border: 2px solid var(--ink); border-radius: 999px; padding: 10px 14px; background: #203f36; color: #fff8e8; font: inherit; font-weight: 1000; cursor: pointer; }
+.profile-home__edit button[type=button] { background: #fff; color: var(--ink); }
+@media (max-width: 760px) { .profile-home__edit { grid-template-columns: 1fr; } }
+
+/* ---- kitchen tutorial and richer tickets ---- */
+.kr-ticket {
+  min-width: 210px;
+  align-items: center;
+}
+.kr-ticket__main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.kr-ticket__main b { font-size: 13px; line-height: 1.1; }
+.kr-ticket__main em { font-style: normal; font-size: 14px; letter-spacing: .04em; }
+.kr-ticket__main small {
+  max-width: 240px;
+  overflow: hidden;
+  color: rgba(59,42,42,.72);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kr-walkthrough {
+  position: fixed;
+  left: 50%;
+  top: 92px;
+  z-index: 60;
+  display: grid;
+  gap: 6px;
+  width: min(440px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  border: 3px solid var(--ink);
+  border-radius: 20px;
+  padding: 14px;
+  background: linear-gradient(135deg, #fff8e8, #ffe0a8);
+  color: var(--ink);
+  box-shadow: 0 12px 0 rgba(59,42,42,.18), 0 22px 50px rgba(0,0,0,.22);
+  font-weight: 900;
+}
+.kr-walkthrough b { font-size: 20px; }
+.kr-walkthrough span { font-size: 13px; }
+.kr-walkthrough kbd { border: 2px solid var(--ink); border-radius: 6px; padding: 0 5px; background: #fff; font: inherit; }
+.kr-walkthrough button {
+  justify-self: start;
+  margin-top: 4px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: #203f36;
+  color: #fff8e8;
+  font: inherit;
+  font-weight: 1000;
+  cursor: pointer;
+}
+@media (max-width: 560px) {
+  .kr-ticket { min-width: 170px; }
+  .kr-ticket__main small { max-width: 150px; }
+  .kr-walkthrough { top: 76px; }
+}

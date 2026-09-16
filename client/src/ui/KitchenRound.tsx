@@ -31,6 +31,21 @@ function saveJoystick(on: boolean) {
   }
 }
 
+const DISH_STEPS: Record<kitchen.Dish, { icons: string[]; steps: string[] }> = {
+  soup_tomato: { icons: ['🍅', '🍅', '🍅', '🍲'], steps: ['chop 3 tomatoes', 'put into pot', 'wait for full cook', 'plate soup'] },
+  soup_onion: { icons: ['🧅', '🧅', '🧅', '🍲'], steps: ['chop 3 onions', 'put into pot', 'wait for full cook', 'plate soup'] },
+  soup_mushroom: { icons: ['🍄', '🍄', '🍄', '🍲'], steps: ['chop 3 mushrooms', 'put into pot', 'wait for full cook', 'plate soup'] },
+  salad: { icons: ['🥬', '🍽️'], steps: ['chop lettuce', 'put on plate', 'serve'] },
+  salad_tomato: { icons: ['🥬', '🍅', '🍽️'], steps: ['chop lettuce + tomato', 'put both on plate', 'serve'] },
+};
+
+function kitchenHintSeen() {
+  try { return localStorage.getItem('dovey.kitchen.hint') === '1'; } catch { return false; }
+}
+function saveKitchenHintSeen() {
+  try { localStorage.setItem('dovey.kitchen.hint', '1'); } catch { /* ignore */ }
+}
+
 export function KitchenRoundUI() {
   const phase = useKitchen((s) => s.phase);
   const roomId = useKitchen((s) => s.roomId);
@@ -80,11 +95,20 @@ function RoundScreen({ roomId }: { roomId: string }) {
         console.error('[kitchen] renderer failed', err);
         if (alive) useKitchen.getState().lost();
       });
-    r.join(roomId).catch(() => useKitchen.getState().lost());
+    const joinTimer = setTimeout(() => {
+      if (alive && useKitchen.getState().phase === 'joining') useKitchen.getState().lost();
+    }, 12000);
+    r.join(roomId)
+      .catch((err) => {
+        console.error('[kitchen] join failed', err);
+        useKitchen.getState().lost();
+      })
+      .finally(() => clearTimeout(joinTimer));
     return () => {
       alive = false;
       unbind();
       detachKeys();
+      clearTimeout(joinTimer);
       renderer.destroy();
       r.leave();
     };
@@ -134,6 +158,7 @@ function Hud({ joystick, setJoystick }: { joystick: boolean; setJoystick: (on: b
   const now = useNow(250);
   const [shownNote, setShownNote] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
+  const [hint, setHint] = useState(() => !kitchenHintSeen());
 
   useEffect(() => {
     if (!note) return;
@@ -141,6 +166,15 @@ function Hud({ joystick, setJoystick }: { joystick: boolean; setJoystick: (on: b
     const t = setTimeout(() => setShownNote(null), 1800);
     return () => clearTimeout(t);
   }, [note]);
+
+  useEffect(() => {
+    if (!hint || phase !== 'playing') return;
+    const t = setTimeout(() => {
+      setHint(false);
+      saveKitchenHintSeen();
+    }, 7000);
+    return () => clearTimeout(t);
+  }, [hint, phase]);
 
   const left = over ? time : Math.max(0, time - (now - timeAt) / 1000);
   const clock = `${Math.floor(left / 60)}:${Math.floor(left % 60)
@@ -155,9 +189,13 @@ function Hud({ joystick, setJoystick }: { joystick: boolean; setJoystick: (on: b
             const l = orderLeft(o, now);
             const k = l / o.total;
             return (
-              <div key={o.id} className={`kr-ticket ${l < kitchen.ORDER_WARN ? 'kr-ticket--late' : ''}`} title={dishName(o.dish)}>
+              <div key={o.id} className={`kr-ticket ${l < kitchen.ORDER_WARN ? 'kr-ticket--late' : ''}`} title={DISH_STEPS[o.dish].steps.join(' → ')}>
                 <img src={mapDataUrl(itemSprite(dishItem(o.dish)).map, 3)} alt="" />
-                <span>{dishName(o.dish)}</span>
+                <span className="kr-ticket__main">
+                  <b>{dishName(o.dish)}</b>
+                  <em>{DISH_STEPS[o.dish].icons.join(' ')}</em>
+                  <small>{DISH_STEPS[o.dish].steps.join(' → ')}</small>
+                </span>
                 <i style={{ width: `${k * 100}%`, backgroundColor: k > 0.5 ? '#58c98b' : k > 0.25 ? '#f7c948' : '#ff3b30' }} />
               </div>
             );
@@ -181,6 +219,16 @@ function Hud({ joystick, setJoystick }: { joystick: boolean; setJoystick: (on: b
           </button>
         </div>
       </div>
+      {hint && phase === 'playing' && (
+        <div className="kr-walkthrough">
+          <b>How to cook</b>
+          <span>1. Grab ingredients from crates.</span>
+          <span>2. Put them on a board and hold <kbd>E</kbd> / chop.</span>
+          <span>3. Soups need 3 same chopped items in the pot. Salads go straight on a plate.</span>
+          <span>4. Plate it, then bring it to the window.</span>
+          <button onClick={() => { setHint(false); saveKitchenHintSeen(); }}>Got it</button>
+        </div>
+      )}
       {settings && (
         <label className="kr-settings">
           <input type="checkbox" checked={joystick} onChange={(e) => setJoystick(e.target.checked)} />

@@ -49,7 +49,7 @@ const birthdateOf = (v: unknown): string | null => {
 
 /**
  * Small HTTP API next to the Colyseus endpoint.
- *   GET /api/me?token=          -> { handle, home }   (creates the user on first sight)
+ *   GET /api/me?token=          -> { handle, home }   (requires Google-linked user)
  *   GET /api/rooms?sort=busy|new|top -> [{ slug, name, owner, category, live, visitors24h }]
  *   GET /api/rooms/random?not=  -> { slug } random *populated* public room, else random public
  *   GET  /api/leaderboards      -> { generatedAt, coins, assets, timeWeek, timeAll } top 50 each
@@ -97,6 +97,7 @@ export function buildApi(repo: Repo) {
     googleEnabled: !!oauth,
     state: user.state,
     birthdate: user.birthdate,
+    email: user.email,
   });
 
   app.post('/api/me', async (req, res) => {

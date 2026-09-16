@@ -40,6 +40,7 @@ export interface Me {
   googleEnabled: boolean;
   state: string | null;
   birthdate: string | null;
+  email?: string | null;
   /** the server-saved look (AvatarConfig JSON); normalize before use */
   avatar?: unknown;
 }
