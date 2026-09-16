@@ -318,6 +318,15 @@ export class Net {
       });
     };
     room.onMessage('inventory_refresh', refreshInventory);
+    useAppStore.setState({ chatLog: [], chatHistoryOpen: false });
+    room.onMessage('chat_history', (lines: Array<{ id: string; name: string; text: string; at: number; roll: boolean }>) => {
+      const current = useAppStore.getState().chatLog;
+      const history = lines.filter(line => !useAppStore.getState().muted.includes(line.id) && !useAppStore.getState().blocked.includes(line.id));
+      useAppStore.setState({ chatLog: [] });
+      for (const line of history) store.pushChat(line);
+      for (const line of current) if (!history.some(old => old.id === line.id && old.text === line.text && Math.abs(old.at - line.at) < 2000)) store.pushChat(line);
+    });
+    room.send('chat_history');
     room.onMessage('chat', (m: { id: string; text: string }) => {
       events.onChat(m.id, m.text);
       playChat(m.id, room.sessionId);

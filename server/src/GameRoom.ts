@@ -81,6 +81,10 @@ interface MoveMsg {
   y: number;
 }
 
+type HistoryLine = { id: string; userId: string; name: string; text: string; roll: boolean; at: number };
+// Bounded, short-lived room continuity across empty-room disposal (not a permanent chat archive).
+const recentRooms = new Map<string, { at: number; history: HistoryLine[]; jukebox: { trackId: string; playing: boolean; positionMs: number; updatedAt: number } }>();
+
 export class GameRoom extends Room<WorldState> {
   static repo: Repo; // injected once at boot
   maxClients = MAX_PLAYERS;
@@ -94,6 +98,7 @@ export class GameRoom extends Room<WorldState> {
   private chanceLimit = new RateLimiter(1, 700);
   private grid = makeGrid(ROOM_SIZE, ROOM_SIZE);
   private sim = new MovementSim(this.grid);
+  private chatHistory: HistoryLine[] = [];
   private chatLimit = new RateLimiter(CHAT_RATE.count, CHAT_RATE.windowMs);
   private reportLimit = new RateLimiter(REPORT_RATE.count, REPORT_RATE.windowMs);
   private blockLimit = new RateLimiter(BLOCK_RATE.count, BLOCK_RATE.windowMs);
@@ -131,6 +136,12 @@ export class GameRoom extends Room<WorldState> {
     const row = await repo.room(String(options?.slug ?? ''));
     if (!row) throw new ServerError(404, 'no such room');
     this.state.slug = row.id;
+    const recent = recentRooms.get(row.id);
+    if (recent && Date.now() - recent.at < 30 * 60 * 1000) {
+      Object.assign(this.state.jukebox, recent.jukebox);
+      this.chatHistory = recent.history;
+    }
+    recentRooms.delete(row.id);
     this.state.name = row.name;
     this.state.category = row.category;
     this.state.size = row.size;
@@ -158,7 +169,7 @@ export class GameRoom extends Room<WorldState> {
       f.x = p.x;
       f.y = p.y;
       f.rot = p.rot;
-      f.on = p.on ?? true;
+      f.on = p.def === 'jukebox' ? this.state.jukebox.playing : p.on ?? true;
       if (furnitureDef(p.def)?.interaction) f.state = restoredState(p.state);
       f.itemId = p.itemId ?? '';
       f.serial = p.serial ?? 0;
@@ -179,6 +190,7 @@ export class GameRoom extends Room<WorldState> {
       const f = this.state.furniture.get(id);
       const d = f && furnitureDef(f.def);
       if (!f || !d || !d.use) return;
+      if (f.def === 'jukebox') return; // Playback messages own the jukebox power state.
       const p: Placement = { id, def: f.def, x: f.x, y: f.y, rot: f.rot as 0 | 1 | 2 | 3 };
       const tx = Math.round(me.x);
       const ty = Math.round(me.y);
@@ -208,6 +220,9 @@ export class GameRoom extends Room<WorldState> {
       }, INTERACTIONS[kind].rollMs);
     });
 
+    this.clock.setInterval(() => {
+      for (const f of this.state.furniture.values()) if (f.def === 'jukebox' && f.on !== this.state.jukebox.playing) f.on = this.state.jukebox.playing;
+    }, 100);
     this.onMessage('jukebox_clock', (client, msg: { sentAt?: unknown }) => {
       if (typeof msg?.sentAt === 'number' && Number.isFinite(msg.sentAt)) client.send('jukebox_clock', { sentAt: msg.sentAt, serverTime: Date.now() });
     });
@@ -291,6 +306,11 @@ export class GameRoom extends Room<WorldState> {
       if (process.env.DOVEY_DEBUG) console.log('[move]', client.sessionId, msg, 'from', p.x, p.y, ok);
     });
 
+    this.onMessage('chat_history', async (client) => {
+      if (!this.state.players.has(client.sessionId) || !this.chatLimit.allow(client.sessionId)) return;
+      const pairs = new Set(await GameRoom.repo.blockPairs((client.auth as User).id));
+      client.send('chat_history', this.chatHistory.filter(line => !pairs.has(line.userId)).map(({ userId, ...line }) => line));
+    });
     this.onMessage('chat', (client, msg: { text?: unknown }) => {
       if (!this.state.players.has(client.sessionId)) return;
       const text = sanitizeChat(msg?.text);
@@ -858,7 +878,7 @@ export class GameRoom extends Room<WorldState> {
     f.x = spot.x;
     f.y = spot.y;
     f.rot = v.rot;
-    f.on = true;
+    f.on = this.state.jukebox.playing;
     this.state.furniture.set('system_jukebox', f);
   }
 
@@ -918,6 +938,9 @@ export class GameRoom extends Room<WorldState> {
 
   /** Deliver a chat (or roll result) line to everyone who has not blocked the speaker. */
   private sayTo(fromSession: string, text: string, type: 'chat' | 'roll' = 'chat') {
+    const speaker = this.state.players.get(fromSession);
+    this.chatHistory.push({ id: fromSession, userId: this.blocks.userOf(fromSession) ?? '', name: speaker?.handle ?? 'someone', text, roll: type === 'roll', at: Date.now() });
+    if (this.chatHistory.length > 100) this.chatHistory.shift();
     for (const c of this.clients) {
       if (this.blocks.isHidden(fromSession, c.sessionId)) continue;
       c.send(type, { id: fromSession, text });
@@ -990,6 +1013,8 @@ export class GameRoom extends Room<WorldState> {
   }
 
   async onDispose() {
+    recentRooms.set(this.state.slug, { at: Date.now(), history: this.chatHistory, jukebox: { trackId: this.state.jukebox.trackId, playing: this.state.jukebox.playing, updatedAt: this.state.jukebox.updatedAt, positionMs: this.state.jukebox.positionMs } });
+    while (recentRooms.size > 200) recentRooms.delete(recentRooms.keys().next().value!);
     this.kitchen?.dispose();
     if (this.saveTimer) clearTimeout(this.saveTimer);
     await this.flush();

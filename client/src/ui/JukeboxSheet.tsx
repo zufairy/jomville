@@ -26,8 +26,10 @@ export function JukeboxSheet() {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<VideoPlayer | null>(null);
   const loaded = useRef('');
+  const triedMutedAutoplay = useRef(false);
   const [hidden, setHidden] = useState(false);
   const clockOffset = useAppStore((s) => s.jukeboxClockOffset);
+  const [soundBlocked, setSoundBlocked] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [playerState, setPlayerState] = useState<number | null>(null);
   const [playerError, setPlayerError] = useState('');
@@ -39,6 +41,7 @@ export function JukeboxSheet() {
   const playRoomTrack = (trackId = track.id) => {
     setHidden(false);
     setPlayerError('');
+    setSoundBlocked(false);
     setMuted(false);
     if (volume === 0) setVolume(70);
     const selected = jukeboxTrack(trackId) ?? DEFAULT_JUKEBOX_TRACK;
@@ -64,7 +67,7 @@ export function JukeboxSheet() {
       loaded.current = latest.current.track.youtubeId;
       player.current = new api.Player(node, {
         videoId: loaded.current,
-        playerVars: { origin: location.origin, playsinline: 1, controls: 1, rel: 0 },
+        playerVars: { origin: location.origin, playsinline: 1, controls: 1, rel: 0, autoplay: latest.current.state.playing ? 1 : 0, start: Math.floor(jukeboxPosition(latest.current.state, Date.now() + latest.current.clockOffset)) },
         events: {
           onReady: () => { if (!disposed) setPlayerReady(true); },
           onStateChange: ({ data }) => {
@@ -76,7 +79,15 @@ export function JukeboxSheet() {
               useAppStore.getState().actions?.jukeboxEnded(current.track.id, current.state.updatedAt);
             }
           },
-          onAutoplayBlocked: () => setPlayerError('Tap play on the video below to enable sound on this device.'),
+          onAutoplayBlocked: () => {
+            if (disposed || latest.current.hidden || !latest.current.state.playing) return;
+            setSoundBlocked(true);
+            if (triedMutedAutoplay.current) return;
+            triedMutedAutoplay.current = true;
+            setMuted(true);
+            player.current?.mute();
+            player.current?.playVideo();
+          },
           onError: ({ data }) => {
             if (disposed) return;
             setPlayerState(null);
@@ -154,10 +165,21 @@ export function JukeboxSheet() {
   };
   const localMute = () => {
     setMuted(!muted);
-    if (muted) { player.current?.unMute(); player.current?.playVideo(); }
+    if (muted) { setSoundBlocked(false); player.current?.unMute(); if (state.playing) player.current?.playVideo(); }
     else player.current?.mute();
   };
   const changeVolume = (next: number) => { setVolume(next); if (next > 0) setMuted(false); };
+  const enableSound = () => {
+    setSoundBlocked(false);
+    setMuted(false);
+    if (!volume) setVolume(70);
+    const video = player.current;
+    if (!video) return;
+    video.unMute();
+    video.setVolume(volume || 70);
+    video.seekTo(jukeboxPosition(state, Date.now() + clockOffset), true);
+    if (state.playing) video.playVideo();
+  };
   const status = playerLabel(playerState, state.playing);
 
   return (
@@ -169,6 +191,7 @@ export function JukeboxSheet() {
         <button onClick={localMute} aria-label={muted ? 'Unmute for me' : 'Mute for me'}>{muted ? 'Unmute' : 'Mute'}</button>
         <button onClick={() => { setHidden(true); player.current?.pauseVideo(); }} aria-label="Hide player and pause for me">Hide</button>
       </div>}
+      {soundBlocked && <button className="jukebox-enable-sound" onClick={enableSound}>♫ Enable sound · join the room’s music</button>}
       <div className="jukebox-sheet__glow" aria-hidden="true" />
       <div className="jukebox-sheet__top">
         <div>

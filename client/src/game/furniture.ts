@@ -101,7 +101,7 @@ export class FurnitureSprite extends Container {
     const set = atlas.frames(d, this.placement.rot, this.lit, this.lidKey ?? this.placement.state ?? '');
     this.sprite.textures = set.textures;
     this.sprite.position.set(set.offsetX, set.offsetY);
-    if (set.textures.length > 1) {
+    if (set.textures.length > 1 && (d.kind !== 'jukebox' || this.lit)) {
       this.sprite.animationSpeed = (set.fps ?? FPS[d.anim] ?? 6) / 60;
       // desync loops so a row of lamps doesn't flicker in lockstep
       this.sprite.gotoAndPlay(Math.floor(Math.random() * set.textures.length));

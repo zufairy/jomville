@@ -2766,3 +2766,34 @@ html, body, #root {
 .jukebox-mini-open b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .jukebox-restore { position: fixed; right: 18px; bottom: calc(92px + var(--safe-bottom)); z-index: 45; border: 1px solid #f1b59d77; border-radius: 24px; padding: 12px 18px; background: #331925; color: #ffe4c5; box-shadow: 0 5px 20px #0004; cursor: pointer; }
 @media (max-width: 600px) { .jukebox-sheet--mini { width: min(320px, calc(100vw - 24px)); } }
+
+.profile-home { background: linear-gradient(135deg, #fff4eee8, #ffe4e4dd), url('/landing/lepak-world.jpg') center / cover fixed; }
+.profile-home__grid { position: relative; z-index: 0; }
+.profile-home__enter { z-index: 100; isolation: isolate; overflow: hidden; }
+.profile-home__enter::after { content: ''; position: absolute; inset: -40% auto -40% -70%; width: 45%; background: linear-gradient(90deg, transparent, #ffffff55, transparent); transform: skewX(-22deg); animation: lepak-button-shine 4s ease-in-out infinite; pointer-events: none; }
+@keyframes lepak-button-shine { 0%, 55% { left: -70%; } 85%, 100% { left: 140%; } }
+.profile-edit-dialog { width: min(480px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); padding: 0; border: 2px solid #edc7bf; border-radius: 26px; background: #fff9f3; color: #51252c; box-shadow: 0 25px 90px #45152955; }
+.profile-edit-dialog::backdrop { background: #34182399; backdrop-filter: blur(6px); }
+.profile-edit-dialog .profile-home__edit { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; margin: 0; padding: 26px; gap: 18px; border: 0; box-shadow: none; }
+.profile-edit-heading { display: flex; align-items: flex-start; gap: 14px; }
+.profile-edit-heading h2 { margin: 8px 0; font-size: 27px; }
+.profile-edit-heading p { font-size: 14px; line-height: 1.5; margin: 0; color: #86626a; }
+.profile-edit-heading button { flex-shrink: 0; }
+.profile-edit-dialog .profile-home__edit label { text-transform: none; letter-spacing: 0; font-size: 14px; gap: 8px; }
+.profile-edit-dialog input, .profile-edit-dialog select { min-height: 48px; width: 100%; font-size: 16px; border-radius: 12px; }
+.profile-edit-dialog input[readonly] { background: #f1e9e5; color: #816c70; }
+.profile-edit-dialog small { font-size: 12px; font-weight: 500; color: #886c71; }
+.profile-edit-footer { display: flex; gap: 12px; margin-top: 4px; padding-bottom: 5px; }
+.profile-edit-footer button { flex: 1; }
+.profile-edit-footer button[type=submit] { background: #df354a; color: white; border-color: #bd293c; }
+.profile-edit-dialog button:disabled { opacity: .6; cursor: wait; }
+.profile-edit-dialog :focus-visible { outline: 3px solid #bc3e5a; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .profile-home__enter::after { animation: none; } }
+
+.chatbar { position: relative; }
+.chatbar__history { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 3px 14px; border: 1px solid #ffffff65; border-radius: 14px 14px 7px 7px; background: #412b37ed; color: #fff8e8; cursor: pointer; white-space: nowrap; font-size: 18px; box-shadow: 0 3px 10px #0003; }
+.chatbar__history span { font: 700 11px system-ui; }
+.chatbar__history:focus-visible { outline: 3px solid #ffcb9d; outline-offset: 3px; }
+.chatfeed--history { margin-bottom: 35px; padding: 16px 12px; border: 1px solid #ffffff30; border-radius: 14px; background: #241820dc; mask-image: none; -webkit-mask-image: none; overscroll-behavior: contain; }
+.jukebox-enable-sound { display: block; width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #eacb99; border-radius: 12px; background: #f5d5a1; color: #371b29; font-weight: 800; cursor: pointer; }
+.jukebox-sheet--mini > .jukebox-enable-sound { display: block !important; }

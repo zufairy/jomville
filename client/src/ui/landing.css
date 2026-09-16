@@ -203,7 +203,7 @@
 }
 .lk-hero {
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   align-items: center;
   gap: 32px;
   padding-block: 62px 68px;

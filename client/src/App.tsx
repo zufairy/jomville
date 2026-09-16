@@ -294,6 +294,12 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
   const incoming = useFriends((s) => s.incoming.length);
   const setMe = useAppStore((s) => s.setMe);
   const [editing, setEditing] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const editDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (editing) editDialog.current?.showModal();
+    else editDialog.current?.close();
+  }, [editing]);
   const [profileName, setProfileName] = useState(me.handle);
   const [profileState, setProfileState] = useState(me.state ?? '');
   const [profileBirthdate, setProfileBirthdate] = useState(me.birthdate ?? '');
@@ -356,7 +362,13 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
           </p>
         </div>
         <div className="profile-home__actions">
-          <button className="profile-home__logout" type="button" onClick={() => setEditing(true)}>
+          <button className="profile-home__logout" type="button" onClick={() => {
+            setProfileName(me.handle);
+            setProfileState(me.state ?? '');
+            setProfileBirthdate(me.birthdate ?? '');
+            setProfileErr(null);
+            setEditing(true);
+          }}>
             Edit profile
           </button>
           <button className="profile-home__logout" type="button" onClick={logout}>
@@ -370,6 +382,9 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
 
 
       {editing && (
+        <dialog ref={editDialog} className="profile-edit-dialog" aria-labelledby="profile-edit-title"
+          onCancel={(e) => { e.preventDefault(); if (!savingProfile) setEditing(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget && !savingProfile) setEditing(false); }}>
         <form
           className="profile-home__edit"
           onSubmit={async (e) => {
@@ -377,28 +392,38 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
             const h = profileName.trim().toLowerCase();
             if (!HANDLE.test(h)) return setProfileErr('Name must be 3-16 letters, numbers or _');
             if (!profileState || !profileBirthdate) return setProfileErr('State and birthdate are required');
-            const r = await patchMe({ handle: h, state: profileState, birthdate: profileBirthdate });
-            if ('error' in r) return setProfileErr(r.error);
-            setMe(r);
+            if (savingProfile) return;
+            setSavingProfile(true);
             setProfileErr(null);
-            setEditing(false);
+            try {
+              const r = await patchMe({ handle: h, state: profileState, birthdate: profileBirthdate });
+              if ('error' in r) return setProfileErr(r.error);
+              setMe(r);
+              setEditing(false);
+            } catch {
+              setProfileErr('Could not save your changes. Please try again.');
+            } finally {
+              setSavingProfile(false);
+            }
           }}
         >
-          <label>Name<input value={profileName} maxLength={16} onChange={(e) => setProfileName(e.currentTarget.value)} /></label>
+          <div className="profile-edit-heading"><div><span className="profile-home__label">MAKE YOURSELF AT HOME</span><h2 id="profile-edit-title">Edit your profile</h2><p>A few details so your people can find you.</p></div><button type="button" aria-label="Close edit profile" disabled={savingProfile} onClick={() => setEditing(false)}>✕</button></div>
+          <label>Email<input type="email" value={me.email ?? ''} readOnly /><small>Your linked Google account</small></label>
+          <label>Username<input autoFocus autoComplete="nickname" required minLength={3} value={profileName} maxLength={16} onChange={(e) => setProfileName(e.currentTarget.value)} /><small>3–16 letters, numbers or underscores</small></label>
           <label>
             State
-            <select value={profileState} onChange={(e) => setProfileState(e.currentTarget.value)}>
+            <select required value={profileState} onChange={(e) => setProfileState(e.currentTarget.value)}>
               <option value="">Choose your state</option>
               {PROFILE_STATES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </label>
-          <label>Birthdate<input type="date" value={profileBirthdate} onChange={(e) => setProfileBirthdate(e.currentTarget.value)} /></label>
-          {profileErr && <span>{profileErr}</span>}
-          <button type="submit">Save profile</button>
-          <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+          <label>Birthday<input type="date" required max={new Date().toLocaleDateString('en-CA')} autoComplete="bday" value={profileBirthdate} onChange={(e) => setProfileBirthdate(e.currentTarget.value)} /></label>
+          {profileErr && <span role="alert">{profileErr}</span>}
+          <div className="profile-edit-footer"><button type="button" disabled={savingProfile} onClick={() => setEditing(false)}>Cancel</button><button type="submit" disabled={savingProfile}>{savingProfile ? 'Saving…' : 'Save changes'}</button></div>
         </form>
+        </dialog>
       )}
 
       <section className="profile-home__grid">

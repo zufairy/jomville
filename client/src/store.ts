@@ -112,7 +112,7 @@ export interface ChatLine {
   at: number;
 }
 
-const CHAT_LOG_CAP = 30;
+const CHAT_LOG_CAP = 100;
 let chatKeySeq = 0;
 
 export interface RoomInfo {
