@@ -404,25 +404,26 @@ export function Landing() {
 
         <section id="soulmate" className="lk-soulmate">
           <div className="lk-wrap lk-soulmate-grid">
-            <div className="lk-soulmate-art" aria-hidden="true">
+            <div className="lk-soulmate-art lk-soulmate-art--kitchen" aria-hidden="true">
+              <img src="/landing/kitchen-party.jpg" alt="" loading="lazy" width="1536" height="1024" />
               <div className="lk-date-card lk-date-card--one">
                 <span className="lk-person lk-person--a">A</span>
-                <b>"jom cook?"</b>
+                <b>"i chop, you cook?"</b>
                 <small>first round: chaos</small>
               </div>
               <div className="lk-date-card lk-date-card--two">
                 <span className="lk-person lk-person--b">S</span>
-                <b>"same table tomorrow?"</b>
+                <b>"okay gf material 😳"</b>
                 <small>second round: butterflies</small>
               </div>
-              <div className="lk-mamak-table">
-                <i className="lk-teh lk-teh--one" />
-                <i className="lk-teh lk-teh--two" />
-                <span className="lk-roti">♡</span>
+              <div className="lk-couple-chat">
+                <span>🍅</span>
+                <b>Cook together, talk naturally</b>
+                <small>No awkward opening line. The order is the icebreaker.</small>
               </div>
-              <span className="lk-spark lk-spark--one">✦</span>
+              <span className="lk-spark lk-spark--one">♡</span>
               <span className="lk-spark lk-spark--two">✺</span>
-              <span className="lk-spark lk-spark--three">♡</span>
+              <span className="lk-spark lk-spark--three">💕</span>
             </div>
             <div className="lk-feature-copy">
               <span className="lk-eyebrow">Find the love of your life</span>
@@ -432,8 +433,8 @@ export function Landing() {
                 <br /><em>someone special.</em>
               </h2>
               <p>
-                Leypark gives you the easiest first move: cook together, ride together,
-                talk on voice, then see if the vibe becomes something more.
+                Leypark gives you the easiest first move: cook together, chat while the soup burns,
+                laugh on voice, then see if the vibe becomes something more.
               </p>
               <div className="lk-love-steps">
                 <span><b>1</b> Match the vibe</span>
