@@ -234,6 +234,9 @@ export function Landing() {
             <LivePill live={live} />
           </div>
           <div className="lk-hero-art">
+            <span className="lk-malaysia lk-malaysia--kl">KL</span>
+            <span className="lk-malaysia lk-malaysia--hibiscus">✺</span>
+            <span className="lk-malaysia lk-malaysia--ketupat">◆</span>
             <span className="lk-stamp">
               MADE FOR
               <br />
@@ -396,6 +399,51 @@ export function Landing() {
             <p className="lk-caption">
               Illustrated preview with fictional people. Switch tabs to explore.
             </p>
+          </div>
+        </section>
+
+        <section id="soulmate" className="lk-soulmate">
+          <div className="lk-wrap lk-soulmate-grid">
+            <div className="lk-soulmate-art" aria-hidden="true">
+              <div className="lk-date-card lk-date-card--one">
+                <span className="lk-person lk-person--a">A</span>
+                <b>"jom cook?"</b>
+                <small>first round: chaos</small>
+              </div>
+              <div className="lk-date-card lk-date-card--two">
+                <span className="lk-person lk-person--b">S</span>
+                <b>"same table tomorrow?"</b>
+                <small>second round: butterflies</small>
+              </div>
+              <div className="lk-mamak-table">
+                <i className="lk-teh lk-teh--one" />
+                <i className="lk-teh lk-teh--two" />
+                <span className="lk-roti">♡</span>
+              </div>
+              <span className="lk-spark lk-spark--one">✦</span>
+              <span className="lk-spark lk-spark--two">✺</span>
+              <span className="lk-spark lk-spark--three">♡</span>
+            </div>
+            <div className="lk-feature-copy">
+              <span className="lk-eyebrow">Find the love of your life</span>
+              <h2>
+                Start with a game.
+                <br />End up with
+                <br /><em>someone special.</em>
+              </h2>
+              <p>
+                Leypark gives you the easiest first move: cook together, ride together,
+                talk on voice, then see if the vibe becomes something more.
+              </p>
+              <div className="lk-love-steps">
+                <span><b>1</b> Match the vibe</span>
+                <span><b>2</b> Play, laugh, talk</span>
+                <span><b>3</b> Meet again tomorrow</span>
+              </div>
+              <button className="lk-btn" onClick={goPlay}>
+                Register and find your person <span aria-hidden="true">↗</span>
+              </button>
+            </div>
           </div>
         </section>
         <section id="love" className="lk-love">
