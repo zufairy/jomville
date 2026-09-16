@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_JUKEBOX_TRACK, JUKEBOX_TRACKS, jukeboxTrack, nextJukeboxTrack } from '@dovey/shared';
+import { DEFAULT_JUKEBOX_TRACK, JUKEBOX_TRACKS, jukeboxTrack, jukeboxPosition } from '@dovey/shared';
 import { useAppStore } from '../store';
 import { loadYouTube, type VideoPlayer } from './youtubePlayer';
 import { isTopModal, popModal, pushModal } from './modalStack';
@@ -26,17 +26,18 @@ export function JukeboxSheet() {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<VideoPlayer | null>(null);
   const loaded = useRef('');
-  const failed = useRef(new Set<string>());
+  const [hidden, setHidden] = useState(false);
+  const clockOffset = useAppStore((s) => s.jukeboxClockOffset);
   const [playerReady, setPlayerReady] = useState(false);
   const [playerState, setPlayerState] = useState<number | null>(null);
   const [playerError, setPlayerError] = useState('');
   const [activated, setActivated] = useState(false);
   const track = useMemo(() => jukeboxTrack(state.trackId) ?? DEFAULT_JUKEBOX_TRACK, [state.trackId]);
-  const latest = useRef({ track, state, muted, volume });
-  latest.current = { track, state, muted, volume };
+  const latest = useRef({ track, state, muted, volume, hidden, clockOffset });
+  latest.current = { track, state, muted, volume, hidden, clockOffset };
 
   const playRoomTrack = (trackId = track.id) => {
-    failed.current.clear();
+    setHidden(false);
     setPlayerError('');
     setMuted(false);
     if (volume === 0) setVolume(70);
@@ -71,25 +72,15 @@ export function JukeboxSheet() {
             setPlayerState(data);
             if (data === 1) setPlayerError('');
             if (data === 0 && latest.current.state.playing) {
-              const next = nextJukeboxTrack(latest.current.track.id);
-              useAppStore.getState().actions?.setJukebox(next.id, true);
+              const current = latest.current;
+              useAppStore.getState().actions?.jukeboxEnded(current.track.id, current.state.updatedAt);
             }
           },
           onAutoplayBlocked: () => setPlayerError('Tap play on the video below to enable sound on this device.'),
           onError: ({ data }) => {
             if (disposed) return;
             setPlayerState(null);
-            if (data === 100 || data === 101 || data === 150) {
-              const current = latest.current.track;
-              failed.current.add(current.id);
-              const next = JUKEBOX_TRACKS.find(t => !failed.current.has(t.id));
-              if (next) {
-                setPlayerError('This video is unavailable here. Trying the next song…');
-                useAppStore.getState().actions?.setJukebox(next.id, true);
-                return;
-              }
-            }
-            setPlayerError(`YouTube could not play this video (${data}). Select another song or retry using the video controls.`);
+            setPlayerError(`YouTube could not play this video (${data}). Choose another song. This does not change the music for everyone else automatically.`);
           },
         },
       });
@@ -113,9 +104,33 @@ export function JukeboxSheet() {
       setPlayerState(null);
       if (state.playing) video.loadVideoById(track.youtubeId);
       else video.cueVideoById(track.youtubeId);
-    } else if (state.playing) video.playVideo();
+    } else if (state.playing && !hidden) video.playVideo();
     else video.pauseVideo();
-  }, [playerReady, track.youtubeId, state.playing, volume, muted]);
+    if (hidden) video.pauseVideo();
+  }, [playerReady, track.youtubeId, state.playing, volume, muted, hidden]);
+
+  useEffect(() => {
+    if (open) setHidden(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!playerReady) return;
+    const sync = () => {
+      const video = player.current;
+      const current = latest.current;
+      if (!video || current.hidden || !current.state.playing) return;
+      const expected = jukeboxPosition(current.state, Date.now() + current.clockOffset);
+      const duration = video.getDuration();
+      if (duration > 0 && expected >= duration) {
+        useAppStore.getState().actions?.jukeboxEnded(current.track.id, current.state.updatedAt);
+        return;
+      }
+      if (Math.abs(video.getCurrentTime() - expected) > 2) video.seekTo(expected, true);
+    };
+    sync();
+    const timer = window.setInterval(sync, 3000);
+    return () => window.clearInterval(timer);
+  }, [playerReady, state.updatedAt, track.id, hidden, clockOffset]);
 
   useEffect(() => {
     const id = modalId.current;
@@ -146,14 +161,20 @@ export function JukeboxSheet() {
   const status = playerLabel(playerState, state.playing);
 
   return (
-    <div style={!activated && !open ? { display: 'none' } : undefined} className={`jukebox-sheet ${open ? "" : "jukebox-sheet--mini"}`} role={open ? "dialog" : "region"} aria-label="room jukebox">
-      {!open && <button className="jukebox-mini-open" onClick={() => setOpen(true)}>♫ {track.title} · Open jukebox</button>}
+    <>
+    {hidden && !open && <button className="jukebox-restore" onClick={() => { setHidden(false); setOpen(true); }}>♫ Join room music</button>}
+    <div style={(!activated && !open) || (hidden && !open) ? { display: 'none' } : undefined} className={`jukebox-sheet ${open ? "" : "jukebox-sheet--mini"}`} role={open ? "dialog" : "region"} aria-label="room jukebox">
+      {!open && <div className="jukebox-mini-controls">
+        <button className="jukebox-mini-open" onClick={() => setOpen(true)}><small>ROOM RADIO</small><b>♫ {track.title}</b></button>
+        <button onClick={localMute} aria-label={muted ? 'Unmute for me' : 'Mute for me'}>{muted ? 'Unmute' : 'Mute'}</button>
+        <button onClick={() => { setHidden(true); player.current?.pauseVideo(); }} aria-label="Hide player and pause for me">Hide</button>
+      </div>}
       <div className="jukebox-sheet__glow" aria-hidden="true" />
       <div className="jukebox-sheet__top">
         <div>
-          <span className="jukebox-sheet__eyebrow">LEY PARK • LISTENING CLUB</span>
+          <span className="jukebox-sheet__eyebrow">LEYPARK FM • TOGETHER, IN SYNC</span>
           <h2>{track.title}</h2>
-          <p>A little music. A little chemistry. Pick a song for everyone.</p>
+          <p>Your room. Your soundtrack. Everyone joins the same moment.</p>
         </div>
         <button className="jukebox-sheet__x" onClick={() => setOpen(false)} aria-label="close jukebox">
           ✕
@@ -186,7 +207,7 @@ export function JukeboxSheet() {
         <b>{muted ? 'muted' : `${volume}%`}</b>
       </label>
 
-      <div className="jukebox-playlist-heading">THE PLAYLIST <span>{JUKEBOX_TRACKS.length} songs · no live streams</span></div>
+      <div className="jukebox-playlist-heading">THE PLAYLIST <span>September 2026 · {JUKEBOX_TRACKS.length} trending videos</span></div>
       <div className="jukebox-list">
         {JUKEBOX_TRACKS.map((t) => (
           <button key={t.id} className={t.id === track.id ? 'jukebox-track jukebox-track--on' : 'jukebox-track'} onClick={() => playRoomTrack(t.id)}>
@@ -196,5 +217,6 @@ export function JukeboxSheet() {
         ))}
       </div>
     </div>
+    </>
   );
 }

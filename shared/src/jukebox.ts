@@ -5,20 +5,15 @@ export interface JukeboxTrack {
   youtubeId: string;
 }
 
+// Curated from the 16 September 2026 music-video trending chart.
+// Source: https://kworb.net/youtube/trending.html
 export const JUKEBOX_TRACKS: JukeboxTrack[] = [
-  { id: 'on-and-on', title: 'On & On', vibe: 'feel good squad', youtubeId: 'K4DyBUG242c' },
-  { id: 'sky-high', title: 'Sky High Arcade', vibe: 'win streak energy', youtubeId: 'TW9d8vYrVFQ' },
-  { id: 'invincible', title: 'Invincible Run', vibe: 'boss mode', youtubeId: 'J2X5mJ3HDYE' },
-  { id: 'heroes-tonight', title: 'Heroes Tonight', vibe: 'late night hype', youtubeId: '3nQNiWdeH2Q' },
-  { id: 'feel-good', title: 'Feel Good', vibe: 'sweet upbeat', youtubeId: 'q1ULJ92aldE' },
-  { id: 'blank', title: 'Blank Space Dash', vibe: 'melodic rush', youtubeId: 'p7ZsBPK656s' },
-  { id: 'adventure', title: 'Adventure Mode', vibe: 'quest together', youtubeId: 'f2xGxd9xPYA' },
-  { id: 'ark', title: 'Ark Party', vibe: 'future bass', youtubeId: '8xlDwukxjnA' },
-  { id: 'fearless', title: 'Fearless Duo', vibe: 'main character', youtubeId: 'S19UcWdOA-I' },
-  { id: 'invisible', title: 'Invisible Crush', vibe: 'trap sparkle', youtubeId: 'QglaLzo_aPk' },
-  { id: 'angel', title: 'Angel Date', vibe: 'soft romance', youtubeId: 'A5UM2RCs63c' },
-  { id: 'better-days', title: 'Better Days', vibe: 'sunset lepak', youtubeId: 'RXLzvo6kvVQ' },
-  { id: 'city-pop', title: 'Midnight City Pop', vibe: 'retro crush', youtubeId: '6GEI3PpXEAo' },
+  { id: 'sawadika', title: 'SaWaDiKa', vibe: 'LISA · trending in Malaysia', youtubeId: 'FyS5dAywkEo' },
+  { id: 'click', title: 'CLICK', vibe: 'JISOO · K-pop', youtubeId: 'sf02ugzPFE4' },
+  { id: 'joseph', title: 'Joseph', vibe: 'Falling In Reverse · rock', youtubeId: 'Tk9TM7-eTmw' },
+  { id: 'talk-to-god', title: 'If I Ever Talk To God', vibe: 'Landon Barker · pop rock', youtubeId: 'pcKNqPP0C9o' },
+  { id: 'benim-olsana', title: 'BENİM OLSANA', vibe: 'CRUSH · global pop', youtubeId: 'ZVVylrAkmfg' },
+  { id: 'regalo', title: 'Regalo de Luna', vibe: 'Cristy Nodal · Latin', youtubeId: 'sFSwQn0J1po' },
 ];
 
 export const DEFAULT_JUKEBOX_TRACK = JUKEBOX_TRACKS[0];
@@ -30,4 +25,9 @@ export function jukeboxTrack(id: unknown): JukeboxTrack | undefined {
 export function nextJukeboxTrack(id: unknown): JukeboxTrack {
   const current = typeof id === 'string' ? JUKEBOX_TRACKS.findIndex((t) => t.id === id) : -1;
   return JUKEBOX_TRACKS[(current + 1 + JUKEBOX_TRACKS.length) % JUKEBOX_TRACKS.length] ?? DEFAULT_JUKEBOX_TRACK;
+}
+
+/** The authoritative room timeline, in seconds (clock offset is measured by the client). */
+export function jukeboxPosition(state: { positionMs: number; playing: boolean; updatedAt: number }, now: number): number {
+  return Math.max(0, state.positionMs + (state.playing && state.updatedAt > 0 ? Math.max(0, now - state.updatedAt) : 0)) / 1000;
 }

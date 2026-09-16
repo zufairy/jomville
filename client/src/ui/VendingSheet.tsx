@@ -39,7 +39,7 @@ const TURN_MS = 1500;
  * The pulled item on its own: no body and no catalog. It turns to show each
  * side and plays its own animation (shine, beams, flapping, sparkles).
  */
-function Showcase({ itemId }: { itemId: string }) {
+export function Showcase({ itemId }: { itemId: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const body = useAppStore((s) => s.avatar.body);
   const def = itemDef(itemId);
@@ -71,8 +71,9 @@ function Showcase({ itemId }: { itemId: string }) {
       }
       if (!alive) return;
       const start = performance.now();
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
       const draw = (now: number) => {
-        const elapsed = now - start;
+        const elapsed = reduced ? 0 : now - start;
         const turn = elapsed / TURN_MS;
         const dir = dirs[Math.floor(turn) % dirs.length];
         // each new side flips in from edge-on, like the item is spinning
@@ -89,7 +90,7 @@ function Showcase({ itemId }: { itemId: string }) {
           ctx.imageSmoothingEnabled = true;
           paintGear(ctx, itemId, dir, (elapsed % loop) / loop);
         }
-        raf = requestAnimationFrame(draw);
+        if (!reduced) raf = requestAnimationFrame(draw);
       };
       raf = requestAnimationFrame(draw);
     })();

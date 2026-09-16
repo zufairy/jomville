@@ -85,6 +85,7 @@ export interface GameActions {
   duelEnd: () => void;
   /** vending */
   vend: () => void;
+  jukeboxEnded: (trackId: string, updatedAt: number) => void;
   /** room jukebox */
   setJukebox: (trackId: string, playing: boolean) => void;
   /** safety */
@@ -167,8 +168,9 @@ interface AppState {
   duel: DuelInfo;
   setDuel: (d: DuelInfo | ((prev: DuelInfo) => DuelInfo)) => void;
   vending: boolean;
+  jukeboxClockOffset: number;
   jukeboxOpen: boolean;
-  jukebox: { trackId: string; playing: boolean; updatedAt: number };
+  jukebox: { trackId: string; playing: boolean; updatedAt: number; positionMs: number };
   jukeboxVolume: number;
   jukeboxMuted: boolean;
   credits: number | null;
@@ -176,7 +178,7 @@ interface AppState {
   vendResult: import('./ui/VendingSheet').VendResultView | null;
   setVending: (v: boolean) => void;
   setJukeboxOpen: (v: boolean) => void;
-  setJukeboxState: (s: { trackId: string; playing: boolean; updatedAt: number }) => void;
+  setJukeboxState: (s: { trackId: string; playing: boolean; updatedAt: number; positionMs: number }) => void;
   setJukeboxVolume: (n: number) => void;
   setJukeboxMuted: (v: boolean) => void;
   setCredits: (n: number) => void;
@@ -263,8 +265,9 @@ export const useAppStore = create<AppState>((set) => ({
   duel: IDLE_DUEL,
   setDuel: (d) => set((s) => ({ duel: typeof d === 'function' ? d(s.duel) : d })),
   vending: false,
+  jukeboxClockOffset: 0,
   jukeboxOpen: false,
-  jukebox: { trackId: 'lofi-live', playing: false, updatedAt: 0 },
+  jukebox: { trackId: 'sawadika', playing: false, updatedAt: 0, positionMs: 0 },
   jukeboxVolume: 70,
   jukeboxMuted: false,
   credits: null,

@@ -1,4 +1,8 @@
 export interface VideoPlayer {
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  getPlayerState(): number;
   playVideo(): void;
   pauseVideo(): void;
   mute(): void;

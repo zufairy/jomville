@@ -194,7 +194,7 @@ export class Net {
         style: string;
         ownerId: string;
         ownerHandle: string;
-        jukebox: { trackId: string; playing: boolean; updatedAt: number };
+        jukebox: { trackId: string; playing: boolean; updatedAt: number; positionMs: number };
       };
       const me = room.state.players.get(room.sessionId) as RemotePlayer | undefined;
       store.setRoom({
@@ -224,12 +224,16 @@ export class Net {
     $(room.state).listen('name', syncRoom);
     $(room.state).listen('category', syncRoom);
     $(room.state).listen('ownerHandle', syncRoom);
+    room.onMessage('jukebox_clock', (m: { sentAt: number; serverTime: number }) => {
+      useAppStore.setState({ jukeboxClockOffset: m.serverTime - (m.sentAt + Date.now()) / 2 });
+    });
+    room.send('jukebox_clock', { sentAt: Date.now() });
     const syncJukebox = () => {
-      const j = (room.state as { jukebox?: { trackId: string; playing: boolean; updatedAt: number } }).jukebox;
-      if (j) store.setJukeboxState({ trackId: j.trackId, playing: j.playing, updatedAt: j.updatedAt });
+      const j = (room.state as { jukebox?: { trackId: string; playing: boolean; updatedAt: number; positionMs: number } }).jukebox;
+      if (j) store.setJukeboxState({ trackId: j.trackId, playing: j.playing, updatedAt: j.updatedAt, positionMs: j.positionMs });
     };
     syncJukebox();
-    const jukeboxState = (room.state as { jukebox?: { trackId: string; playing: boolean; updatedAt: number } }).jukebox;
+    const jukeboxState = (room.state as { jukebox?: { trackId: string; playing: boolean; updatedAt: number; positionMs: number } }).jukebox;
     if (jukeboxState) $(jukeboxState).onChange(syncJukebox);
 
     $(room.state).players.onAdd((p: RemotePlayer, id: string) => {

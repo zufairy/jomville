@@ -25,7 +25,8 @@ import { KitchenLobby } from './ui/KitchenLobby';
 import { KitchenRoundUI } from './ui/KitchenRound';
 import { Landing } from './ui/Landing';
 import { Onboarding } from './ui/Onboarding';
-import { VendingSheet } from './ui/VendingSheet';
+import { FurniturePreview } from './ui/FurniturePreview';
+import { VendingSheet, Showcase } from './ui/VendingSheet';
 import { JukeboxSheet } from './ui/JukeboxSheet';
 import { CoinIcon, Icon } from './ui/Icon';
 import { routeFromPath } from './router';
@@ -320,20 +321,20 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
   const rarityRank: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1, starter: 0 };
   const topItems = [
     ...(wardrobe ?? [])
-      .filter((id) => itemDef(id)?.rarity !== 'starter')
+      .filter((id) => itemDef(id))
       .map((id) => {
         const def = itemDef(id);
-        return { id: `wardrobe:${id}`, label: def?.name ?? id, qty: 1, kind: 'wardrobe', rarity: def?.rarity ?? 'common' };
+        return { id: `wardrobe:${id}`, defId: id, label: def?.name ?? id, qty: 1, kind: 'wardrobe', rarity: def?.rarity ?? 'common' };
       }),
-    ...Object.entries(inventory).map(([def, qty]) => {
+    ...Object.entries(inventory).filter(([, qty]) => qty > 0).map(([def, qty]) => {
       const f = furnitureDef(def);
-      return { id: `furni:${def}`, label: f?.name ?? def, qty, kind: 'furniture', rarity: f?.rarity ?? 'common' };
+      return { id: `furni:${def}`, defId: def, label: f?.name ?? def, qty, kind: 'furniture', rarity: f?.rarity ?? 'common' };
     }),
     ...instances.map((item) => {
       const f = furnitureDef(item.def);
-      return { id: `item:${item.id}`, label: f?.name ?? item.def, qty: 1, kind: 'furniture', rarity: f?.rarity ?? 'common' };
+      return { id: `item:${item.id}`, defId: item.def, label: f?.name ?? item.def, qty: 1, kind: 'furniture', rarity: f?.rarity ?? 'common' };
     }),
-  ].sort((a, b) => (rarityRank[b.rarity] ?? 0) - (rarityRank[a.rarity] ?? 0) || a.label.localeCompare(b.label))
+  ].filter((item, index, all) => all.findIndex(other => other.kind === item.kind && other.defId === item.defId) === index).sort((a, b) => (rarityRank[b.rarity] ?? 0) - (rarityRank[a.rarity] ?? 0) || a.label.localeCompare(b.label))
     .slice(0, 3);
 
   const logout = () => {
@@ -346,8 +347,9 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
     <div className="profile-home">
       <header className="profile-home__hero">
         <div>
-          <span className="playgate__eyebrow">Welcome back</span>
-          <h1>{me.handle}</h1>
+          <span className="playgate__eyebrow">YOUR NEXT GOOD TIME STARTS HERE</span>
+          <h1>Hey, {me.handle}!</h1>
+          <div className="profile-home__intro">Jom lepak. Your people are one room away.</div>
           <p>
             {me.email ? `${me.email} · ` : ''}{me.state}
             {me.birthdate ? ` · born ${me.birthdate}` : ''}
@@ -425,17 +427,19 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
         </div>
 
         <div className="profile-home__card profile-home__card--wide">
-          <span className="profile-home__label">Your things</span>
+          <span className="profile-home__label">Your things · Top 3</span>
+          <h2>A little collection. A lot of you.</h2>
           <div className="profile-home__items">
             {topItems.length ? (
               topItems.map((item) => (
-                <span key={item.id} className={`profile-home__thing profile-home__thing--${item.rarity}`}>
+                <article key={item.id} className={`profile-home__thing profile-home__thing--${item.rarity}`}>
+                  <div className="profile-home__item-art">{item.kind === 'wardrobe' ? <Showcase itemId={item.defId} /> : <FurniturePreview id={item.defId} />}</div>
                   <b>{item.label}</b>
                   <small>
                     {RARITY_LABEL[item.rarity as keyof typeof RARITY_LABEL] ?? item.rarity}
                     {item.qty > 1 ? ` · x${item.qty}` : ''}
                   </small>
-                </span>
+                </article>
               ))
             ) : (
               <span>Start with your room, then collect furniture and outfits as you play.</span>
@@ -445,7 +449,7 @@ function ProfileLobby({ onEnter }: { onEnter: () => void }) {
       </section>
 
       <button className="profile-home__enter" onClick={onEnter}>
-        Enter Leypark
+        Let’s lepak  →
       </button>
     </div>
   );

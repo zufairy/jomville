@@ -14,6 +14,7 @@ import {
   distanceTo,
   furnitureDef,
   jukeboxTrack,
+  nextJukeboxTrack,
   tilesOf,
   MAX_PLAYERS,
   PLACEMENT_ID,
@@ -207,12 +208,27 @@ export class GameRoom extends Room<WorldState> {
       }, INTERACTIONS[kind].rollMs);
     });
 
+    this.onMessage('jukebox_clock', (client, msg: { sentAt?: unknown }) => {
+      if (typeof msg?.sentAt === 'number' && Number.isFinite(msg.sentAt)) client.send('jukebox_clock', { sentAt: msg.sentAt, serverTime: Date.now() });
+    });
+    this.onMessage('jukebox_ended', (client, msg: { trackId?: unknown; updatedAt?: unknown }) => {
+      const j = this.state.jukebox;
+      if (!this.state.players.has(client.sessionId) || !j.playing || msg?.trackId !== j.trackId || msg.updatedAt !== j.updatedAt) return;
+      if (!this.useLimit.allow(client.sessionId)) return;
+      j.trackId = nextJukeboxTrack(j.trackId).id;
+      j.positionMs = 0;
+      j.updatedAt = Date.now();
+    });
     this.onMessage('jukebox', (client, msg: { trackId?: unknown; playing?: unknown }) => {
       const me = this.state.players.get(client.sessionId);
       if (!me) return;
       const track = msg?.trackId === undefined ? jukeboxTrack(this.state.jukebox.trackId) : jukeboxTrack(msg.trackId);
       if (!track) return this.reject(client, 'bad_track');
       if (!this.useLimit.allow(client.sessionId)) return this.reject(client, 'rate_limited');
+      const j = this.state.jukebox;
+      const playing = typeof msg?.playing === 'boolean' ? msg.playing : j.playing;
+      if (j.trackId === track.id && j.playing === playing) return;
+      j.positionMs = j.trackId !== track.id ? 0 : j.positionMs + (j.playing ? Math.max(0, Date.now() - j.updatedAt) : 0);
       this.state.jukebox.trackId = track.id;
       if (typeof msg?.playing === 'boolean') this.state.jukebox.playing = msg.playing;
       this.state.jukebox.updatedAt = Date.now();

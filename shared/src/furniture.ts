@@ -600,3 +600,17 @@ export function distanceTo(x: number, y: number, p: Placement): number {
 }
 
 export const PLACEMENT_ID = /^[A-Za-z0-9_-]{4,24}$/;
+
+/** Cache the same topmost-seat semantics as seatAt; rebuild only when placements change. */
+export function buildSeatIndex(placements: Iterable<Placement>): Map<string, Placement> {
+  const occupied = new Map<string, Placement>();
+  for (const p of placements) {
+    for (const [x, y] of tilesOf(p) ?? []) {
+      const key = `${x},${y}`;
+      const previous = occupied.get(key);
+      if (!previous || furnitureDef(previous.def)?.walkable) occupied.set(key, p);
+    }
+  }
+  for (const [key, p] of occupied) if (!furnitureDef(p.def)?.sit) occupied.delete(key);
+  return occupied;
+}

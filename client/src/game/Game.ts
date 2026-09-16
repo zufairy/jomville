@@ -16,6 +16,7 @@ import {
   seatAt,
   seatFacing,
   tilesOf,
+  buildSeatIndex,
   validatePlacement,
   ROOM_SIZE,
   TILE_H,
@@ -149,6 +150,9 @@ export class Game {
   private me: Avatar | null = null;
   private mover: LocalMover | null = null;
   private actors = new Map<string, Actor>();
+  private placementCache: Placement[] = [];
+  private seatCache = new Map<string, Placement>();
+  private voiceDrawMs = 0;
   private furniture = new Map<string, FurnitureSprite>();
   private ghost: FurnitureSprite | null = null;
   private undo = new UndoStack();
@@ -284,6 +288,7 @@ export class Game {
         this.fixtures.rattle();
         this.net.send('vend');
       },
+      jukeboxEnded: (trackId, updatedAt) => this.net.send('jukebox_ended', { trackId, updatedAt }),
       setJukebox: (trackId, playing) => this.net.send('jukebox', { trackId, playing }),
       block: (sessionId, on) => {
         this.net.sendBlock(sessionId, on);
@@ -342,6 +347,7 @@ export class Game {
       { passive: false },
     );
 
+    this.app.ticker.maxFPS = 60;
     this.app.ticker.add((t) => {
       // while a full-screen scene borrows the app the world is hidden and frozen
       if (!this.lender?.leased) this.update(t.deltaMS);
@@ -1025,10 +1031,12 @@ export class Game {
 
   // ---- furniture state sync
   private placements(): Placement[] {
-    return [...this.furniture.values()].map((f) => f.placement);
+    return this.placementCache;
   }
 
   private rebuildGrid() {
+    this.placementCache = [...this.furniture.values()].map((f) => f.placement);
+    this.seatCache = buildSeatIndex(this.placementCache);
     this.grid = buildGrid(this.size, this.placements(), this.mask);
     this.mover?.setGrid(this.grid);
   }
@@ -1291,7 +1299,7 @@ export class Game {
     this.rides.tick(clock);
     for (const a of this.actors.values()) {
       const idle = a.avatar === this.me ? !this.mover?.moving : !a.avatar.moving;
-      const seat = idle ? seatAt(Math.round(a.avatar.tx), Math.round(a.avatar.ty), placements) : null;
+      const seat = idle ? this.seatCache.get(`${Math.round(a.avatar.tx)},${Math.round(a.avatar.ty)}`) ?? null : null;
       const ride = seat ? this.rides.rider(seat, Math.round(a.avatar.tx), Math.round(a.avatar.ty), clock) : null;
       let facing = -1;
       if (seat) {
@@ -1336,8 +1344,12 @@ export class Game {
     const fxDt = Math.min(now - this.lastFx, 1000);
     this.lastFx = now;
 
-    this.drawCallRings(fxDt);
-    this.drawVoice();
+    this.voiceDrawMs += fxDt;
+    if (this.voiceDrawMs >= 50) {
+      this.drawCallRings(this.voiceDrawMs);
+      this.drawVoice();
+      this.voiceDrawMs = 0;
+    }
     this.fixtures.setVisitor(this.mover ? { x: this.mover.x, y: this.mover.y } : null);
     this.fixtures.tick(fxDt);
     this.loveFx?.tick(fxDt);

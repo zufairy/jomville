@@ -23,7 +23,8 @@ export class Furniture extends Schema {
 }
 
 export class JukeboxState extends Schema {
-  @type('string') trackId = 'lofi-live';
+  @type('number') positionMs = 0;
+  @type('string') trackId = 'sawadika';
   @type('boolean') playing = false;
   @type('number') updatedAt = 0;
 }
