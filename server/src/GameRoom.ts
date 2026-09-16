@@ -678,13 +678,19 @@ export class GameRoom extends Room<WorldState> {
       if (!kind || !this.tableLimit.allow(client.sessionId)) return;
       this.dispatchTables(this.tables.playBot(client.sessionId, kind));
     });
-    this.onMessage('tg_cancel', (client) => this.dispatchTables(this.tables.cancel(client.sessionId)));
+    this.onMessage('tg_cancel', (client) => {
+      this.dispatchTables(this.tables.cancel(client.sessionId));
+      this.leaveTableSeat(client.sessionId);
+    });
     this.onMessage('tg_move', (client, msg: { move?: unknown }) => {
       if (!this.tableLimit.allow(client.sessionId)) return;
       this.dispatchTables(this.tables.move(client.sessionId, Number(msg?.move)));
     });
     this.onMessage('tg_rematch', (client) => this.dispatchTables(this.tables.rematch(client.sessionId)));
-    this.onMessage('tg_leave', (client) => this.dispatchTables(this.tables.leave(client.sessionId)));
+    this.onMessage('tg_leave', (client) => {
+      this.dispatchTables(this.tables.leave(client.sessionId));
+      this.leaveTableSeat(client.sessionId);
+    });
     this.clock.setInterval(() => {
       this.syncTables();
       this.dispatchTables(this.tables.tick());
@@ -977,6 +983,57 @@ export class GameRoom extends Room<WorldState> {
   /** public live count: real people only, the park's AI locals are not visitors */
   private publishLive() {
     registry.set(this.state.slug, humanCount(this.state.players.keys(), (id) => !!this.bots?.has(id)));
+  }
+
+  /** Walk a player away from a game-table chair after they close, cancel or forfeit the table UI. */
+  private leaveTableSeat(id: string) {
+    const p = this.state.players.get(id);
+    if (!p) return;
+
+    const px = Math.round(p.x);
+    const py = Math.round(p.y);
+    const placements = this.placements();
+    const seatTiles = new Set<string>();
+    let onGameTableSeat = false;
+
+    for (const placement of placements) {
+      if (furnitureDef(placement.def)?.sit) {
+        for (const [x, y] of tilesOf(placement) ?? []) seatTiles.add(`${x},${y}`);
+      }
+      if (!GAME_TABLE_KIND[placement.def]) continue;
+      for (const chair of tableChairs(placement, placements)) {
+        seatTiles.add(`${chair.x},${chair.y}`);
+        if (chair.x === px && chair.y === py) onGameTableSeat = true;
+      }
+    }
+
+    if (!onGameTableSeat) return;
+
+    const occupied = new Set<string>();
+    this.state.players.forEach((other, otherId) => {
+      if (otherId !== id) occupied.add(`${Math.round(other.x)},${Math.round(other.y)}`);
+    });
+
+    const candidates: Array<{ x: number; y: number; d: number }> = [];
+    for (let radius = 1; radius <= 5; radius++) {
+      for (let y = py - radius; y <= py + radius; y++) {
+        for (let x = px - radius; x <= px + radius; x++) {
+          const d = Math.abs(x - px) + Math.abs(y - py);
+          if (d === 0 || d > radius) continue;
+          candidates.push({ x, y, d });
+        }
+      }
+    }
+    candidates.sort((a, b) => a.d - b.d || Math.abs(a.y - py) - Math.abs(b.y - py) || Math.abs(a.x - px) - Math.abs(b.x - px));
+
+    const target = candidates.find((tile) => {
+      if (tile.x < 0 || tile.y < 0 || tile.x >= this.size || tile.y >= this.size) return false;
+      if (!this.grid.walkable[tile.y]?.[tile.x]) return false;
+      const key = `${tile.x},${tile.y}`;
+      return !occupied.has(key) && !seatTiles.has(key);
+    });
+
+    if (target) this.sim.requestMove(id, p, { x: target.x, y: target.y });
   }
 
   /** Nearest unoccupied tile to the room centre (Manhattan order, so neighbours before diagonals). */

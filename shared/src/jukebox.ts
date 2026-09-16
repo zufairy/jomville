@@ -6,12 +6,12 @@ export interface JukeboxTrack {
 }
 
 export const JUKEBOX_TRACKS: JukeboxTrack[] = [
-  { id: 'lofi-live', title: 'Lofi Study Radio', vibe: 'soft lepak', youtubeId: 'jfKfPfyJRdk' },
-  { id: 'coffee-jazz', title: 'Coffee Shop Jazz', vibe: 'date night', youtubeId: 'Dx5qFachd3A' },
-  { id: 'city-pop', title: 'City Pop Drive', vibe: 'retro crush', youtubeId: '6GEI3PpXEAo' },
-  { id: 'tropical-house', title: 'Tropical House Mix', vibe: 'beach party', youtubeId: 'YxjY_YTksKM' },
-  { id: 'arcade-funk', title: 'Arcade Funk Mix', vibe: 'game room', youtubeId: 'y0sF5xhGreA' },
-  { id: 'romance-pop', title: 'Romantic Pop Mix', vibe: 'love quest', youtubeId: 'hTWKbfoikeg' },
+  { id: 'lofi-live', title: '2026 Hits Radio', vibe: 'current pop lepak', youtubeId: 'jfKfPfyJRdk' },
+  { id: 'coffee-jazz', title: 'KL Date Night 2026', vibe: 'soft romance', youtubeId: 'Dx5qFachd3A' },
+  { id: 'city-pop', title: 'Midnight City Pop', vibe: 'retro crush', youtubeId: '6GEI3PpXEAo' },
+  { id: 'tropical-house', title: 'Pantai Party Mix', vibe: 'beach dance', youtubeId: 'YxjY_YTksKM' },
+  { id: 'arcade-funk', title: 'Game Den Hype', vibe: 'arcade energy', youtubeId: 'y0sF5xhGreA' },
+  { id: 'romance-pop', title: 'Love Quest Anthems', vibe: 'gf/bf cooking vibe', youtubeId: 'hTWKbfoikeg' },
 ];
 
 export const DEFAULT_JUKEBOX_TRACK = JUKEBOX_TRACKS[0];

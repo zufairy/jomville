@@ -2,7 +2,6 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { create } from 'zustand';
-import { useAppStore } from '../store';
 import { LeyparkMark } from './LeyparkLogo';
 import { REVEAL_FADE_MS, REVEAL_MELT_MS, RevealPhase } from '../game/reveal';
 import './room-reveal.css';
@@ -30,20 +29,13 @@ export function setRevealView(v: Partial<RevealView>, now = false) {
 export function RoomReveal() {
   const phase = useRevealView((s) => s.phase);
   const reduced = useRevealView((s) => s.reduced);
-  const name = useAppStore((s) => s.room?.name);
-  const status = useAppStore((s) => s.status);
   if (phase === 'shown') return null;
   const style = { ['--rr-melt' as string]: `${reduced ? REVEAL_FADE_MS : REVEAL_MELT_MS}ms` };
   return (
     <div className={`room-reveal room-reveal--${phase}`} style={style} aria-hidden={phase !== 'loading'}>
       <div className="room-reveal__frost" />
-      <div className="room-reveal__card" role="status" aria-live="polite">
-        <LeyparkMark size={40} className="room-reveal__mark" />
-        <div className="room-reveal__text">
-          <span className="room-reveal__name">{name || 'leypark'}</span>
-          <span className="room-reveal__hint">{status === 'reconnecting' ? 'reconnecting…' : 'getting the room ready…'}</span>
-        </div>
-        <i className="room-reveal__bar" />
+      <div className="room-reveal__logo" role="status" aria-label="loading Leypark" aria-live="polite">
+        <LeyparkMark size={72} className="room-reveal__mark" />
       </div>
     </div>
   );

@@ -17,9 +17,8 @@ export function Root() {
     return (
       <Suspense
         fallback={
-          <div className="boot">
-            <span className="boot__mark" />
-            <span>loading rankings…</span>
+          <div className="boot" role="status" aria-label="loading rankings">
+            <img className="boot__logo" src="/leypark-logo.png" alt="Leypark" draggable={false} />
           </div>
         }
       >
@@ -30,9 +29,8 @@ export function Root() {
   return (
     <Suspense
       fallback={
-        <div className="boot">
-          <span className="boot__mark" />
-          <span>loading your world…</span>
+        <div className="boot" role="status" aria-label="loading Leypark">
+          <img className="boot__logo" src="/leypark-logo.png" alt="Leypark" draggable={false} />
         </div>
       }
     >
