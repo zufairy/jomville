@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 
 /** how long a line stays visible before it fades out, in the compact feed */
-const LINE_TTL_MS = 6000;
+const LINE_TTL_MS = 3400;
 /** the line spends its last stretch fading out rather than popping off */
-const FADE_MS = 900;
+const FADE_MS = 400;
 /** compact mode shows only the most recent lines */
 const COMPACT_COUNT = 6;
-/** history mode (input focused) shows more, scrollable */
+/** history is opened explicitly with the arrow; stored messages never expire here */
 const HISTORY_COUNT = 100;
 /** how often the compact feed re-checks line ages, for a smooth-ish fade */
-const TICK_MS = 200;
+const TICK_MS = 100;
 
 /** re-renders periodically so lines older than LINE_TTL_MS drop out of the compact view */
 function useNow(intervalMs: number, enabled: boolean) {
@@ -20,7 +20,7 @@ function useNow(intervalMs: number, enabled: boolean) {
     const id = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(id);
   }, [intervalMs, enabled]);
-  return now;
+  return Math.max(now, Date.now());
 }
 
 export function ChatFeed() {
@@ -33,7 +33,7 @@ export function ChatFeed() {
   return (
     <>
       {/* full-width black fade behind the feed; stays mounted so it can fade out */}
-      <div className={`chatfeed-shade ${visible.length > 0 ? 'chatfeed-shade--on' : ''}`} aria-hidden />
+      <div className={`chatfeed-shade ${visible.length > 0 || historyOpen ? 'chatfeed-shade--on' : ''} ${historyOpen ? 'chatfeed-shade--history' : ''}`} aria-hidden />
       {(visible.length > 0 || historyOpen) && <Lines lines={visible} now={now} historyOpen={historyOpen} />}
     </>
   );
@@ -42,10 +42,11 @@ export function ChatFeed() {
 function Lines({ lines, now, historyOpen }: { lines: ReturnType<typeof useAppStore.getState>['chatLog']; now: number; historyOpen: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
+  useEffect(() => { nearBottom.current = true; }, [historyOpen]);
   useEffect(() => {
     const el = ref.current;
     if (el && nearBottom.current) el.scrollTop = el.scrollHeight;
-  }, [lines.length, historyOpen]);
+  }, [lines.length, lines.at(-1)?.key, historyOpen]);
   return (
     <div id="room-chat-history" ref={ref} role="log" aria-label="Room chat history" onScroll={() => {
       const el = ref.current;

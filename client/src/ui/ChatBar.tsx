@@ -38,7 +38,6 @@ export function ChatBar() {
         disabled={status !== 'connected'}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onFocus={() => setChatHistoryOpen(true)}
         aria-label="chat message"
       />
       <button className="chatbar__send" type="submit" disabled={!text.trim()} aria-label="send">

@@ -2794,6 +2794,14 @@ html, body, #root {
 .chatbar__history { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 3px 14px; border: 1px solid #ffffff65; border-radius: 14px 14px 7px 7px; background: #412b37ed; color: #fff8e8; cursor: pointer; white-space: nowrap; font-size: 18px; box-shadow: 0 3px 10px #0003; }
 .chatbar__history span { font: 700 11px system-ui; }
 .chatbar__history:focus-visible { outline: 3px solid #ffcb9d; outline-offset: 3px; }
-.chatfeed--history { margin-bottom: 35px; padding: 16px 12px; border: 1px solid #ffffff30; border-radius: 14px; background: #241820dc; mask-image: none; -webkit-mask-image: none; overscroll-behavior: contain; }
+.chatfeed--history { margin-bottom: 35px; overscroll-behavior: contain; }
+.chatfeed-shade--history { height: calc(min(50vh, 360px) + 140px + var(--safe-bottom)); }
 .jukebox-enable-sound { display: block; width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #eacb99; border-radius: 12px; background: #f5d5a1; color: #371b29; font-weight: 800; cursor: pointer; }
 .jukebox-sheet--mini > .jukebox-enable-sound { display: block !important; }
+
+/* Transient messages: three seconds to read, then a gentle fade. */
+.chatfeed__line { transition: opacity 100ms linear; }
+.chatfeed:not(.chatfeed--history) .chatfeed__line { animation: chat-message-arrive 180ms ease-out; }
+@keyframes chat-message-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.chatfeed--history .chatfeed__line { animation: none; transition: none; }
+@media (prefers-reduced-motion: reduce) { .chatfeed__line, .chatfeed:not(.chatfeed--history) .chatfeed__line { animation: none; transition: none; } }
